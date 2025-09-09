@@ -23,7 +23,7 @@ app = Flask(__name__)
 app.secret_key = "your_secret_key"
 
 # MongoDB Atlas connection
-app.config["MONGO_URI"] = "mongodb+srv://Dhivanujan:TFC3EDgFAwz3BNuO@cluster0.kml3jfs.mongodb.net/mydatabase"
+app.config["MONGO_URI"] = ""
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 
@@ -57,8 +57,8 @@ def load_user(user_id):
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = "mahadevvinayak837@gmail.com"
-app.config['MAIL_PASSWORD'] = "ivnw tobj gupe akhe"
+app.config['MAIL_USERNAME'] = ""
+app.config['MAIL_PASSWORD'] = ""
 app.config['MAIL_DEFAULT_SENDER'] = "your_email@gmail.com"
 
 mail = Mail(app)
