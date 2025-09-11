@@ -18,11 +18,16 @@
       </a>
 
       <!-- Desktop Nav Links -->
-      <nav class="hidden md:flex gap-6 text-gray-700 text-sm font-medium">
-        <a href="{{ url_for('home') }}" class="hover:text-indigo-600 transition">Home</a>
-        <a href="#features" class="hover:text-indigo-600 transition">Features</a>
-        <a href="#about" class="hover:text-indigo-600 transition">About</a>
-        <a href="#contact" class="hover:text-indigo-600 transition">Contact</a>
+      <nav class="hidden md:flex items-center gap-8 text-gray-600 text-sm font-medium">
+      <a href="{{ url_for('home') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 hover:text-indigo-600 transition-colors duration-200 ease-in-out">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        <span>Home</span>
+       </a>
+      <a href="#features" class="px-3 py-2 rounded-lg hover:bg-gray-100 hover:text-indigo-600 transition-colors duration-200 ease-in-out">Features</a>
+      <a href="#about" class="px-3 py-2 rounded-lg hover:bg-gray-100 hover:text-indigo-600 transition-colors duration-200 ease-in-out">About</a>
+      <a href="#contact" class="px-3 py-2 rounded-lg hover:bg-gray-100 hover:text-indigo-600 transition-colors duration-200 ease-in-out">Contact</a>
       </nav>
 
       <!-- Desktop Auth Buttons -->
@@ -44,19 +49,17 @@
   </header>
 
   <!-- Mobile Menu -->
-  <nav id="menu" class="fixed top-0 left-0 w-0 h-full bg-white overflow-hidden transition-all z-50 flex flex-col items-center justify-center gap-6 text-lg font-medium">
-    <button id="closeMenu" class="absolute top-5 right-5 text-gray-700">
-      <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    </button>
+  <nav class="hidden md:flex gap-6 text-gray-700 text-sm font-medium">
+
     <a href="{{ url_for('home') }}" class="hover:text-indigo-600 transition">Home</a>
+
     <a href="#features" class="hover:text-indigo-600 transition">Features</a>
+
     <a href="#about" class="hover:text-indigo-600 transition">About</a>
+
     <a href="#contact" class="hover:text-indigo-600 transition">Contact</a>
-    <a href="{{ url_for('login') }}" class="hover:text-indigo-600 transition">Login</a>
-    <a href="{{ url_for('register') }}" class="bg-indigo-600 text-white px-6 py-2 rounded-full hover:bg-indigo-700 transition">Get Started</a>
-  </nav>
+
+ </nav>
 
   <!-- Hero Section -->
   <main class="flex-grow flex flex-col-reverse lg:flex-row items-center justify-between max-w-7xl mx-auto w-full mt-16 px-6 sm:px-10 gap-12">
