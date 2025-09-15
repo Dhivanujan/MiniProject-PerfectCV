@@ -32,7 +32,7 @@ fs = gridfs.GridFS(mongo.db)
 users_collection = mongo.db.users
 
 # OpenAI client
-client = OpenAI(api_key="OpenAi API key")
+client = OpenAI(api_key="")
 
 # -------------------- Flask-Login --------------------
 login_manager = LoginManager()
@@ -114,8 +114,10 @@ def extract_text_from_pdf(file_stream):
 def optimize_cv_with_gpt(cv_text):
     try:
         prompt = f"""
-        Rewrite this CV to make it ATS-friendly. Keep all details, improve formatting and keyword usage,
-        and return the result as plain text with sections: Education, Experience, Skills, Projects, Contact.
+        I will give you a CV. 
+        1. Rewrite it in an ATS-friendly format (sections: Education, Experience, Skills, Projects, Contact). 
+        2. Provide improvement suggestions separately.
+
         CV Content:
         {cv_text}
         """
@@ -126,11 +128,23 @@ def optimize_cv_with_gpt(cv_text):
                 {"role": "user", "content": prompt}
             ]
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip()
+
+        # Split into CV + Suggestions
+        if "Improvement Suggestions:" in content:
+            parts = content.split("Improvement Suggestions:")
+            optimized_cv = parts[0].strip()
+            suggestions = parts[1].strip()
+        else:
+            optimized_cv = content
+            suggestions = "No suggestions provided."
+
+        return optimized_cv, suggestions
+
     except RateLimitError:
-        return "⚠️ Error: You have exceeded your current OpenAI quota."
+        return "⚠️ Error: You have exceeded your current OpenAI quota.", "Try again later."
     except Exception as e:
-        return f"⚠️ Unexpected error: {str(e)}"
+        return f"⚠️ Unexpected error: {str(e)}", "Check logs or try again."
 
 def clean_text(text):
     return text.replace("⚠️", "[ERROR]").encode("latin-1", "replace").decode("latin-1")
@@ -243,6 +257,8 @@ def reset_password(token):
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
 def dashboard():
+    optimized_cv, suggestions, latest_file_id = None, None, None
+
     if request.method == 'POST':
         if 'cv_file' not in request.files:
             flash("No file part", "danger")
@@ -259,17 +275,30 @@ def dashboard():
             else:
                 cv_text = file.read().decode('utf-8', errors='ignore')
 
-            optimized_cv = optimize_cv_with_gpt(cv_text)
+            # Call GPT to get optimized CV + suggestions
+            optimized_cv, suggestions = optimize_cv_with_gpt(cv_text)
+
+            # Generate PDF and save
             pdf_bytes = generate_pdf(optimized_cv)
-            fs.put(pdf_bytes, filename=f"ATS_{filename}", content_type="application/pdf", user_id=current_user.id)
+            file_id = fs.put(pdf_bytes, filename=f"ATS_{filename}", content_type="application/pdf", user_id=current_user.id)
+            latest_file_id = str(file_id)
+
             flash("CV uploaded and optimized successfully!", "success")
-            return redirect(request.url)
         else:
             flash("Invalid file type. Only PDF, DOC, DOCX allowed.", "danger")
             return redirect(request.url)
 
+    # Get all uploaded files
     user_files = fs.find({"user_id": current_user.id})
-    return render_template('dashboard.html', user=current_user, user_files=user_files)
+
+    return render_template(
+        'dashboard.html',
+        user=current_user,
+        user_files=user_files,
+        optimized_cv=optimized_cv,
+        suggestions=suggestions,
+        latest_file_id=latest_file_id
+    )
 
 @app.route('/download/<file_id>')
 @login_required
