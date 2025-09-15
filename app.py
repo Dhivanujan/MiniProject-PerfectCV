@@ -23,7 +23,7 @@ app = Flask(__name__)
 app.secret_key = "your_secret_key"
 
 # MongoDB Atlas connection
-app.config["MONGO_URI"] = "mongodb+srv://Dhivanujan:TFC3EDgFAwz3BNuO@cluster0.kml3jfs.mongodb.net/mydatabase"
+app.config["MONGO_URI"] = ""
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 
