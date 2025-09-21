@@ -6,7 +6,17 @@
   <title>Login</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gradient-to-b from-[#F5F7FF] via-[#fffbee] to-[#E6EFFF] flex h-screen w-full">
+<body class="bg-gradient-to-b from-[#F5F7FF] via-[#fffbee] to-[#E6EFFF]">
+  <!-- Navbar -->
+  <header class="sticky top-0 bg-gradient-to-r from-indigo-50 to-blue-50 shadow-md z-50">
+    <div class="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
+      <!-- Logo -->
+      <a href="{{ url_for('home') }}" class="flex items-center">
+        <span class="font-extrabold text-2xl text-indigo-700 tracking-tight">📄 PerfectCV</span>
+      </a>
+    </div>
+  </header>
+  <div class="flex h-[calc(100vh-4rem)] w-full">
 
   <!-- Left Image for larger screens -->
   <div class="w-full hidden md:inline-block">
