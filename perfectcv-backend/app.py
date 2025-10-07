@@ -15,12 +15,25 @@ import io
 from fpdf import FPDF
 from PyPDF2 import PdfReader
 import os 
+from dotenv import load_dotenv
 
 from flask_cors import CORS
 
 # -------------------- Gemini Setup --------------------
 import google.generativeai as genai
-genai.configure(api_key="AIzaSyDmkrDmHYRAZS07Gk4SSta7T47v__rBYLY")
+# Load environment variables from .env (project root) before we call any os.getenv
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+env_path = os.path.join(BASE_DIR, '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+else:
+    # try one level up (in case the backend is in a subfolder)
+    parent_env = os.path.join(BASE_DIR, '..', '.env')
+    if os.path.exists(parent_env):
+        load_dotenv(parent_env)
+
+# Configure Gemini/OpenAI-like client using API_KEY from environment
+genai.configure(api_key=os.getenv("API_KEY"))
 
 def get_valid_model():
     for m in genai.list_models():
@@ -34,10 +47,10 @@ MODEL_NAME = get_valid_model()
 
 # -------------------- Flask Config --------------------
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
+app.secret_key = os.getenv("SECRET_KEY")
 CORS(app, supports_credentials=True)
 
-app.config["MONGO_URI"] = "mongodb+srv://Dhivanujan:TFC3EDgFAwz3BNuO@cluster0.kml3jfs.mongodb.net/mydatabase"
+app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 
@@ -51,8 +64,8 @@ login_manager.login_view = "login"
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = "mahadevvinayak837@gmail.com"
-app.config['MAIL_PASSWORD'] = "ivnw tobj gupe akhe"
+app.config['MAIL_USERNAME'] = os.getenv("MAIL_USERNAME")
+app.config['MAIL_PASSWORD'] = os.getenv("MAIL_PASSWORD")
 app.config['MAIL_DEFAULT_SENDER'] = "your_email@gmail.com"
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
