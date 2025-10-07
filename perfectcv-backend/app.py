@@ -10,10 +10,12 @@ from itsdangerous import URLSafeTimedSerializer
 from bson import ObjectId
 from werkzeug.utils import secure_filename
 import gridfs
+
 import io
 from fpdf import FPDF
 from PyPDF2 import PdfReader
-import os
+import os 
+
 from flask_cors import CORS
 
 # -------------------- Gemini Setup --------------------
