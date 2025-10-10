@@ -455,6 +455,86 @@ def api_user_files():
     files = [{"_id": str(f._id), "filename": f.filename} for f in user_files]
     return jsonify({"files": files})
 
+
+# -------------------- Chatbot endpoints --------------------
+@app.route('/api/chatbot/upload', methods=['POST'])
+@login_required
+def api_chatbot_upload():
+    # Accept multiple files under form key 'files'
+    if 'files' not in request.files:
+        return jsonify({"success": False, "message": "No files provided."}), 400
+    files = request.files.getlist('files')
+    saved = []
+    cv_texts_coll = mongo.db.cv_texts
+    try:
+        for f in files:
+            if f and allowed_file(f.filename):
+                filename = secure_filename(f"{current_user.id}_{f.filename}")
+                # Read and extract text
+                if f.filename.lower().endswith('.pdf'):
+                    text = extract_text_from_pdf(f)
+                    f.seek(0)
+                else:
+                    # for doc/docx we store raw bytes as fallback
+                    data = f.read()
+                    try:
+                        text = data.decode('utf-8', errors='ignore')
+                    except Exception:
+                        text = ''
+                    f.seek(0)
+
+                # store file into GridFS
+                file_id = fs.put(f.read(), filename=filename, content_type='application/octet-stream', user_id=str(current_user.id))
+                # persist extracted text and metadata
+                cv_texts_coll.insert_one({
+                    'user_id': str(current_user.id),
+                    'file_id': str(file_id),
+                    'filename': filename,
+                    'text': text,
+                })
+                saved.append({"file_id": str(file_id), "filename": filename})
+        if not saved:
+            return jsonify({"success": False, "message": "No valid files uploaded."}), 400
+        return jsonify({"success": True, "message": "Files uploaded and processed.", "files": saved})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Error processing files: {str(e)}"}), 500
+
+
+@app.route('/api/chatbot/ask', methods=['POST'])
+@login_required
+def api_chatbot_ask():
+    data = request.json or {}
+    question = data.get('question') or data.get('q')
+    if not question:
+        return jsonify({"success": False, "message": "No question provided."}), 400
+
+    # Aggregate user's CV texts
+    cv_texts_coll = mongo.db.cv_texts
+    cursor = cv_texts_coll.find({'user_id': str(current_user.id)})
+    combined = []
+    for doc in cursor:
+        t = doc.get('text') or ''
+        if t:
+            combined.append(t)
+    if not combined:
+        return jsonify({"success": False, "message": "No CV uploaded for this user."}), 404
+
+    # Prepare prompt for the model
+    cv_context = '\n\n'.join(combined)
+    # truncate to a safe length to avoid very long prompts
+    if len(cv_context) > 20000:
+        cv_context = cv_context[-20000:]
+
+    prompt = f"You are a helpful assistant that answers questions based ONLY on the user's CV information provided below. If the answer is not present, reply saying you don't have enough information and ask for clarification.\n\nUser CV Data:\n{cv_context}\n\nQuestion: {question}\n\nAnswer succinctly and reference the CV where applicable." 
+
+    try:
+        model = genai.GenerativeModel(MODEL_NAME)
+        response = model.generate_content([prompt])
+        answer = response.text.strip() if hasattr(response, 'text') and response.text else 'No response from model.'
+        return jsonify({"success": True, "answer": answer})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Model error: {str(e)}"}), 500
+
 # -------------------- Run --------------------
 if __name__ == '__main__':
     app.run(debug=True)
