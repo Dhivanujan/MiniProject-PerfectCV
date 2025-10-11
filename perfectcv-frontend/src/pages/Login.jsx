@@ -21,25 +21,40 @@ function Login({ setUser }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api.post("/api/login", formData);
-      const data = res.data;
+  e.preventDefault();
 
-      if (data.success) {
-        setFlashMessages([{ type: "success", message: data.message }]);
-        setUser(data.user);
-        setTimeout(() => navigate("/dashboard"), 500);
-      } else {
-        setFlashMessages([{ type: "danger", message: data.message }]);
-      }
+  try {
+    const res = await api.post("/api/login", formData, {
+      // 👇 This ensures Axios won't throw for non-2xx responses
+      validateStatus: () => true,
+    });
 
-      setTimeout(() => setFlashMessages([]), 3000);
-    } catch (error) {
-      setFlashMessages([{ type: "danger", message: "Server error" }]);
-      setTimeout(() => setFlashMessages([]), 3000);
+    const data = res.data;
+
+    if (res.status >= 200 && res.status < 300 && data.success) {
+      // ✅ Login success
+      setFlashMessages([{ type: "success", message: data.message }]);
+      setUser(data.user);
+      setTimeout(() => navigate("/dashboard"), 500);
+    } else {
+      // ⚠️ Backend returned an error (e.g., wrong password)
+      setFlashMessages([
+        { type: "danger", message: data.message || "Login failed" },
+      ]);
     }
-  };
+  } catch (error) {
+    // 🚨 Network or server crash (no response)
+    console.error("Login error:", error);
+    const message =
+      error.response?.data?.message ||
+      "Unable to connect to the server. Please try again later.";
+    setFlashMessages([{ type: "danger", message }]);
+  } finally {
+    // ⏳ Auto-hide flash messages after 3 seconds
+    setTimeout(() => setFlashMessages([]), 3000);
+  }
+};
+
 
   return (
     <div
