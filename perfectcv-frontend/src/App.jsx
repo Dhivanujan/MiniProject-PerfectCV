@@ -8,6 +8,8 @@ import Navbar from "./components/Navbar";
 import api from "./api";
 import LoadingPage from "./pages/LoadingPage";
 import ChatbotPage from "./pages/ChatbotPage";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function AppContent() {
   const [user, setUser] = useState(null);
@@ -62,6 +64,8 @@ function AppContent() {
 
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/dashboard" />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" />} />
         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />

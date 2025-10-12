@@ -1,3 +1,4 @@
+import traceback
 from flask import Flask, render_template, url_for, redirect, flash, request, jsonify, send_file
 from flask_pymongo import PyMongo
 from flask_wtf import FlaskForm
@@ -66,7 +67,7 @@ app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = os.getenv("MAIL_USERNAME")
 app.config['MAIL_PASSWORD'] = os.getenv("MAIL_PASSWORD")
-app.config['MAIL_DEFAULT_SENDER'] = "your_email@gmail.com"
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv("MAIL")
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
 
@@ -258,35 +259,59 @@ def logout():
 # -------------------- Forgot & Reset Password --------------------
 @app.route('/forgot_password', methods=['POST'])
 def forgot_password():
-    data = request.json
-    form = ForgotPasswordForm(data=data)
-    if form.validate():
-        user = users_collection.find_one({"email": form.email.data})
-        if user:
+    try:
+        data = request.json
+        form = ForgotPasswordForm(data=data)
+
+        if form.validate():
+            user = users_collection.find_one({"email": form.email.data})
+            if not user:
+                return jsonify({"success": False, "message": "No account found with that email."}), 404
+
             token = serializer.dumps(user["email"], salt="password-reset-salt")
-            reset_url = f"{data['frontend_url']}/reset-password/{token}"  # React frontend handles reset page
+            reset_url = f"{data.get('frontend_url', 'http://localhost:5173')}/reset-password/{token}"
+
             msg = Message("Password Reset Request", recipients=[user["email"]])
-            msg.body = f"Click the link to reset your password: {reset_url}\nThis link expires in 1 hour."
+            msg.body = f"Click the link to reset your password:\n\n{reset_url}\n\nThis link expires in 1 hour."
             mail.send(msg)
+
             return jsonify({"success": True, "message": "Password reset link sent to your email."})
-        return jsonify({"success": False, "message": "No account found with that email."}), 404
-    return jsonify({"success": False, "errors": form.errors})
+        else:
+            return jsonify({"success": False, "errors": form.errors})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/reset_password/<token>', methods=['POST'])
 def reset_password(token):
     try:
         email = serializer.loads(token, salt="password-reset-salt", max_age=3600)
-    except:
-        return jsonify({"success": False, "message": "The reset link is invalid or expired."}), 400
-    data = request.json
-    form = ResetPasswordForm(data=data)
-    if form.validate():
-        hashed_pw = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
-        users_collection.update_one({"email": email}, {"$set": {"password": hashed_pw}})
-        return jsonify({"success": True, "message": "Password reset successful!"})
-    return jsonify({"success": False, "errors": form.errors})
+        data = request.json
+        form = ResetPasswordForm(data=data)
 
+        if form.validate():
+            hashed_pw = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+            users_collection.update_one({"email": email}, {"$set": {"password": hashed_pw}})
+            return jsonify({"success": True, "message": "Password reset successful!"})
+        else:
+            return jsonify({"success": False, "errors": form.errors})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+# --- Email Test Route ---
+@app.route('/test_mail')
+def test_mail():
+    try:
+        msg = Message("Flask-Mail Test", recipients=[os.getenv("MAIL_USERNAME")])
+        msg.body = "✅ Flask-Mail is configured properly!"
+        mail.send(msg)
+        return "✅ Email sent successfully!"
+    except Exception as e:
+        traceback.print_exc()
+        return f"❌ Error: {e}"
 
 # -------------------- Dashboard & CV --------------------
 @app.route('/dashboard', methods=['GET', 'POST'])

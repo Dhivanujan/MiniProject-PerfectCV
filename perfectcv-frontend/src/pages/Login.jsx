@@ -140,7 +140,7 @@ function Login({ setUser }) {
               />
               Remember me
             </label>
-            <a href="#" className="text-sm underline hover:text-indigo-500 dark:hover:text-indigo-400">
+            <a href="/forgot-password" className="text-sm underline hover:text-indigo-500 dark:hover:text-indigo-400">
               Forgot password?
             </a>
           </div>
