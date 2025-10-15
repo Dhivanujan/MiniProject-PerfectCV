@@ -256,7 +256,7 @@ def logout():
 
 
 # -------------------- Forgot & Reset Password --------------------
-@app.route('/forgot_password', methods=['POST'])
+@app.route('/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.json
     form = ForgotPasswordForm(data=data)
