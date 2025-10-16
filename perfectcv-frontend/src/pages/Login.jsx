@@ -11,6 +11,11 @@ function Login({ setUser }) {
     remember: false,
   });
   const [flashMessages, setFlashMessages] = useState([]);
+  
+  // Forgot password states
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -55,6 +60,42 @@ function Login({ setUser }) {
   }
 };
 
+  // Forgot password handler
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setForgotLoading(true);
+
+    try {
+      const res = await api.post("/api/forgot-password", { email: forgotEmail }, {
+        validateStatus: () => true,
+      });
+
+      const data = res.data;
+
+      if (data.status === "success") {
+        setFlashMessages([{ type: "success", message: data.message }]);
+        setShowForgotModal(false);
+        setForgotEmail("");
+      } else {
+        setFlashMessages([{ type: "danger", message: data.message }]);
+      }
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      const message =
+        error.response?.data?.message ||
+        "Unable to connect to the server. Please try again later.";
+      setFlashMessages([{ type: "danger", message }]);
+    } finally {
+      setForgotLoading(false);
+      setTimeout(() => setFlashMessages([]), 3000);
+    }
+  };
+
+  // Open forgot password modal and pre-fill with login email if available
+  const openForgotModal = () => {
+    setForgotEmail(formData.email);
+    setShowForgotModal(true);
+  };
 
   return (
     <div
@@ -140,9 +181,13 @@ function Login({ setUser }) {
               />
               Remember me
             </label>
-            <a href="/forgot-password" className="text-sm underline hover:text-indigo-500 dark:hover:text-indigo-400">
+            <button
+              type="button"
+              onClick={openForgotModal}
+              className="text-sm underline hover:text-indigo-500 dark:hover:text-indigo-400 bg-transparent border-none"
+            >
               Forgot password?
-            </a>
+            </button>
           </div>
 
           {/* Login Button */}
@@ -166,6 +211,65 @@ function Login({ setUser }) {
           </p>
         </form>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Reset Password
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleForgotPassword}>
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                Enter your email address and we'll send you a link to reset your password.
+              </p>
+              
+              <div className="mb-4">
+                <input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="Enter your email"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 
+                    rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 
+                    dark:bg-gray-700 dark:text-white"
+                  required
+                />
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 
+                    text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 
+                    dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="flex-1 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 
+                    text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {forgotLoading ? "Sending..." : "Send Reset Link"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
