@@ -19,8 +19,18 @@ export default function Testimonials() {
         {testimonials.map((t, i) => (
           <motion.div
             key={i}
-            whileHover={{ scale: 1.05 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow p-6"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            whileHover={{
+              scale: 1.05,
+              y: -3,
+              boxShadow: "0 8px 25px rgba(99, 102, 241, 0.25)",
+            }}
+            transition={{
+              duration: 0.15,
+              ease: "easeInOut"
+            }}
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl p-6 transition-shadow duration-300"
           >
             <p className="text-gray-600 dark:text-gray-300 italic mb-4">“{t.text}”</p>
             <h4 className="font-semibold text-indigo-600">{t.name}</h4>

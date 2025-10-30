@@ -5,21 +5,46 @@ import { FaSpinner } from "react-icons/fa";
 
 export default function LoadingPage() {
   return (
-    <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-900 dark:to-gray-800">
+    <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-indigo-50 via-white to-indigo-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
+      
+      {/* Animated Gradient Orb */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="text-center"
+        initial={{ opacity: 0, scale: 0.5 }}
+        animate={{ opacity: 0.2, scale: [1, 1.1, 1] }}
+        transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+        className="absolute w-96 h-96 bg-gradient-to-r from-indigo-400 to-purple-500 rounded-full blur-3xl opacity-30"
+      ></motion.div>
+
+      {/* Spinner + Text Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="relative z-10 text-center px-6"
       >
-        <FaSpinner className="animate-spin text-indigo-600 dark:text-indigo-400 text-6xl mx-auto mb-6" />
-        <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-200">
-          Preparing your experience...
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+          className="inline-block"
+        >
+          <FaSpinner className="text-indigo-600 dark:text-indigo-400 text-6xl mb-6" />
+        </motion.div>
+
+        <h2 className="text-3xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight">
+          Preparing Your Experience
         </h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">
-          Please wait while we load everything for you.
+        <p className="text-gray-500 dark:text-gray-400 mt-3 text-lg max-w-md mx-auto">
+          Sit tight while we set things up for you. This won’t take long!
         </p>
       </motion.div>
+
+      {/* Soft Bottom Glow */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.3 }}
+        transition={{ duration: 2, ease: "easeInOut" }}
+        className="absolute bottom-0 w-full h-40 bg-gradient-to-t from-indigo-300/30 to-transparent dark:from-indigo-700/30"
+      ></motion.div>
     </div>
   );
 }

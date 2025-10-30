@@ -9,24 +9,32 @@ function ForgotPassword() {
     e.preventDefault();
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/forgot_password", {
+      const res = await fetch("http://127.0.0.1:5000/api/forgot_password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          frontend_url: "http://localhost:3000/reset-password",
+          frontend_url: window.location.origin + '/reset-password',
         }),
       });
 
-      const data = await res.json();
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (err) {
+        const text = await res.text();
+        setFlashMessage({ type: "danger", message: text || "Failed to send reset link." });
+        setTimeout(() => setFlashMessage(null), 4000);
+        return;
+      }
 
-      if (data.success) {
-        setFlashMessage({ type: "success", message: data.message });
+      if (res.ok && data.success) {
+        // show success; in dev, backend may include reset link in response
+        const msg = data.message || "Password reset link sent to your email.";
+        const linkDebug = data.reset_link ? `\n\nDEV RESET LINK: ${data.reset_link}` : "";
+        setFlashMessage({ type: "success", message: msg + linkDebug });
       } else {
-        setFlashMessage({
-          type: "danger",
-          message: data.message || "Failed to send reset link.",
-        });
+        setFlashMessage({ type: "danger", message: data.message || data.error || "Failed to send reset link." });
       }
     } catch (error) {
       setFlashMessage({ type: "danger", message: "Server error." });

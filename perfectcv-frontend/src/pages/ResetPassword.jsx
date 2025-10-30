@@ -13,22 +13,27 @@ function ResetPassword() {
     e.preventDefault();
 
     try {
-      const res = await fetch(`http://127.0.0.1:5000/reset_password/${token}`, {
+      const res = await fetch(`http://127.0.0.1:5000/api/reset_password/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, confirm_password: confirmPassword }),
       });
 
-      const data = await res.json();
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (err) {
+        const text = await res.text();
+        setFlashMessage({ type: "danger", message: text || "Server error." });
+        setTimeout(() => setFlashMessage(null), 3000);
+        return;
+      }
 
-      if (data.success) {
-        setFlashMessage({ type: "success", message: data.message });
+      if (res.ok && data.success) {
+        setFlashMessage({ type: "success", message: data.message || "Password reset successful." });
         setTimeout(() => navigate("/login"), 2000);
       } else {
-        setFlashMessage({
-          type: "danger",
-          message: data.message || "Invalid link or error.",
-        });
+        setFlashMessage({ type: "danger", message: data.message || data.error || "Invalid link or error." });
       }
     } catch (error) {
       setFlashMessage({ type: "danger", message: "Server error." });

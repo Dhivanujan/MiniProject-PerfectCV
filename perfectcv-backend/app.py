@@ -19,6 +19,7 @@ import os
 from dotenv import load_dotenv
 
 from flask_cors import CORS
+import traceback
 
 # -------------------- Gemini Setup --------------------
 import google.generativeai as genai
@@ -48,7 +49,12 @@ MODEL_NAME = get_valid_model()
 
 # -------------------- Flask Config --------------------
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY")
+app.secret_key = os.getenv("SECRET_KEY") or os.environ.get('FLASK_SECRET_KEY')
+if not app.secret_key:
+    # fallback for local development; warn because tokens won't survive restarts
+    fallback_key = 'dev-secret-change-me'
+    app.secret_key = fallback_key
+    print("WARNING: SECRET_KEY not set. Using development fallback secret. Set SECRET_KEY in .env for production.")
 CORS(app, supports_credentials=True)
 
 app.config["MONGO_URI"] = os.getenv("MONGO_URI")
@@ -258,6 +264,9 @@ def logout():
 
 # -------------------- Forgot & Reset Password --------------------
 @app.route('/forgot-password', methods=['POST'])
+@app.route('/forgot_password', methods=['POST'])
+@app.route('/api/forgot-password', methods=['POST'])
+@app.route('/api/forgot_password', methods=['POST'])
 def forgot_password():
     try:
         data = request.json
@@ -269,13 +278,23 @@ def forgot_password():
                 return jsonify({"success": False, "message": "No account found with that email."}), 404
 
             token = serializer.dumps(user["email"], salt="password-reset-salt")
-            reset_url = f"{data.get('frontend_url', 'http://localhost:5173')}/reset-password/{token}"
+            # Build reset URL safely: if frontend_url already contains the reset path, append token only
+            frontend_base = data.get('frontend_url', 'http://localhost:5173') or 'http://localhost:5173'
+            frontend_base = frontend_base.rstrip('/')
+            if frontend_base.endswith('/reset-password') or frontend_base.endswith('/reset_password'):
+                reset_url = f"{frontend_base}/{token}"
+            else:
+                reset_url = f"{frontend_base}/reset-password/{token}"
 
             msg = Message("Password Reset Request", recipients=[user["email"]])
             msg.body = f"Click the link to reset your password:\n\n{reset_url}\n\nThis link expires in 1 hour."
-            mail.send(msg)
-
-            return jsonify({"success": True, "message": "Password reset link sent to your email."})
+            try:
+                mail.send(msg)
+                return jsonify({"success": True, "message": "Password reset link sent to your email."})
+            except Exception:
+                # If mail fails (common in local dev), return the reset link to the client for testing
+                traceback.print_exc()
+                return jsonify({"success": True, "message": "Mail send failed; returning reset link for dev/testing.", "reset_link": reset_url})
         else:
             return jsonify({"success": False, "errors": form.errors})
     except Exception as e:
@@ -284,6 +303,9 @@ def forgot_password():
 
 
 @app.route('/reset_password/<token>', methods=['POST'])
+@app.route('/reset-password/<token>', methods=['POST'])
+@app.route('/api/reset_password/<token>', methods=['POST'])
+@app.route('/api/reset-password/<token>', methods=['POST'])
 def reset_password(token):
     try:
         email = serializer.loads(token, salt="password-reset-salt", max_age=3600)
