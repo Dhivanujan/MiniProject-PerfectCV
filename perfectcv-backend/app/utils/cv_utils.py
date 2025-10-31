@@ -177,8 +177,11 @@ def compute_ats_score(text, domain=None):
 
 
 def extract_sections(text):
-    """Split text into structured sections: about, education, work_experience, projects, achievements, skills, other."""
-    sections = {"about": "", "skills": "", "work_experience": "", "education": "", "projects": "", "achievements": "", "other": ""}
+    """Split text into structured sections: about, education, experience, projects, achievements, skills, other.
+
+    Note: the key name for work experience is `experience` (consistent with other helpers).
+    """
+    sections = {"about": "", "skills": "", "experience": "", "education": "", "projects": "", "achievements": "", "other": ""}
     # Split by a broader set of headings
     parts = re.split(r"\n\s*(about|summary|profile|professional summary|skills|experience|work experience|education|projects|project|achievements|certifications|volunteer|extracurricular|activities)\s*\n", text, flags=re.I)
     if len(parts) <= 1:
@@ -197,7 +200,7 @@ def extract_sections(text):
         elif "skill" in heading:
             sections["skills"] += "\n" + content
         elif "experience" in heading or "work" in heading:
-            sections["work_experience"] += "\n" + content
+            sections["experience"] += "\n" + content
         elif "education" in heading:
             sections["education"] += "\n" + content
         elif any(k in heading for k in ("project", "projects")):
@@ -284,32 +287,25 @@ def optimize_cv_rule_based(cv_text, job_domain=None):
         # Join with double newlines for readability
         return "\n\n".join(out)
 
-    optimized_text = format_to_ats_text(sections)
+    # Build optimized text from sections
+    try:
+        optimized_text = format_to_ats_text(sections)
+    except Exception:
+        # Fallback to raw text if formatting fails
+        optimized_text = cv_text or ""
 
-    # suggestions
+    # Compute ATS score and keyword suggestions based on domain
+    ats_score, missing_keywords, found_keywords = compute_ats_score(optimized_text, job_domain)
+
+    # Provide lightweight suggestions: missing keywords and formatting hints
     suggestions = []
-    # contact info
-    if not re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", cv_text):
-        suggestions.append({"category": "contact", "message": "Add a professional email address (name@example.com)."})
-    if not re.search(r"\+?\d[\d \-()]{7,}\d", cv_text):
-        suggestions.append({"category": "contact", "message": "Add a contact phone number with country code."})
-
-    # skills
-    if not sections.get("skills"):
-        suggestions.append({"category": "skills", "message": "Add a 'Skills' section listing technologies/tools relevant to your target role."})
-
-    # bullets
-    if sections.get("experience") and not re.search(r"- ", sections.get("experience")):
-        suggestions.append({"category": "experience", "message": "Convert experience responsibilities into short bullet points starting with action verbs and quantify results where possible."})
-
-    # keywords
-    ats_score, missing_keywords, found_keywords = compute_ats_score(cv_text, job_domain)
     if missing_keywords:
-        suggestions.append({"category": "keywords", "message": f"Consider adding domain keywords: {', '.join(missing_keywords[:8])}."})
+        suggestions.append({"category": "keywords", "message": f"Consider adding these keywords: {', '.join(missing_keywords[:10])}"})
+    # Suggest adding a skills section if none detected
+    if not sections.get("skills"):
+        suggestions.append({"category": "format", "message": "Add a Key Skills section to improve ATS matching."})
 
-    # short suggestions to improve achievements
-    suggestions.append({"category": "achievements", "message": "Where possible, add numbers to achievements: 'reduced latency by 40%', 'increased revenue by $X'."})
-
+    # Return a consistent dict expected by callers
     return {
         "optimized_text": optimized_text,
         "sections": sections,
@@ -318,6 +314,168 @@ def optimize_cv_rule_based(cv_text, job_domain=None):
         "recommended_keywords": missing_keywords,
         "found_keywords": found_keywords,
     }
+
+def parse_experience_section(text):
+    """Parse experience section text into structured format for ResumeTemplate.
+
+    Returns list of {title, company, dates, points[]}.
+    """
+    jobs = []
+    current_job = None
+    
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+            
+        # New job entry typically starts with non-bulleted line
+        if not line.startswith(('-', '•', '*')):
+            # Save previous job if exists
+            if current_job and current_job.get('points'):
+                jobs.append(current_job)
+            
+            # Try to split into title and company/dates
+            parts = line.split(' at ', 1)
+            if len(parts) == 2:
+                title, company = parts
+                # Try to extract dates from company line
+                company_parts = company.rsplit('(', 1)
+                if len(company_parts) == 2:
+                    company = company_parts[0].strip()
+                    dates = company_parts[1].rstrip(')').strip()
+                else:
+                    dates = "Present"  # Default if no dates found
+            else:
+                # Fallback if can't parse cleanly
+                title = line
+                company = ""
+                dates = "Present"
+                
+            current_job = {
+                'title': title,
+                'company': company,
+                'dates': dates,
+                'points': []
+            }
+        elif current_job:  # Bullet point
+            point = line.lstrip('-•* ').strip()
+            if point:
+                current_job['points'].append(point)
+    
+    # Add last job
+    if current_job and current_job.get('points'):
+        jobs.append(current_job)
+        
+    return jobs
+
+
+def parse_education_section(text):
+    """Parse education section into [{degree, school, year}]."""
+    education = []
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Try to extract components
+        # Pattern: Degree - School (Year) or similar
+        parts = line.split(' - ', 1)
+        if len(parts) == 2:
+            degree = parts[0]
+            rest = parts[1]
+            # Try to extract year
+            rest_parts = rest.rsplit('(', 1)
+            if len(rest_parts) == 2:
+                school = rest_parts[0].strip()
+                year = rest_parts[1].rstrip(')').strip()
+            else:
+                school = rest.strip()
+                year = ""
+        else:
+            # Fallback if can't parse cleanly
+            degree = line
+            school = ""
+            year = ""
+            
+        education.append({
+            'degree': degree,
+            'school': school,
+            'year': year
+        })
+    
+    return education
+
+
+def parse_projects_section(text):
+    """Parse projects section into [{name, desc}]."""
+    projects = []
+    current = None
+    
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.startswith(('-', '•', '*')):
+            # Bullet point - treat as description
+            if current:
+                current['desc'] = line.lstrip('-•* ').strip()
+                projects.append(current)
+                current = None
+        else:
+            # Non-bullet - treat as project name
+            current = {'name': line, 'desc': ''}
+    
+    # Add last project if pending
+    if current:
+        projects.append(current)
+        
+    return projects
+
+
+def convert_to_template_format(sections):
+    """Convert raw sections dict into format expected by ResumeTemplate.jsx."""
+    # Defensive: ensure sections is a dict (AI may return a string or null for sections)
+    if not isinstance(sections, dict):
+        sections = {}
+    # Extract name and contact from about/summary if possible
+    about = sections.get('about', '').strip()
+    name_line = ""
+    contact_line = ""
+    if about:
+        lines = about.split('\n')
+        if lines:
+            name_line = lines[0]
+            if len(lines) > 1:
+                contact_line = lines[1]
+
+    # Parse skills into list
+    skills_text = sections.get('skills', '').strip()
+    skills = [s.strip() for s in re.split(r'[,;]', skills_text) if s.strip()]
+
+    template_data = {
+        'name': name_line or 'Your Name',
+        'contact': contact_line or 'email@example.com | phone | location',
+        'summary': sections.get('about', '').strip(),
+        'skills': skills,
+        'experience': parse_experience_section(sections.get('experience', '')),
+        'projects': parse_projects_section(sections.get('projects', '')),
+        'education': parse_education_section(sections.get('education', '')),
+        'certifications': []  # Optional section
+    }
+
+    # Add certifications from achievements if any
+    if sections.get('achievements'):
+        certs = []
+        for line in sections['achievements'].split('\n'):
+            line = line.strip()
+            if line:
+                certs.append(line.lstrip('-•* '))
+        if certs:
+            template_data['certifications'] = certs
+
+    return template_data
+    
 
 
 def optimize_cv_with_gemini(cv_text, job_domain=None):
@@ -364,21 +522,31 @@ Return ONLY the JSON object and ensure it is parseable.
 def optimize_cv(cv_text, job_domain=None, use_ai=True):
     """Unified optimizer: try AI (if requested) and fall back to rule-based optimizer.
 
-    Returns dict with keys: optimized_text, sections, suggestions, ats_score, recommended_keywords, found_keywords
+    Returns dict with keys: optimized_text, sections, template_data, suggestions,
+    ats_score, recommended_keywords, found_keywords
     """
     if use_ai:
         try:
             data = optimize_cv_with_gemini(cv_text, job_domain=job_domain)
+            # Defensive: if the AI returned null or non-dict (e.g. JSON `null`), treat as failure
+            if not isinstance(data, dict):
+                logger.warning("AI returned non-dict response (null?), falling back to rule-based")
+                data = {}
             # ensure ats_score and recommended keywords exist
             if "ats_score" not in data:
                 ats_score, missing, found = compute_ats_score(data.get("optimized_text", cv_text), job_domain)
                 data.setdefault("ats_score", ats_score)
                 data.setdefault("recommended_keywords", missing)
                 data.setdefault("found_keywords", found)
+            # Add template-formatted data (handle case where 'sections' exists but is None)
+            data['template_data'] = convert_to_template_format(data.get('sections') or {})
             return data
         except Exception as e:
             logger.warning("AI optimization unavailable, falling back to rule-based: %s", e)
 
     # Rule-based fallback
-    return optimize_cv_rule_based(cv_text, job_domain)
+    data = optimize_cv_rule_based(cv_text, job_domain)
+    # Add template-formatted data (handle None)
+    data['template_data'] = convert_to_template_format(data.get('sections') or {})
+    return data
 

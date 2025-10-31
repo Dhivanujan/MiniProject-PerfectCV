@@ -4,7 +4,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.models.user import User
 from app.utils.email_utils import send_reset_email
 from itsdangerous import URLSafeTimedSerializer
-from flask import url_for
+from flask import url_for, redirect, request
 
 auth = Blueprint('auth', __name__)
 
@@ -97,6 +97,17 @@ def reset_password(token):
         return jsonify({'success': True, 'message': 'Password reset successfully'})
     except:
         return jsonify({'success': False, 'error': 'Invalid or expired token'}), 400
+
+
+@auth.route('/reset-password/<token>', methods=['GET'])
+def reset_password_redirect(token):
+    """Redirect GET requests to the frontend reset page so clicking links from email works.
+
+    The frontend will render the form and POST the new password to the backend endpoint.
+    """
+    frontend_base = current_app.config.get('FRONTEND_URL') or request.host_url.rstrip('/')
+    redirect_url = f"{frontend_base.rstrip('/')}/reset-password/{token}"
+    return redirect(redirect_url, code=302)
 
 @auth.route('/logout')
 def logout():

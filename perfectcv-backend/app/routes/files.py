@@ -44,8 +44,14 @@ def upload_cv():
         # Attempt optimization (AI); function will fallback to rule-based if AI not configured
         result = optimize_cv(text, job_domain=job_domain, use_ai=True)
 
-        # normalized outputs
-        optimized_cv = result.get('optimized_text') or result.get('optimized_cv') or text
+        # Defensive: ensure optimizer returned a dict (some failures may return None)
+        if not isinstance(result, dict) or result is None:
+            current_app.logger.warning('optimize_cv returned non-dict result; using safe defaults')
+            result = {}
+
+        # Get all normalized outputs including template data
+        optimized_cv = (result.get('optimized_text') if isinstance(result, dict) else None) or (result.get('optimized_cv') if isinstance(result, dict) else None) or text
+        template_data = result.get('template_data') or {}
         suggestions = result.get('suggestions', [])
         # normalize suggestions into list of {category, message}
         grouped = {}
@@ -68,9 +74,68 @@ def upload_cv():
         recommended_keywords = result.get('recommended_keywords', [])
         found_keywords = result.get('found_keywords', [])
 
-        # Generate a PDF from the structured sections (creates template) and store that PDF in GridFS
-        # pass sections so generate_pdf will render the ATS template
-        pdf_bytes = generate_pdf(sections)
+        # Generate a PDF from optimized text (fallback) or template data
+        try:
+            # Build strings defensively: template_data may contain None or non-dict items
+            header = (template_data.get('name') or '') + '\n' + (template_data.get('contact') or '')
+            about_text = template_data.get('summary') or ''
+            skills_text = ', '.join([s for s in (template_data.get('skills') or []) if s])
+
+            # Experience: each item should be a dict with 'company' and 'points'
+            exp_items = []
+            for job in (template_data.get('experience') or []):
+                if not isinstance(job, dict):
+                    continue
+                company = job.get('company') or ''
+                points = [p for p in (job.get('points') or []) if p]
+                if points:
+                    lines = [company] + [f"- {p}" for p in points]
+                else:
+                    lines = [company]
+                exp_items.append('\n'.join(lines).strip())
+            experience_text = '\n\n'.join([e for e in exp_items if e])
+
+            # Projects
+            proj_items = []
+            for p in (template_data.get('projects') or []):
+                if not isinstance(p, dict):
+                    continue
+                name = p.get('name') or ''
+                desc = p.get('desc') or ''
+                if name and desc:
+                    proj_items.append(f"{name}\n- {desc}")
+                elif name:
+                    proj_items.append(name)
+            projects_text = '\n'.join(proj_items)
+
+            # Education
+            edu_items = []
+            for e in (template_data.get('education') or []):
+                if not isinstance(e, dict):
+                    continue
+                degree = e.get('degree') or ''
+                school = e.get('school') or ''
+                year = e.get('year') or ''
+                edu_items.append(f"{degree} - {school} ({year})".strip())
+            education_text = '\n'.join([x for x in edu_items if x])
+
+            # Achievements / certifications
+            certs = [c for c in (template_data.get('certifications') or []) if c]
+            achievements_text = '\n'.join([f"- {c}" for c in certs])
+
+            pdf_bytes = generate_pdf({
+                'header': header,
+                'about': about_text,
+                'skills': skills_text,
+                'experience': experience_text,
+                'projects': projects_text,
+                'education': education_text,
+                'achievements': achievements_text,
+            })
+        except Exception as e:
+            current_app.logger.warning("Error generating PDF from template: %s, falling back to text", e)
+            pdf_bytes = generate_pdf(optimized_cv)
+
         fs = gridfs.GridFS(current_app.mongo.db)
         filename = secure_filename(f"ATS_{current_user.get_id()}_{file.filename.rsplit('.',1)[0]}.pdf")
         file_id = fs.put(pdf_bytes.read(), filename=filename, content_type='application/pdf', user_id=str(current_user.get_id()))
@@ -81,6 +146,7 @@ def upload_cv():
             "file_id": str(file_id),
             "optimized_text": optimized_cv,
             "sections": sections,
+            "template_data": template_data,
             "suggestions": suggestions,
             "grouped_suggestions": grouped,
             "ats_score": ats_score,
