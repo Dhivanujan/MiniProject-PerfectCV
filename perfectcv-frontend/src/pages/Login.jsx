@@ -29,7 +29,7 @@ function Login({ setUser }) {
   e.preventDefault();
 
   try {
-    const res = await api.post("/api/login", formData, {
+    const res = await api.post("/auth/login", formData, {
       // 👇 This ensures Axios won't throw for non-2xx responses
       validateStatus: () => true,
     });
@@ -39,8 +39,28 @@ function Login({ setUser }) {
     if (res.status >= 200 && res.status < 300 && data.success) {
       // ✅ Login success
       setFlashMessages([{ type: "success", message: data.message }]);
-      setUser(data.user);
-      setTimeout(() => navigate("/dashboard"), 500);
+      // setUser if backend returned user object (may be undefined)
+      try {
+        setUser && setUser(data.user);
+      } catch (err) {
+        console.debug('setUser failed', err);
+      }
+
+      // Navigate to dashboard. Use client-side navigation first; if that
+      // doesn't work (e.g., protected route checks), fall back to full reload.
+      try {
+        navigate("/dashboard");
+        // As a safety, ensure a full page load happens shortly after so any
+        // session cookie set by the server is honored in the new page.
+        setTimeout(() => {
+          if (window.location.pathname !== "/dashboard") {
+            window.location.href = "/dashboard";
+          }
+        }, 400);
+      } catch (navErr) {
+        console.error('Navigation error after login:', navErr);
+        window.location.href = "/dashboard";
+      }
     } else {
       // ⚠️ Backend returned an error (e.g., wrong password)
       setFlashMessages([
@@ -66,18 +86,18 @@ function Login({ setUser }) {
     setForgotLoading(true);
 
     try {
-      const res = await api.post("/api/forgot-password", { email: forgotEmail }, {
+      const res = await api.post("/auth/forgot-password", { email: forgotEmail }, {
         validateStatus: () => true,
       });
 
-      const data = res.data;
+      const data = res.data || {};
 
-      if (data.status === "success") {
+      if (data.success) {
         setFlashMessages([{ type: "success", message: data.message }]);
         setShowForgotModal(false);
         setForgotEmail("");
       } else {
-        setFlashMessages([{ type: "danger", message: data.message }]);
+        setFlashMessages([{ type: "danger", message: data.message || "Unable to send reset link" }]);
       }
     } catch (error) {
       console.error("Forgot password error:", error);

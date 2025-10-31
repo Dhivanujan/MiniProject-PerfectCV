@@ -17,26 +17,48 @@ def login():
     if user and check_password_hash(user['password'], password):
         user_obj = User(user)
         login_user(user_obj)
-        return jsonify({'success': True, 'message': 'Logged in successfully'})
+        # Return a minimal user representation to the frontend
+        user_public = {
+            'id': str(user.get('_id')),
+            'email': user.get('email'),
+            'full_name': user.get('full_name'),
+            'username': user.get('username')
+        }
+        return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
     
     return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
 
 @auth.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
     password = data.get('password')
-    
-    if current_app.mongo.db.users.find_one({'email': email}):
-        return jsonify({'success': False, 'error': 'Email already registered'}), 400
-    
-    hashed_password = generate_password_hash(password)
-    user_id = current_app.mongo.db.users.insert_one({
-        'email': email,
-        'password': hashed_password
-    }).inserted_id
-    
-    return jsonify({'success': True, 'message': 'Registered successfully'})
+
+    if not email or not password:
+        return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+
+    try:
+        # Check existing user
+        if current_app.mongo.db.users.find_one({'email': email}):
+            return jsonify({'success': False, 'error': 'Email already registered'}), 400
+
+        hashed_password = generate_password_hash(password)
+
+        # Store any other provided fields (optional)
+        user_doc = {
+            'email': email,
+            'password': hashed_password,
+        }
+        # Add optional fields if present
+        for key in ('full_name', 'username', 'phone'):
+            if data.get(key):
+                user_doc[key] = data.get(key)
+
+        inserted = current_app.mongo.db.users.insert_one(user_doc)
+        return jsonify({'success': True, 'message': 'Registered successfully', 'user_id': str(inserted.inserted_id)})
+    except Exception as e:
+        current_app.logger.exception('Error during user registration')
+        return jsonify({'success': False, 'error': 'Server error during registration', 'details': str(e)}), 500
 
 @auth.route('/forgot-password', methods=['POST'])
 def forgot_password():

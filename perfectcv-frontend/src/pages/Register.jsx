@@ -31,14 +31,12 @@ function Register() {
     try {
       const { confirm_password, ...payload } = formData;
 
-      const res = await fetch("http://127.0.0.1:5000/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        credentials: "include",
+      // Use axios instance so baseURL and credentials are handled consistently
+      const res = await (await import("../api")).default.post("/auth/register", payload, {
+        validateStatus: () => true,
       });
 
-      const data = await res.json();
+      const data = res.data || {};
 
       if (data.success) {
         setFlashMessages([{ type: "success", message: data.message }]);
@@ -46,11 +44,13 @@ function Register() {
           window.location.href = "/login";
         }, 1500);
       } else {
-        setFlashMessages([{ type: "danger", message: data.message }]);
+        const details = data.details ? ` - ${data.details}` : "";
+        setFlashMessages([{ type: "danger", message: (data.message || "Registration failed") + details }]);
       }
 
       setTimeout(() => setFlashMessages([]), 3000);
     } catch (error) {
+      console.error("Register error:", error);
       setFlashMessages([{ type: "danger", message: "Server error" }]);
       setTimeout(() => setFlashMessages([]), 3000);
     }

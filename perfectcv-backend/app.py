@@ -209,8 +209,10 @@ def generate_pdf(text):
             pdf.multi_cell(get_width(indent), 8, f"{bullet} {safe_text}")
         else:
             pdf.multi_cell(get_width(), 8, line)
-    pdf_bytes = io.BytesIO()
-    pdf.output(pdf_bytes, "F")
+    # Use 'S' to get PDF as string and encode to bytes (avoid passing BytesIO to FPDF.output)
+    pdf_str = pdf.output(dest='S')
+    pdf_data = pdf_str.encode('latin-1')
+    pdf_bytes = io.BytesIO(pdf_data)
     pdf_bytes.seek(0)
     return pdf_bytes
 

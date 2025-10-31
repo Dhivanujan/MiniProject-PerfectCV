@@ -9,27 +9,17 @@ function ForgotPassword() {
     e.preventDefault();
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/api/forgot_password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          frontend_url: window.location.origin + '/reset-password',
-        }),
-      });
+      // Use axios instance at src/api.js so baseURL/credentials are consistent
+      const api = (await import("../api")).default;
+      const res = await api.post(
+        "/auth/forgot-password",
+        { email, frontend_url: window.location.origin + "/reset-password" },
+        { validateStatus: () => true }
+      );
 
-      let data = null;
-      try {
-        data = await res.json();
-      } catch (err) {
-        const text = await res.text();
-        setFlashMessage({ type: "danger", message: text || "Failed to send reset link." });
-        setTimeout(() => setFlashMessage(null), 4000);
-        return;
-      }
+      const data = res.data || {};
 
-      if (res.ok && data.success) {
-        // show success; in dev, backend may include reset link in response
+      if (res.status >= 200 && res.status < 300 && data.success) {
         const msg = data.message || "Password reset link sent to your email.";
         const linkDebug = data.reset_link ? `\n\nDEV RESET LINK: ${data.reset_link}` : "";
         setFlashMessage({ type: "success", message: msg + linkDebug });
