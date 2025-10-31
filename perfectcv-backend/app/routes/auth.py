@@ -4,6 +4,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.models.user import User
 from app.utils.email_utils import send_reset_email
 from itsdangerous import URLSafeTimedSerializer
+from flask import url_for
 
 auth = Blueprint('auth', __name__)
 
@@ -71,7 +72,9 @@ def forgot_password():
     
     s = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
     token = s.dumps(email, salt='password-reset-salt')
-    reset_url = f"{request.host_url}reset-password/{token}"
+    # Construct link to frontend reset page (frontend will POST the new password to backend)
+    frontend_base = current_app.config.get('FRONTEND_URL', request.host_url.rstrip('/'))
+    reset_url = f"{frontend_base.rstrip('/')}/reset-password/{token}"
     
     if send_reset_email(email, reset_url):
         return jsonify({'success': True, 'message': 'Password reset email sent'})
