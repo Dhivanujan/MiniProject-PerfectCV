@@ -142,28 +142,14 @@ def ask():
         return jsonify({"success": False, 
                        "message": "Please upload a CV first to enable Q&A"}), 400
     
-    # Try to use AI model; if unavailable or it fails, fall back to rule-based answer
-    configured = setup_gemini()
-    model_name = get_valid_model() if configured else None
-
-    prompt = f"""You are an AI assistant analyzing a CV/resume. You have access to the CV content and will answer questions about it.
-
-CV Content:
-{cv_text}
-
-Question: {question}
-
-Provide a helpful, accurate response based only on the information in the CV. If asked about information not present in the CV, politely indicate that it's not mentioned. Keep responses concise but informative."""
+    # Use improved CV analysis with AI model; fall back to rule-based if needed
+    from app.utils.ai_utils import analyze_cv_content
 
     answer = None
-    if model_name:
-        try:
-            model = genai.GenerativeModel(model_name)
-            # use list form per other usages in the codebase
-            response = model.generate_content([prompt])
-            answer = getattr(response, "text", None) or str(response)
-        except Exception:
-            current_app.logger.exception("AI model failed; falling back to rule-based answer")
+    try:
+        answer = analyze_cv_content(cv_text, question)
+    except Exception:
+        current_app.logger.exception("AI analysis failed; falling back to rule-based answer")
 
     # Fallback when AI not configured or failed
     if not answer:

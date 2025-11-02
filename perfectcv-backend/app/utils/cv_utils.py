@@ -39,18 +39,69 @@ DOMAIN_KEYWORDS = {
 }
 
 
+def normalize_text(text):
+    """Clean and normalize text while preserving meaningful spacing."""
+    # Replace multiple spaces with single space
+    text = re.sub(r'\s+', ' ', text)
+    # Preserve newlines that likely indicate sections or list items
+    text = re.sub(r'([.!?])\s*\n\s*([A-Z])', r'\1\n\n\2', text)
+    # Ensure list items and bullets start on new lines
+    text = re.sub(r'\s*([•\-\*]|\d+\.)\s*', r'\n\1 ', text)
+    # Fix collapsed words (missing spaces after punctuation)
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    text = re.sub(r'([.!?])([A-Za-z])', r'\1 \2', text)
+    # Remove repeated newlines while preserving paragraph breaks
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 def extract_text_from_pdf(file_stream):
+    """Extract text from PDF while preserving structure and formatting."""
     try:
         reader = PdfReader(file_stream)
-        text = ""
+        sections = []
+        
         for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-        return text
+            try:
+                page_text = page.extract_text()
+                if not page_text:
+                    continue
+                    
+                # Try to extract font information for better section detection
+                sections_in_page = []
+                current_section = []
+                
+                for line in page_text.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    # Likely section header if all caps or ends with colon
+                    if line.isupper() or line.endswith(':'):
+                        if current_section:
+                            sections_in_page.append('\n'.join(current_section))
+                            current_section = []
+                        current_section.append(line)
+                    else:
+                        current_section.append(line)
+                
+                if current_section:
+                    sections_in_page.append('\n'.join(current_section))
+                
+                # Join sections with double newline for clear separation
+                sections.extend(sections_in_page)
+                
+            except Exception as page_error:
+                logger.warning(f"Error extracting text from page: {page_error}")
+                # Continue to next page on error
+                continue
+        
+        # Join all sections and normalize the text
+        text = '\n\n'.join(sections)
+        return normalize_text(text)
+        
     except Exception as e:
         logger.exception("Failed to extract text from PDF: %s", e)
-        # rewind if possible
+        # Attempt to rewind the stream
         try:
             file_stream.seek(0)
         except Exception:
