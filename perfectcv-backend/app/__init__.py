@@ -41,7 +41,8 @@ def create_app(config_class=Config):
     
     # Register blueprints
     app.register_blueprint(auth, url_prefix='/auth')
-    app.register_blueprint(chatbot, url_prefix='/api')
+    # Register chatbot under /api/chatbot for clearer routing
+    app.register_blueprint(chatbot, url_prefix='/api/chatbot')
     # contact form endpoint
     app.register_blueprint(contact_bp, url_prefix='/api')
     # file management routes

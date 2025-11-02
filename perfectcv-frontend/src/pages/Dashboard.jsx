@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
-import { FaUpload, FaDownload, FaTrash, FaFileAlt, FaSearch, FaCopy, FaSpinner } from "react-icons/fa";
+import {
+  FaUpload,
+  FaDownload,
+  FaTrash,
+  FaFileAlt,
+  FaSearch,
+  FaCopy,
+  FaSpinner,
+  FaBriefcase,
+  FaChevronDown,
+} from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 
 export default function Dashboard({ user }) {
@@ -81,7 +91,7 @@ export default function Dashboard({ user }) {
     e.preventDefault();
     e.stopPropagation();
     // indicate drop is allowed
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = "copy";
     setDragActive(true);
   };
 
@@ -89,7 +99,11 @@ export default function Dashboard({ user }) {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (
+      e.dataTransfer &&
+      e.dataTransfer.files &&
+      e.dataTransfer.files.length > 0
+    ) {
       onFileSelected(e.dataTransfer.files[0]);
       e.dataTransfer.clearData();
     }
@@ -101,7 +115,7 @@ export default function Dashboard({ user }) {
     setLoading(true);
     try {
       const formData = new FormData();
-  formData.append("cv_file", selectedFile);
+      formData.append("cv_file", selectedFile);
       if (jobDomain) {
         formData.append("job_domain", jobDomain);
       }
@@ -118,7 +132,11 @@ export default function Dashboard({ user }) {
       setFoundKeywords(res.data.found_keywords || []);
       setFiles([
         ...files,
-        { _id: res.data.file_id, filename: selectedFile.name, uploadedAt: new Date() },
+        {
+          _id: res.data.file_id,
+          filename: selectedFile.name,
+          uploadedAt: new Date(),
+        },
       ]);
       setLastUploadedFileId(res.data.file_id);
       setLastUploadedFilename(selectedFile.name);
@@ -134,16 +152,18 @@ export default function Dashboard({ user }) {
   const copyOptimized = async () => {
     try {
       await navigator.clipboard.writeText(optimizedCV);
-      alert('Optimized CV copied to clipboard');
+      alert("Optimized CV copied to clipboard");
     } catch (e) {
       console.error(e);
-      alert('Copy failed');
+      alert("Copy failed");
     }
   };
 
   const handleDownload = async (fileId, filename) => {
     try {
-      const res = await api.get(`/api/download/${fileId}`, { responseType: "blob" });
+      const res = await api.get(`/api/download/${fileId}`, {
+        responseType: "blob",
+      });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -197,7 +217,9 @@ export default function Dashboard({ user }) {
         text-white pt-24 pb-32 relative z-0 -mt-16 transition-colors duration-500"
       >
         <div className="max-w-6xl mx-auto text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">PerfectCV Dashboard</h1>
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            PerfectCV Dashboard
+          </h1>
           <p className="text-lg md:text-xl mb-6">
             Upload, optimize, and enhance your CV to impress recruiters!
           </p>
@@ -232,18 +254,26 @@ export default function Dashboard({ user }) {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`w-full md:w-auto border-dashed border-2 
-              ${dragActive ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'border-gray-300 dark:border-gray-600'} p-6 rounded-lg text-center 
+              ${
+                dragActive
+                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30"
+                  : "border-gray-300 dark:border-gray-600"
+              } p-6 rounded-lg text-center 
               cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400 
               text-gray-600 dark:text-gray-300 transition-all`}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { fileInputRef.current?.click(); } }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  fileInputRef.current?.click();
+                }
+              }}
             >
               {selectedFile
                 ? selectedFile.name
                 : dragActive
-                ? 'Drop your CV here to upload'
-                : 'Drag & drop or click to select a CV (.pdf, .doc, .docx)'}
+                ? "Drop your CV here to upload"
+                : "Drag & drop or click to select a CV (.pdf, .doc, .docx)"}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -253,20 +283,37 @@ export default function Dashboard({ user }) {
                 aria-label="Select CV file"
               />
             </label>
-            <div className="w-full md:w-48">
-              <label className="text-sm text-gray-600 dark:text-gray-300 mb-1 block">Target job domain</label>
-              <select
-                value={jobDomain}
-                onChange={(e) => setJobDomain(e.target.value)}
-                className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#111827] text-gray-700 dark:text-gray-200"
-              >
-                <option value="">General</option>
-                <option value="software">Software / Engineering</option>
-                <option value="data_science">Data Science / ML</option>
-                <option value="product">Product Management</option>
-                <option value="design">Design / UX</option>
-                <option value="marketing">Marketing / Growth</option>
-              </select>
+            <div className="w-full md:w-60">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <FaBriefcase className="w-4 h-4 text-blue-500" />
+                Target Job Domain
+              </label>
+
+              <div className="relative">
+                <select
+                  value={jobDomain}
+                  onChange={(e) => setJobDomain(e.target.value)}
+                  className="w-full appearance-none p-3 rounded-xl 
+        border border-gray-300 dark:border-gray-700
+        bg-gradient-to-r from-white to-gray-50 dark:from-[#1f2937] dark:to-[#111827]
+        text-gray-800 dark:text-gray-200
+        focus:outline-none focus:ring-2 focus:ring-blue-500 
+        focus:border-transparent transition-all duration-200
+        hover:shadow-md dark:hover:shadow-lg cursor-pointer"
+                >
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="">🌐 General</option>
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="software">💻 Software / Engineering</option>
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="data_science">📊 Data Science / ML</option>
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="product">📈 Product Management</option>
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="design">🎨 Design / UX</option>
+                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="marketing">🚀 Marketing / Growth</option>
+                </select>
+
+                {/* Custom dropdown arrow */}
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
+                  <FaChevronDown className="w-4 h-4" />
+                </div>
+              </div>
             </div>
 
             <button
@@ -276,7 +323,9 @@ export default function Dashboard({ user }) {
               hover:bg-indigo-700 dark:hover:bg-indigo-800 transition flex items-center gap-2"
             >
               {loading ? (
-                <><FaSpinner className="animate-spin mr-2" /> Uploading...</>
+                <>
+                  <FaSpinner className="animate-spin mr-2" /> Uploading...
+                </>
               ) : (
                 "Upload & Optimize"
               )}
@@ -296,33 +345,45 @@ export default function Dashboard({ user }) {
                   <h3 className="text-xl font-semibold mb-2 text-green-800 dark:text-green-400 flex items-center gap-2">
                     <FaFileAlt /> Optimized CV
                   </h3>
-                  <pre className="whitespace-pre-wrap max-h-72 overflow-auto">{optimizedCV}</pre>
+                  <pre className="whitespace-pre-wrap max-h-72 overflow-auto">
+                    {optimizedCV}
+                  </pre>
                 </div>
-                  <div className="w-48 text-right">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">ATS Score</p>
+                <div className="w-48 text-right">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    ATS Score
+                  </p>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 mt-1">
                     <div
-                      className={`bg-green-600 h-4 rounded-full`} 
-                      style={{ width: `${Math.min(100, Math.max(0, atsScore || 0))}%` }}
+                      className={`bg-green-600 h-4 rounded-full`}
+                      style={{
+                        width: `${Math.min(100, Math.max(0, atsScore || 0))}%`,
+                      }}
                     />
                   </div>
                   <p className="mt-2 font-semibold">{atsScore ?? "N/A"}/100</p>
                   {recommendedKeywords.length > 0 && (
                     <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
                       <p className="font-semibold">Recommended keywords</p>
-                      <p>{recommendedKeywords.slice(0, 8).join(', ')}</p>
+                      <p>{recommendedKeywords.slice(0, 8).join(", ")}</p>
                     </div>
                   )}
-                    {lastUploadedFileId && (
-                      <div className="mt-4">
-                        <button
-                          onClick={() => handleDownload(lastUploadedFileId, lastUploadedFilename || 'optimized_cv.pdf')}
-                          className="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg w-full"
-                        >
-                          <FaDownload className="inline mr-2" /> Download Optimized CV (PDF)
-                        </button>
-                      </div>
-                    )}
+                  {lastUploadedFileId && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() =>
+                          handleDownload(
+                            lastUploadedFileId,
+                            lastUploadedFilename || "optimized_cv.pdf"
+                          )
+                        }
+                        className="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg w-full"
+                      >
+                        <FaDownload className="inline mr-2" /> Download
+                        Optimized CV (PDF)
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -330,19 +391,27 @@ export default function Dashboard({ user }) {
             {/* Structured sections preview */}
             {sections && Object.keys(sections).length > 0 && (
               <div className="grid md:grid-cols-2 gap-4 mb-4">
-                {Object.entries(sections).map(([k, v]) => (
+                {Object.entries(sections).map(([k, v]) =>
                   v ? (
-                    <div key={k} className="bg-white dark:bg-[#111827] p-4 rounded shadow">
-                      <h4 className="font-semibold text-indigo-600 mb-2 capitalize">{k.replace('_',' ')}</h4>
-                      <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{v}</div>
+                    <div
+                      key={k}
+                      className="bg-white dark:bg-[#111827] p-4 rounded shadow"
+                    >
+                      <h4 className="font-semibold text-indigo-600 mb-2 capitalize">
+                        {k.replace("_", " ")}
+                      </h4>
+                      <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
+                        {v}
+                      </div>
                     </div>
                   ) : null
-                ))}
+                )}
               </div>
             )}
 
             {/* Suggestions list (grouped) */}
-            {(Object.keys(groupedSuggestions).length > 0 || (suggestions && suggestions.length > 0)) && (
+            {(Object.keys(groupedSuggestions).length > 0 ||
+              (suggestions && suggestions.length > 0)) && (
               <div
                 className="bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-600 p-4 
                 rounded-xl shadow-md text-gray-800 dark:text-gray-200"
@@ -355,10 +424,14 @@ export default function Dashboard({ user }) {
                   <div className="space-y-3">
                     {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
                       <div key={cat}>
-                        <h4 className="font-semibold capitalize text-indigo-600">{cat.replace('_', ' ')}</h4>
+                        <h4 className="font-semibold capitalize text-indigo-600">
+                          {cat.replace("_", " ")}
+                        </h4>
                         <ul className="list-disc pl-6 mt-1">
                           {msgs.map((m, i) => (
-                            <li key={i} className="text-sm">{m}</li>
+                            <li key={i} className="text-sm">
+                              {m}
+                            </li>
                           ))}
                         </ul>
                       </div>
@@ -368,7 +441,10 @@ export default function Dashboard({ user }) {
                   <ul className="list-disc pl-6">
                     {suggestions.map((s, idx) => (
                       <li key={idx} className="mb-2">
-                        <strong className="capitalize">{s.category || 'General'}:</strong> {s.message || s}
+                        <strong className="capitalize">
+                          {s.category || "General"}:
+                        </strong>{" "}
+                        {s.message || s}
                       </li>
                     ))}
                   </ul>
@@ -421,9 +497,17 @@ export default function Dashboard({ user }) {
                   flex flex-col justify-between text-gray-800 dark:text-gray-200"
                 >
                   <div>
-                    <h3 className="text-lg font-semibold mb-1">{file.filename}</h3>
+                    <h3 className="text-lg font-semibold mb-1">
+                      {file.filename}
+                    </h3>
                     <p className="text-gray-500 dark:text-gray-400 text-sm">
-                      Uploaded by {currentUser?.full_name || user?.full_name || currentUser?.username || user?.username || user?.email || "You"}
+                      Uploaded by{" "}
+                      {currentUser?.full_name ||
+                        user?.full_name ||
+                        currentUser?.username ||
+                        user?.username ||
+                        user?.email ||
+                        "You"}
                     </p>
                   </div>
                   <div className="flex gap-2 mt-4">
