@@ -1,8 +1,11 @@
 // src/pages/Register.jsx
 import React, { useState } from "react";
-import LeftImage from "../assets/CV.png";
+import { useNavigate, Link } from "react-router-dom";
+import LeftImage from "../assets/CV2.jpeg";
+import { motion } from "framer-motion";
 
 function Register() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
@@ -13,92 +16,108 @@ function Register() {
   });
 
   const [flashMessages, setFlashMessages] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Handle input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Display flash message
+  const showMessage = (type, message) => {
+    setFlashMessages([{ type, message }]);
+    setTimeout(() => setFlashMessages([]), 3000);
+  };
+
+  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (formData.password !== formData.confirm_password) {
-      setFlashMessages([{ type: "danger", message: "Passwords do not match" }]);
-      setTimeout(() => setFlashMessages([]), 3000);
+      showMessage("danger", "Passwords do not match");
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const { confirm_password, ...payload } = formData;
+      const { default: api } = await import("../api");
 
-      // Use axios instance so baseURL and credentials are handled consistently
-      const res = await (await import("../api")).default.post("/auth/register", payload, {
+      const res = await api.post("/auth/register", payload, {
         validateStatus: () => true,
       });
 
       const data = res.data || {};
-
       if (data.success) {
-        setFlashMessages([{ type: "success", message: data.message }]);
-        setTimeout(() => {
-          window.location.href = "/login";
-        }, 1500);
+        showMessage("success", data.message);
+        setTimeout(() => navigate("/login"), 1500);
       } else {
         const details = data.details ? ` - ${data.details}` : "";
-        setFlashMessages([{ type: "danger", message: (data.message || "Registration failed") + details }]);
+        showMessage(
+          "danger",
+          (data.message || "Registration failed") + details
+        );
       }
-
-      setTimeout(() => setFlashMessages([]), 3000);
-    } catch (error) {
-      console.error("Register error:", error);
-      setFlashMessages([{ type: "danger", message: "Server error" }]);
-      setTimeout(() => setFlashMessages([]), 3000);
+    } catch (err) {
+      console.error("Register error:", err);
+      showMessage("danger", "Server error. Please try again later.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  const inputFields = [
+    { name: "full_name", placeholder: "Full Name", type: "text" },
+    { name: "username", placeholder: "Username", type: "text" },
+    { name: "email", placeholder: "Email Address", type: "email" },
+    { name: "phone", placeholder: "Phone Number", type: "text" },
+    { name: "password", placeholder: "Password", type: "password" },
+    { name: "confirm_password", placeholder: "Confirm Password", type: "password" },
+  ];
+
   return (
     <div
-      className="flex h-screen w-full 
-      bg-gradient-to-b from-[#F5F7FF] via-[#FFFBEA] to-[#E6EFFF]
+      className="flex h-screen w-full
+      bg-gradient-to-br from-[#F5F7FF] via-[#FFFBEA] to-[#E6EFFF]
       dark:from-[#0D1117] dark:via-[#161B22] dark:to-[#1E2329]
       transition-colors duration-500"
     >
-      {/* Left Side Image (hidden on mobile) */}
-      <div className="w-full hidden md:inline-block">
-        <img className="h-full w-full object-cover" src={LeftImage} alt="leftSideImage" />
-      </div>
-
-      {/* Right Side Form */}
-      <div className="w-full flex flex-col items-center justify-center">
-        <form
+      {/* Left Section - Form */}
+      <div className="flex w-full md:w-1/2 justify-center items-center px-6 md:px-12">
+        <motion.form
           onSubmit={handleSubmit}
-          className="md:w-96 w-80 flex flex-col items-center justify-center 
-          bg-white dark:bg-[#1E1E2F] p-8 rounded-xl shadow-lg 
-          transition-all duration-500"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="w-full max-w-md bg-white dark:bg-[#1E1E2F]
+          rounded-2xl shadow-lg hover:shadow-2xl transition-all
+          p-8 flex flex-col items-center"
         >
-          <h2 className="text-4xl font-bold text-indigo-600 dark:text-indigo-400">Sign Up</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 mb-4">
-            Create your account to get started
+          <h2 className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
+            Create Account
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-3 mb-6 text-center">
+            Join <span className="font-semibold text-indigo-500">PerfectCV</span> and start crafting your perfect resume.
           </p>
 
-          {/* Flash messages */}
+          {/* Flash Messages */}
           {flashMessages.length > 0 && (
-            <div id="flash-messages" className="flex flex-col gap-2 w-full mb-4">
+            <div className="flex flex-col w-full mb-4 gap-2">
               {flashMessages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex items-center justify-between w-full h-10 shadow rounded-sm px-2 text-sm
+                  className={`flex justify-between items-center px-4 py-2 rounded-md text-sm
                     ${
                       msg.type === "success"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100"
+                        ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-100"
                         : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100"
                     }`}
                 >
-                  <p>{msg.message}</p>
+                  <span>{msg.message}</span>
                   <button
                     type="button"
-                    aria-label="close"
-                    className="active:scale-90 transition-all"
+                    className="font-bold hover:scale-110 transition-transform"
                     onClick={() => setFlashMessages([])}
                   >
                     ✕
@@ -108,50 +127,67 @@ function Register() {
             </div>
           )}
 
-          {/* Input fields */}
-          {[
-            { name: "full_name", placeholder: "Full Name", type: "text" },
-            { name: "username", placeholder: "Username", type: "text" },
-            { name: "email", placeholder: "Email Address", type: "email" },
-            { name: "phone", placeholder: "Phone Number", type: "text" },
-            { name: "password", placeholder: "Password", type: "password" },
-            { name: "confirm_password", placeholder: "Confirm Password", type: "password" },
-          ].map((field) => (
+          {/* Input Fields */}
+          {inputFields.map(({ name, placeholder, type }) => (
             <div
-              key={field.name}
-              className="flex items-center w-full bg-transparent border border-gray-300 dark:border-gray-600
-              h-12 rounded-full overflow-hidden pl-6 mt-4 transition-all"
+              key={name}
+              className="w-full mt-3 h-12 border border-gray-300 dark:border-gray-600 
+              rounded-full flex items-center px-5 transition-all 
+              focus-within:ring-2 focus-within:ring-indigo-400 dark:focus-within:ring-indigo-500"
             >
               <input
-                placeholder={field.placeholder}
-                className="bg-transparent text-gray-700 dark:text-gray-200 placeholder-gray-400 
-                dark:placeholder-gray-500 outline-none text-sm w-full h-full"
-                type={field.type}
-                name={field.name}
-                value={formData[field.name]}
+                type={type}
+                name={name}
+                placeholder={placeholder}
+                value={formData[name]}
                 onChange={handleChange}
                 required
+                className="w-full bg-transparent outline-none text-gray-700 dark:text-gray-200 
+                placeholder-gray-400 dark:placeholder-gray-500 text-sm"
               />
             </div>
           ))}
 
+          {/* Submit Button */}
           <button
             type="submit"
-            className="mt-8 w-full h-11 rounded-full text-white 
-            bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 
-            font-semibold transition-all"
+            disabled={isSubmitting}
+            className={`mt-8 w-full h-11 rounded-full font-semibold text-white transition-all 
+              ${
+                isSubmitting
+                  ? "bg-indigo-300 cursor-not-allowed"
+                  : "bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+              }`}
           >
-            Sign Up
+            {isSubmitting ? "Creating Account..." : "Sign Up"}
           </button>
 
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-4">
+          {/* Footer Text */}
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-5">
             Already have an account?{" "}
-            <a className="text-indigo-500 dark:text-indigo-400 hover:underline" href="/login">
+            <Link
+              to="/login"
+              className="text-indigo-500 dark:text-indigo-400 hover:underline font-medium"
+            >
               Log In
-            </a>
+            </Link>
           </p>
-        </form>
+        </motion.form>
       </div>
+
+      {/* Right Section - Animated Image */}
+      <motion.div
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8 }}
+              className="hidden md:block w-1/2"
+            >
+              <img
+                src={LeftImage}
+                alt="Registration Illustration"
+                className="h-full w-full object-cover"
+              />
+            </motion.div>
     </div>
   );
 }
