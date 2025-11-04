@@ -1,11 +1,12 @@
 // src/components/Contact.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { FaEnvelope, FaPhoneAlt, FaMapMarkerAlt } from "react-icons/fa";
 
 export default function Contact() {
   const [formData, setFormData] = useState({ name: "", email: "", message: "" });
-  const [status, setStatus] = useState("");
+  // alert: { type: 'success' | 'danger', message: string }
+  const [alert, setAlert] = useState(null);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -20,12 +21,19 @@ export default function Contact() {
         body: JSON.stringify(formData),
       });
       const data = await response.json();
-      setStatus(data.status || "✅ Message sent successfully!");
+      setAlert({ type: "success", message: data.status || "✅ Message sent successfully!" });
       setFormData({ name: "", email: "", message: "" });
     } catch (error) {
-      setStatus("❌ Error sending message. Please try again.");
+      setAlert({ type: "danger", message: "❌ Error sending message. Please try again." });
     }
   };
+
+  // auto-close alert after 4s and cleanup
+  useEffect(() => {
+    if (!alert) return;
+    const t = setTimeout(() => setAlert(null), 4000);
+    return () => clearTimeout(t);
+  }, [alert]);
 
   return (
     <section
@@ -109,10 +117,25 @@ export default function Contact() {
             Send Message
           </button>
 
-          {status && (
-            <p className="text-center text-sm mt-3 text-gray-700 dark:text-gray-300">
-              {status}
-            </p>
+          {alert && (
+            <div
+              role="alert"
+              className={`mt-3 p-3 rounded text-sm text-center font-medium transition-colors duration-300 ${
+                alert.type === "success"
+                  ? "text-blue-800 bg-blue-100 dark:text-blue-300 dark:bg-blue-900"
+                  : "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900"
+              } relative`}
+            >
+              <span>{alert.message}</span>
+              <button
+                type="button"
+                aria-label="close"
+                onClick={() => setAlert(null)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-semibold opacity-80 hover:opacity-100"
+              >
+                ✕
+              </button>
+            </div>
           )}
         </motion.form>
 

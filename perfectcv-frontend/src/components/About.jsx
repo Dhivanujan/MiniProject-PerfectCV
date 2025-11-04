@@ -1,89 +1,66 @@
+// src/components/HowItWorks.jsx
 import React from "react";
 import { motion } from "framer-motion";
+import { FaUpload, FaBrain, FaDownload } from "react-icons/fa";
 
-function About() {
+const steps = [
+  {
+    icon: <FaUpload />,
+    title: "Upload or Enter Details",
+    desc: "Begin by entering your professional details or uploading your existing resume for analysis.",
+  },
+  {
+    icon: <FaBrain />,
+    title: "AI Enhances Your Resume",
+    desc: "Our advanced AI refines your content and structure, ensuring it’s impactful and ATS-friendly.",
+  },
+  {
+    icon: <FaDownload />,
+    title: "Download Your Perfect CV",
+    desc: "Instantly export your professionally optimized resume in a clean, ready-to-use PDF format.",
+  },
+];
+
+export default function HowItWorks() {
   return (
     <section
-      id="about"
-      className="fade-in mt-20 px-6 sm:px-10 max-w-6xl mx-auto transition-colors duration-500"
+      id="how-it-works"
+      className="mt-20 px-6 sm:px-10 max-w-6xl mx-auto text-center"
     >
-      <div className="text-center">
-        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">
-          About <span className="text-indigo-600 dark:text-indigo-400">PerfectCV</span>
-        </h2>
-        <motion.p
-          whileHover={{
-            scale: 1.02,
-            y: -2,
-            boxShadow: "0 8px 25px rgba(99, 102, 241, 0.15)",
-          }}
-          transition={{
-            duration: 0.2,
-            ease: "easeInOut"
-          }}
-          className="text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed text-base sm:text-lg p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-xl transition-shadow duration-300">
-          <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-            PerfectCV
-          </span>{" "}
-          is an AI-powered resume builder designed to help job seekers create
-          professional, ATS-friendly resumes in just minutes. Whether you are a
-          student, fresher, or experienced professional, our platform gives you
-          personalized suggestions, modern templates, and instant formatting
-          guidance to ensure your CV stands out to recruiters.
-          <br />
-          <br />
-          Additionally, our{" "}
-          <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-            AI Chatbot
-          </span>{" "}
-          feature allows users to get real-time guidance, tips, and feedback on
-          their CVs, making the resume-building process interactive, intelligent,
-          and highly personalized.
-        </motion.p>
-      </div>
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-12">
+        How It <span className="text-indigo-600">Works</span>
+      </h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mt-12">
-        <AboutCard
-          title="🎯 Tailored for You"
-          desc="Get content suggestions customized to your skills, experience, and career goals."
-        />
-        <AboutCard
-          title="⚡ Easy & Fast"
-          desc="Build a polished CV within minutes, no design skills required."
-        />
-        <AboutCard
-          title="🌍 Career-Ready"
-          desc="Download and share your CV in professional PDF format that recruiters love."
-        />
-        <AboutCard
-          title="🤖 AI Chatbot Support"
-          desc="Interact with our AI chatbot to get real-time feedback, resume tips, and personalized guidance."
-        />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+        {steps.map((step, i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{
+              delay: i * 0.1,
+              duration: 0.4,
+              ease: "easeOut",
+            }}
+            className="group p-6 bg-white dark:bg-gray-800 rounded-xl 
+                       border border-gray-100 dark:border-gray-700 shadow-sm
+                       hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-300/40 
+                       dark:hover:shadow-indigo-900/40 
+                       transition-shadow duration-300 ease-in-out"
+          >
+            <div className="text-4xl text-indigo-600 mb-4 flex justify-center transition-transform duration-300 group-hover:scale-105">
+              {step.icon}
+            </div>
+            <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 mb-2 group-hover:text-indigo-600 transition-colors duration-300">
+              {step.title}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+              {step.desc}
+            </p>
+          </motion.div>
+        ))}
       </div>
     </section>
   );
 }
-
-function AboutCard({ title, desc }) {
-  return (
-    <motion.div
-      whileHover={{
-        scale: 1.05,
-        y: -3,
-        boxShadow: "0 8px 25px rgba(99, 102, 241, 0.25)",
-      }}
-      transition={{
-        duration: 0.15,
-        ease: "easeInOut"
-      }}
-      className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md hover:shadow-xl transition-shadow duration-300"
-    >
-      <h3 className="font-semibold text-lg mb-3 text-indigo-600 dark:text-indigo-400">
-        {title}
-      </h3>
-      <p className="text-gray-600 dark:text-gray-300 text-sm">{desc}</p>
-    </motion.div>
-  );
-}
-
-export default About;

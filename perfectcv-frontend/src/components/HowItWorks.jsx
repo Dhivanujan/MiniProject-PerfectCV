@@ -7,17 +7,17 @@ const steps = [
   {
     icon: <FaUpload />,
     title: "Upload or Enter Details",
-    desc: "Start by entering your experience or uploading an existing resume.",
+    desc: "Begin by entering your professional details or uploading your existing resume for analysis.",
   },
   {
     icon: <FaBrain />,
-    title: "AI Improves Your Resume",
-    desc: "Our AI analyzes your CV and provides intelligent content and format suggestions.",
+    title: "AI Enhances Your Resume",
+    desc: "Our advanced AI refines your content and structure, ensuring it’s impactful and ATS-friendly.",
   },
   {
     icon: <FaDownload />,
     title: "Download Your Perfect CV",
-    desc: "Instantly download your ATS-optimized resume in PDF format.",
+    desc: "Instantly export your professionally optimized resume in a clean, ready-to-use PDF format.",
   },
 ];
 
@@ -25,9 +25,9 @@ export default function HowItWorks() {
   return (
     <section
       id="how-it-works"
-      className="fade-in mt-20 px-6 sm:px-10 max-w-6xl mx-auto text-center"
+      className="mt-20 px-6 sm:px-10 max-w-6xl mx-auto text-center"
     >
-      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-10">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-12">
         How It <span className="text-indigo-600">Works</span>
       </h2>
 
@@ -35,28 +35,27 @@ export default function HowItWorks() {
         {steps.map((step, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
             transition={{
               delay: i * 0.1,
               duration: 0.4,
               ease: "easeOut",
             }}
-            whileHover={{
-              scale: 1.05,
-              y: -3,
-              boxShadow: "0 8px 25px rgba(99, 102, 241, 0.25)",
-              transition: { duration: 0.15, ease: "easeInOut" },
-            }}
-            className="group p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md cursor-pointer border border-transparent hover:border-indigo-500 transition-all duration-150"
+            className="group p-6 bg-white dark:bg-gray-800 rounded-xl 
+                       border border-gray-100 dark:border-gray-700 shadow-sm
+                       transition-all duration-300 ease-in-out
+                       hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-300/40 
+                       dark:hover:shadow-indigo-900/40"
           >
-            <div className="text-4xl text-indigo-600 mb-4 flex justify-center transition-all duration-150 group-hover:text-indigo-500 group-hover:drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]">
+            <div className="text-4xl text-indigo-600 mb-4 flex justify-center transition-transform duration-300 group-hover:scale-110">
               {step.icon}
             </div>
-            <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 mb-2 group-hover:text-indigo-600 transition-colors duration-150">
+            <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100 mb-2 group-hover:text-indigo-600 transition-colors duration-300">
               {step.title}
             </h3>
-            <p className="text-gray-600 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300 transition-colors duration-150">
+            <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
               {step.desc}
             </p>
           </motion.div>
