@@ -1,82 +1,86 @@
 import React, { useState } from "react";
-import forgotIllustration from "../assets/forgot-illustration.jpeg"; // Replace with your SVG
+import { useNavigate } from "react-router-dom";
+import api from "../api";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [flashMessage, setFlashMessage] = useState(null);
+  const [step, setStep] = useState("email"); // email -> verify -> reset
+  const [resetToken, setResetToken] = useState("");
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+    
     try {
-      // Use axios instance at src/api.js so baseURL/credentials are consistent
-      const api = (await import("../api")).default;
-      const res = await api.post(
-        "/auth/forgot-password",
-        { email, frontend_url: window.location.origin + "/reset-password" },
-        { validateStatus: () => true }
-      );
+      let res;
+      
+      if (step === "email") {
+        // Step 1: Send OTP to email
+        res = await api.post("/auth/forgot-password", { email });
+        if (res.data.success) {
+          setFlashMessage({
+            type: "success",
+            message: "A 6-digit code has been sent to your email",
+          });
+          setStep("verify");
+        }
+      } 
+      else if (step === "verify") {
+        // Step 2: Verify OTP
+        res = await api.post("/auth/verify-reset-code", { email, code });
+        if (res.data.success) {
+          setResetToken(res.data.reset_token);
+          setFlashMessage({
+            type: "success",
+            message: "Email verified successfully. Please enter your new password.",
+          });
+          setStep("reset");
+        }
+      } 
+      else if (step === "reset") {
+        // Step 3: Reset Password
+        if (newPassword !== confirmPassword) {
+          setFlashMessage({
+            type: "danger",
+            message: "Passwords do not match!",
+          });
+          return;
+        }
+        if (newPassword.length < 6) {
+          setFlashMessage({
+            type: "danger",
+            message: "Password must be at least 6 characters long",
+          });
+          return;
+        }
 
-      const data = res.data || {};
+        res = await api.post("/auth/reset-password", { 
+          reset_token: resetToken,
+          password: newPassword
+        });
 
-      if (res.status >= 200 && res.status < 300 && data.success) {
-        const msg = data.message || "Password reset link sent to your email.";
-        const linkDebug = data.reset_link ? `\n\nDEV RESET LINK: ${data.reset_link}` : "";
-        setFlashMessage({ type: "success", message: msg + linkDebug });
-      } else {
-        setFlashMessage({ type: "danger", message: data.message || data.error || "Failed to send reset link." });
+        if (res.data.success) {
+          setFlashMessage({
+            type: "success",
+            message: "Password reset successful! Redirecting to login...",
+          });
+          setTimeout(() => navigate("/login"), 2000);
+        }
       }
     } catch (error) {
-      setFlashMessage({ type: "danger", message: "Server error." });
+      const message = error.response?.data?.error || error.message || "An error occurred";
+      setFlashMessage({ type: "danger", message });
     }
-
-    setTimeout(() => setFlashMessage(null), 4000);
   };
 
-  return (
-    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-gray-900 dark:to-gray-800 p-4 overflow-hidden">
-      {/* Animated Floating Circles with hover glow */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-        <div className="absolute w-32 h-32 bg-indigo-300/30 rounded-full animate-float hover:scale-110 hover:bg-indigo-400/50 hover:shadow-lg transition-all duration-500"></div>
-        <div className="absolute w-48 h-48 bg-purple-300/30 rounded-full animate-float2 hover:scale-105 hover:bg-purple-400/50 hover:shadow-xl transition-all duration-500"></div>
-        <div className="absolute w-24 h-24 bg-indigo-400/20 rounded-full animate-float3 hover:scale-125 hover:bg-indigo-500/40 hover:shadow-md transition-all duration-500"></div>
-      </div>
-
-      <div className="flex flex-col md:flex-row items-center md:justify-center w-full max-w-5xl gap-10 relative z-10">
-        {/* Illustration */}
-        <div className="w-full md:w-1/2 flex justify-center mb-8 md:mb-0">
-          <img
-            src={forgotIllustration}
-            alt="Forgot password illustration"
-            className="w-72 md:w-full animate-fadeIn"
-          />
-        </div>
-
-        {/* Glassmorphism Form Card */}
-        <form
-          onSubmit={handleSubmit}
-          className="w-full md:w-1/2 bg-white/30 dark:bg-gray-800/30 backdrop-blur-md rounded-3xl p-8 md:p-10 shadow-2xl flex flex-col transition-all duration-500 hover:scale-105"
-        >
-          <h2 className="text-3xl md:text-4xl font-extrabold text-indigo-600 dark:text-indigo-400 mb-3 text-center">
-            Forgot Password
-          </h2>
-          <p className="text-gray-700 dark:text-gray-300 mb-6 text-center text-sm md:text-base">
-            Enter your email address and we’ll send you a secure reset link.
-          </p>
-
-          {/* Flash Message */}
-          {flashMessage && (
-            <div
-              className={`mb-6 p-3 rounded text-sm font-medium transition-colors duration-300 text-center ${
-                flashMessage.type === "success"
-                  ? "text-blue-800 bg-blue-100 dark:text-blue-300 dark:bg-blue-900"
-                  : "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900"
-              }`}
-            >
-              {flashMessage.message}
-            </div>
-          )}
-
+  const renderStepContent = () => {
+    switch (step) {
+      case "email":
+        return (
           <div className="mb-6 text-left">
             <label
               htmlFor="email"
@@ -87,64 +91,139 @@ function ForgotPassword() {
             <input
               type="email"
               id="email"
-              placeholder="you@example.com"
+              placeholder="Enter your email"
               className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
+        );
+
+      case "verify":
+        return (
+          <div className="mb-6 text-left">
+            <label
+              htmlFor="code"
+              className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+            >
+              Enter 6-Digit Code
+            </label>
+            <input
+              type="text"
+              id="code"
+              placeholder="Enter the code sent to your email"
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              maxLength={6}
+              required
+            />
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              A 6-digit code has been sent to {email}
+            </p>
+          </div>
+        );
+
+      case "reset":
+        return (
+          <>
+            <div className="mb-6 text-left">
+              <label
+                htmlFor="newPassword"
+                className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                New Password
+              </label>
+              <input
+                type="password"
+                id="newPassword"
+                placeholder="Enter new password"
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+            <div className="mb-6 text-left">
+              <label
+                htmlFor="confirmPassword"
+                className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                Confirm Password
+              </label>
+              <input
+                type="password"
+                id="confirmPassword"
+                placeholder="Confirm new password"
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+          </>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-gray-900 dark:to-gray-800 p-4">
+      <div className="w-full max-w-md">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white/30 dark:bg-gray-800/30 backdrop-blur-md rounded-3xl p-8 shadow-2xl"
+        >
+          <h2 className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 mb-6 text-center">
+            {step === "email"
+              ? "Forgot Password"
+              : step === "verify"
+              ? "Verify Email"
+              : "Reset Password"}
+          </h2>
+
+          {/* Flash Message */}
+          {flashMessage && (
+            <div
+              className={`mb-6 p-3 rounded text-sm font-medium transition-colors duration-300 text-center ${
+                flashMessage.type === "success"
+                  ? "text-green-800 bg-green-100 dark:text-green-300 dark:bg-green-900"
+                  : "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900"
+              }`}
+            >
+              {flashMessage.message}
+            </div>
+          )}
+
+          {renderStepContent()}
 
           <button
             type="submit"
             className="w-full py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white font-semibold shadow-lg transition-all duration-300"
           >
-            Send Reset Link
+            {step === "email"
+              ? "Send Code"
+              : step === "verify"
+              ? "Verify Code"
+              : "Reset Password"}
           </button>
 
-          <div className="mt-6 text-sm md:text-base text-gray-500 dark:text-gray-400 text-center">
-            Remembered your password?{" "}
-            <a
-              href="/login"
-              className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={() => navigate("/login")}
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
             >
-              Login
-            </a>
+              Back to Login
+            </button>
           </div>
         </form>
       </div>
-
-      {/* Animations using Tailwind + Custom CSS */}
-      <style>
-        {`
-          .animate-float {
-            top: -10%;
-            left: -10%;
-            animation: float 15s ease-in-out infinite;
-          }
-          .animate-float2 {
-            top: 20%;
-            right: -20%;
-            animation: float 20s ease-in-out infinite;
-          }
-          .animate-float3 {
-            bottom: -10%;
-            left: 30%;
-            animation: float 18s ease-in-out infinite;
-          }
-          @keyframes float {
-            0%, 100% { transform: translateY(0px) translateX(0px); opacity: 0.3; }
-            50% { transform: translateY(-30px) translateX(30px); opacity: 0.5; }
-          }
-          .animate-fadeIn {
-            animation: fadeIn 1s ease-in forwards;
-          }
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-        `}
-      </style>
     </div>
   );
 }

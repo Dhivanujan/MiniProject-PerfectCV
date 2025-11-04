@@ -18,6 +18,25 @@ If you did not make this request then simply ignore this email and no changes wi
         return False
 
 
+def send_reset_code_email(user_email, code):
+    """Send a short 6-digit code to the user's email for password reset verification."""
+    msg = Message('Your PerfectCV password reset code',
+                  sender='noreply@perfectcv.com',
+                  recipients=[user_email])
+    msg.body = f'''Use the following 6-digit code to verify your password reset request:
+
+{code}
+
+This code will expire in 15 minutes. If you did not request a password reset, please ignore this message.
+'''
+    try:
+        current_app.mail.send(msg)
+        return True
+    except Exception as e:
+        current_app.logger.error(f"Error sending reset code email: {str(e)}")
+        return False
+
+
 def send_contact_email(name, sender_email, message_body):
     """Send a contact message to the configured support address.
 
