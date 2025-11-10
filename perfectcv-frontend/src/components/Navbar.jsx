@@ -122,7 +122,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
           ) : (
             <>
               <span className="text-gray-700 dark:text-gray-200 font-medium">
-                Hello, {user?.full_name || user?.username}
+                Hello, {user?.username}
               </span>
               <Link
                 to="/chatbot"
