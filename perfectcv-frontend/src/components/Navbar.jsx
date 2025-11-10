@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { FaMoon, FaSun, FaRobot, FaSignOutAlt } from "react-icons/fa";
-import ChatbotPage from "../pages/ChatbotPage";
 
 export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,6 +55,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
       setMenuOpen(false);
     } else {
       e.preventDefault();
+      // navigate to the homepage anchor without full reload
       navigate(`/#${id}`);
       setMenuOpen(false);
     }
@@ -73,7 +73,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
         </Link>
 
         {/* Desktop View */}
-        <div className="hidden md:flex items-center gap-6">
+  <div className="hidden md:flex items-center gap-6" role="menubar" aria-label="Main navigation">
           {!user ? (
             <>
               {navLinks.map((link) => (
@@ -131,7 +131,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                 <FaRobot /> Chatbot
               </Link>
               <button
-                onClick={onLogout}
+                onClick={() => { onLogout && onLogout(); navigate('/'); }}
                 className="flex items-center gap-1 bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 transition"
               >
                 <FaSignOutAlt /> Logout
@@ -170,6 +170,9 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="text-gray-700 dark:text-gray-200 focus:outline-none"
+            aria-controls="mobile-menu"
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
           >
             <svg
               className="w-6 h-6"
@@ -199,7 +202,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
 
       {/* Mobile Dropdown */}
       {menuOpen && (
-        <div className="md:hidden bg-white dark:bg-gray-900 shadow-md transition-colors">
+        <div id="mobile-menu" className="md:hidden bg-white dark:bg-gray-900 shadow-md transition-colors" role="menu">
           {!user ? (
             <>
               {navLinks.map((link) => (
@@ -215,34 +218,24 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                   {link.label}
                 </button>
               ))}
-              <Link
-                to="/login"
-                className="block px-4 py-2 text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50 dark:hover:bg-indigo-800 dark:hover:text-white transition"
-              >
+              <Link to="/login" onClick={() => setMenuOpen(false)} className="block px-4 py-2 text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50 dark:hover:bg-indigo-800 dark:hover:text-white transition">
                 Login
               </Link>
-              <Link
-                to="/register"
-                className="block px-4 py-2 mt-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-              >
+              <Link to="/register" onClick={() => setMenuOpen(false)} className="block px-4 py-2 mt-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
                 Sign Up
               </Link>
             </>
           ) : (
             <>
               <span className="block px-4 py-2 text-gray-700 dark:text-gray-200 font-medium">
-                Hello, {user?.full_name || user?.username}
+                Hello, <Link to="/dashboard" className="font-semibold hover:underline">{user?.full_name || user?.username}</Link>
               </span>
-              <Link
-                to="/chatbot"
-                onClick={ChatbotPage}
-                className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800 transition"
-              >
+              <Link to="/chatbot" onClick={() => setMenuOpen(false)} className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800 transition">
                 <FaRobot /> Chatbot
               </Link>
               <button
                 onClick={() => {
-                  onLogout();
+                  onLogout && onLogout();
                   setMenuOpen(false);
                 }}
                 className="flex items-center gap-1 w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900 transition"
