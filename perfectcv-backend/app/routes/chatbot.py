@@ -1,15 +1,27 @@
 from flask import Blueprint, request, jsonify, current_app, session
 from flask_login import login_required, current_user
 import google.generativeai as genai
-from app.utils.ai_utils import setup_gemini, get_valid_model
 from app.utils.cv_utils import extract_text_from_pdf, allowed_file
 from werkzeug.utils import secure_filename
 import gridfs
 from bson import ObjectId
+import os
 import io
-import json
+
+# LangChain Imports for RAG (optional)
+RAG_AVAILABLE = True
+try:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_community.embeddings import GoogleGenerativeAIEmbeddings
+    from langchain_community.vectorstores import FAISS
+except Exception:
+    RAG_AVAILABLE = False
+
+from typing import Any
 
 chatbot = Blueprint("chatbot", __name__)
+
+# ---------- HELPER FUNCTIONS ----------
 
 def get_cv_context():
     """Get the CV text stored in user's session or GridFS."""
@@ -24,70 +36,51 @@ def get_cv_context():
             current_app.logger.exception("Failed to retrieve CV text")
     return cv_text
 
+
+def _extract_genai_text(resp: Any) -> str:
+    """Try to extract text content from various genai response shapes."""
+    try:
+        # genai SDK response object sometimes exposes text or candidates
+        if hasattr(resp, "text") and isinstance(resp.text, str):
+            return resp.text
+        # some responses expose 'candidates' or 'outputs'
+        if isinstance(resp, dict):
+            # common keys
+            for key in ("text", "output", "content", "candidates", "outputs"):
+                if key in resp and resp[key]:
+                    v = resp[key]
+                    if isinstance(v, list) and len(v) > 0:
+                        first = v[0]
+                        # nested structure
+                        if isinstance(first, dict):
+                            for subk in ("text", "output", "content"):
+                                if subk in first and isinstance(first[subk], str):
+                                    return first[subk]
+                        elif isinstance(first, str):
+                            return first
+                    elif isinstance(v, str):
+                        return v
+        # fallback to string representation
+        return str(resp)
+    except Exception:
+        current_app.logger.exception("Failed to parse genai response")
+        return str(resp)
+
 def get_chat_history():
-    """Get chat history from session."""
     return session.get('chat_history', [])
 
 def update_chat_history(user_msg, bot_msg):
-    """Update chat history in session."""
     history = get_chat_history()
     history.append({"role": "user", "content": user_msg})
     history.append({"role": "assistant", "content": bot_msg})
-    session['chat_history'] = history[-10:]  # Keep last 10 messages
+    session['chat_history'] = history[-10:]
 
-
-def simple_cv_answer(cv_text: str, question: str) -> str:
-    """Provide a simple rule-based answer based on keyword matching in the CV text.
-
-    This is used as a fallback when the AI model is not available or fails.
-    """
-    if not cv_text:
-        return "I don't have the CV content to answer that. Please upload your CV first."
-
-    q = question.lower()
-    # quick checks for common fields
-    import re
-
-    # name
-    if any(word in q for word in ("name", "who", "candidate")):
-        # try to find a name as the first non-empty line
-        first_lines = [ln.strip() for ln in cv_text.splitlines() if ln.strip()]
-        if first_lines:
-            return f"The CV appears to belong to: {first_lines[0]}"
-
-    # email
-    m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", cv_text)
-    if m and any(k in q for k in ("email", "contact", "mail")):
-        return f"Email on the CV: {m.group(0)}"
-
-    # phone
-    p = re.search(r"\+?\d[\d \-()]{7,}\d", cv_text)
-    if p and any(k in q for k in ("phone", "mobile", "contact", "call")):
-        return f"Phone number on the CV: {p.group(0)}"
-
-    # keyword-based sentence search
-    # split into sentences/lines and score by keyword matches
-    tokens = re.findall(r"\w+", q)
-    if not tokens:
-        return "I couldn't understand the question. Please ask more simply."
-
-    sentences = [s.strip() for s in re.split(r"[\.\n]", cv_text) if s.strip()]
-    scored = []
-    for s in sentences:
-        s_low = s.lower()
-        score = sum(1 for t in tokens if t in s_low)
-        if score > 0:
-            scored.append((score, s))
-    if scored:
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = [s for _, s in scored[:3]]
-        return " \n\n".join(top)
-
-    return "I couldn't find information related to your question in the CV."
+# ---------- ROUTES ----------
 
 @chatbot.route("/upload", methods=["POST"])
 @login_required
 def upload_cv():
+    """Upload and process CV + Create FAISS vector index"""
     if 'files' not in request.files:
         return jsonify({"success": False, "message": "No file uploaded"}), 400
     
@@ -99,27 +92,45 @@ def upload_cv():
         return jsonify({"success": False, "message": "Invalid file type"}), 400
         
     try:
-        # Read and store CV content
+        # Extract CV text
         if file.filename.lower().endswith('.pdf'):
             cv_text = extract_text_from_pdf(file)
         else:
             cv_text = file.read().decode('utf-8')
-            
+
         # Store in GridFS
         fs = gridfs.GridFS(current_app.mongo.db)
         filename = secure_filename(f"chat_{current_user.get_id()}_{file.filename}")
-        file_id = fs.put(
-            cv_text.encode('utf-8'),
-            filename=filename,
-            content_type='text/plain',
-            user_id=str(current_user.get_id()),
-        )
+        file_id = fs.put(cv_text.encode('utf-8'), filename=filename, content_type='text/plain', user_id=str(current_user.get_id()))
 
-        # Store in session (use string because ObjectId is not JSON serializable)
+        # Save in session
         session['cv_file_id'] = str(file_id)
         session['cv_text'] = cv_text
-        session['chat_history'] = []  # Reset chat history for new CV
-        
+        session['chat_history'] = []
+
+        # ---- NEW: Build FAISS Vector Store ----
+        if not RAG_AVAILABLE:
+            current_app.logger.warning("RAG dependencies not available; skipping vector index build.")
+            return jsonify({
+                "success": False,
+                "message": "RAG support (langchain/faiss) is not installed on the server. Install optional dependencies to enable CV&A." 
+            }), 501
+
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+        chunks = text_splitter.split_text(cv_text)
+
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        vectorstore = FAISS.from_texts(chunks, embeddings)
+        os.makedirs("vectorstores", exist_ok=True)
+        index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
+        # Save local index
+        try:
+            vectorstore.save_local(index_path)
+        except Exception:
+            current_app.logger.exception("Failed to save FAISS vectorstore locally")
+            # attempt to remove any incomplete files and raise
+            raise
+
         return jsonify({
             "success": True,
             "message": "CV uploaded and processed successfully! You can now ask me questions about your CV."
@@ -128,9 +139,11 @@ def upload_cv():
         current_app.logger.exception("Error processing CV upload")
         return jsonify({"success": False, "message": str(e)}), 500
 
+
 @chatbot.route("/ask", methods=["POST"])
 @login_required
 def ask():
+    """Answer CV-based question using RAG + Gemini"""
     data = request.get_json() or {}
     question = data.get("question", "").strip()
     
@@ -139,34 +152,48 @@ def ask():
         
     cv_text = get_cv_context()
     if not cv_text:
-        return jsonify({"success": False, 
-                       "message": "Please upload a CV first to enable Q&A"}), 400
+        return jsonify({"success": False, "message": "Please upload a CV first to enable Q&A"}), 400
     
-    # Use improved CV analysis with AI model; fall back to rule-based if needed
-    from app.utils.ai_utils import analyze_cv_content
-
-    answer = None
     try:
-        answer = analyze_cv_content(cv_text, question)
-    except Exception:
-        current_app.logger.exception("AI analysis failed; falling back to rule-based answer")
+        # Ensure RAG deps are available
+        if not RAG_AVAILABLE:
+            return jsonify({"success": False, "message": "RAG support (langchain/faiss) is not installed on the server."}), 501
 
-    # Fallback when AI not configured or failed
-    if not answer:
-        try:
-            answer = simple_cv_answer(cv_text, question)
-        except Exception:
-            current_app.logger.exception("Fallback answer generation failed")
-            return jsonify({"success": False, "error": "Failed to produce an answer."}), 500
+        # Load vectorstore for this user
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
+        if not os.path.isdir(index_path):
+            return jsonify({"success": False, "message": "No vector index found for this user. Please upload your CV again."}), 400
 
-    # Update chat history and respond
-    try:
+        vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+
+        # Retrieve top 3 relevant CV chunks
+        results = vectorstore.similarity_search(question, k=3)
+        context = "\n\n".join([r.page_content for r in results])
+
+        # Initialize Gemini
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        # Prompt
+        prompt = f"""
+        You are a helpful CV assistant.
+        Answer the user's question strictly using the information in the CV context below.
+        If the information is not available, say "Information not available in the CV."
+
+        CV Context:
+        {context}
+
+        Question:
+        {question}
+        """
+
+        response = model.generate_content(prompt)
+        answer = _extract_genai_text(response).strip()
+
         update_chat_history(question, answer)
-    except Exception:
-        current_app.logger.exception("Failed to update chat history, continuing")
+        return jsonify({"success": True, "answer": answer, "hasCV": True})
 
-    return jsonify({
-        "success": True,
-        "answer": answer,
-        "hasCV": bool(cv_text)
-    })
+    except Exception as e:
+        current_app.logger.exception("Error during CV Q&A")
+        return jsonify({"success": False, "message": str(e)}), 500
