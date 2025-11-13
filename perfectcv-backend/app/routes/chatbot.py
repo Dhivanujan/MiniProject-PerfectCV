@@ -516,8 +516,11 @@ You can download the updated version. Would you like me to make any specific adj
         return jsonify(response_data)
 
     except Exception as e:
-        current_app.logger.exception("Error during CV Q&A")
-        return jsonify({"success": False, "message": str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        current_app.logger.error(f"Error during CV Q&A: {str(e)}\n{error_details}")
+        print(f"ERROR in /ask endpoint: {str(e)}\n{error_details}")
+        return jsonify({"success": False, "message": str(e), "error_type": type(e).__name__}), 500
 
 
 @chatbot.route("/download-cv", methods=["GET"])
