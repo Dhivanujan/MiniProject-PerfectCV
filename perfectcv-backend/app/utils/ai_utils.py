@@ -157,3 +157,265 @@ def analyze_cv_content(cv_text, question):
     except Exception as e:
         logger.exception("Error in CV analysis: %s", e)
         return "Sorry, I'm having trouble analyzing the CV right now. Please try again."
+
+
+def extract_personal_info(cv_text):
+    """Extract personal information from CV."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Extract personal information from this CV and return as JSON.
+        Include: name, email, phone, location, linkedin, github, website (if available).
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Personal info extraction returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error extracting personal info: %s", e)
+        return None
+
+
+def detect_missing_sections(cv_text):
+    """Detect missing sections and elements in CV."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Analyze this CV and identify missing elements. Return as JSON with these keys:
+        - missing_sections: array of missing standard sections (e.g., "Summary", "Skills", "Projects", "Achievements")
+        - missing_professional_elements: array of objects with "issue" and "suggestion" 
+          (e.g., no action verbs, no measurable achievements, no dates, no role descriptions, no technologies)
+        - formatting_gaps: array of formatting issues (e.g., "Too long", "Too short", "Not ATS friendly", "Inconsistent formatting")
+        - completeness_score: number 0-100 indicating how complete the CV is
+        
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Missing sections detection returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error detecting missing sections: %s", e)
+        return None
+
+
+def improve_sentence(sentence, context="work experience"):
+    """Improve a CV sentence to be more impactful."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Improve this CV sentence to be more professional and impactful.
+        - Add action verbs
+        - Add measurable achievements where possible
+        - Make it specific and quantifiable
+        - Keep it concise (1-2 lines)
+        
+        Context: {context}
+        Original: {sentence}
+        
+        Return ONLY the improved sentence, no explanations.
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text.strip()
+            
+    except Exception as e:
+        logger.exception("Error improving sentence: %s", e)
+        return None
+
+
+def suggest_achievements(cv_text, role_context=""):
+    """Suggest achievement-oriented bullet points."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Based on this CV content, suggest 5 achievement-oriented bullet points.
+        Focus on:
+        - Measurable outcomes (reduced time, increased sales, improved efficiency)
+        - Leadership and impact
+        - Technical accomplishments
+        - Team collaboration
+        
+        {f"Role context: {role_context}" if role_context else ""}
+        
+        Return as JSON array of strings. Return ONLY valid JSON.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            # Try to extract array from text
+            text = response.text.strip()
+            if text.startswith('[') and text.endswith(']'):
+                return json.loads(text)
+            logger.warning("Achievement suggestions returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error suggesting achievements: %s", e)
+        return None
+
+
+def check_ats_compatibility(cv_text, job_description=""):
+    """Check ATS compatibility and suggest improvements."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Analyze this CV for ATS (Applicant Tracking System) compatibility.
+        Return as JSON with these keys:
+        - ats_score: number 0-100
+        - issues: array of ATS compatibility issues
+        - keyword_analysis: object with "found" and "missing" arrays
+        - formatting_suggestions: array of formatting improvements
+        - overall_recommendation: string with overall advice
+        
+        {f"Job Description: {job_description}" if job_description else ""}
+        
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("ATS check returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error checking ATS compatibility: %s", e)
+        return None
+
+
+def suggest_keywords_for_role(role, cv_text):
+    """Suggest keywords to add based on target role."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Suggest relevant keywords and skills for a {role} position.
+        Compare with the current CV and identify gaps.
+        Return as JSON with these keys:
+        - suggested_keywords: array of keywords to add
+        - existing_keywords: array of relevant keywords already present
+        - priority_additions: array of high-priority keywords to add
+        
+        Return ONLY valid JSON, no additional text.
+        
+        Target Role: {role}
+        
+        Current CV:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Keyword suggestions returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error suggesting keywords: %s", e)
+        return None
+
+
+def generate_improved_cv(cv_text, focus_areas=None):
+    """Generate an improved version of the entire CV."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        focus = ", ".join(focus_areas) if focus_areas else "overall improvement"
+        
+        prompt = f"""Rewrite this CV to be more professional and ATS-friendly.
+        Focus on: {focus}
+        
+        Improvements should include:
+        - Strong action verbs
+        - Quantifiable achievements
+        - Clear section headers
+        - Proper formatting
+        - Relevant keywords
+        
+        Return the improved CV text in a professional format with clear sections.
+        
+        ORIGINAL CV:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text.strip()
+            
+    except Exception as e:
+        logger.exception("Error generating improved CV: %s", e)
+        return None
+
+
+def analyze_cv_comprehensively(cv_text):
+    """Perform comprehensive CV analysis including all aspects."""
+    try:
+        if not setup_gemini():
+            return None
+
+        model = genai.GenerativeModel('gemini-pro')
+        prompt = f"""Perform a comprehensive analysis of this CV. Return as JSON with these keys:
+        - personal_info: object with extracted personal details
+        - sections_present: array of sections found in CV
+        - missing_sections: array of important missing sections
+        - strengths: array of CV strengths
+        - weaknesses: array of CV weaknesses
+        - improvement_suggestions: array of specific improvement suggestions
+        - ats_score: number 0-100
+        - overall_rating: number 0-10
+        - summary: brief overall assessment
+        
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Comprehensive analysis returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error in comprehensive CV analysis: %s", e)
+        return None

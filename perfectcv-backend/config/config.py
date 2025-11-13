@@ -19,7 +19,7 @@ class Config:
     MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
     MAIL_USERNAME = os.getenv('MAIL_USERNAME')
     MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
-    API_KEY = os.getenv('API_KEY')
+    API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('API_KEY')
     # Frontend base URL used to construct password reset links sent to users.
     # Set this to your frontend origin in production, e.g. https://app.example.com
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5173')
