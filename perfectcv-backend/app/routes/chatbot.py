@@ -18,10 +18,11 @@ import re
 RAG_AVAILABLE = True
 try:
     from langchain.text_splitter import RecursiveCharacterTextSplitter
-    from langchain_community.embeddings import GoogleGenerativeAIEmbeddings
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
     from langchain_community.vectorstores import FAISS
-except Exception:
+except Exception as e:
     RAG_AVAILABLE = False
+    print(f"Warning: RAG dependencies import failed: {e}")
 
 from typing import Any
 
