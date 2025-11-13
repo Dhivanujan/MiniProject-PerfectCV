@@ -176,32 +176,28 @@ def upload_cv():
         session['cv_text'] = cv_text
         session['chat_history'] = []
 
-        # ---- NEW: Build FAISS Vector Store ----
-        if not RAG_AVAILABLE:
-            current_app.logger.warning("RAG dependencies not available; skipping vector index build.")
-            return jsonify({
-                "success": False,
-                "message": "RAG support (langchain/faiss) is not installed on the server. Install optional dependencies to enable CV&A." 
-            }), 501
+        # ---- Optional: Build FAISS Vector Store (skip if quota exceeded) ----
+        vector_store_created = False
+        if RAG_AVAILABLE:
+            try:
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+                chunks = text_splitter.split_text(cv_text)
 
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-        chunks = text_splitter.split_text(cv_text)
-
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        vectorstore = FAISS.from_texts(chunks, embeddings)
-        os.makedirs("vectorstores", exist_ok=True)
-        index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-        # Save local index
-        try:
-            vectorstore.save_local(index_path)
-        except Exception:
-            current_app.logger.exception("Failed to save FAISS vectorstore locally")
-            # attempt to remove any incomplete files and raise
-            raise
+                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+                vectorstore = FAISS.from_texts(chunks, embeddings)
+                os.makedirs("vectorstores", exist_ok=True)
+                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
+                vectorstore.save_local(index_path)
+                vector_store_created = True
+                current_app.logger.info("Vector store created successfully")
+            except Exception as e:
+                current_app.logger.warning(f"Could not create vector store (quota may be exceeded): {e}")
+                # Continue anyway - we can work without RAG
 
         return jsonify({
             "success": True,
-            "message": "CV uploaded and processed successfully! You can now ask me questions about your CV."
+            "message": "CV uploaded and processed successfully! You can now ask me questions about your CV.",
+            "rag_enabled": vector_store_created
         })
     except Exception as e:
         current_app.logger.exception("Error processing CV upload")
@@ -348,37 +344,53 @@ Would you like me to help integrate these keywords into your CV?
                 answer = f"For a {role} position, consider adding technical skills, tools, and industry-specific terms relevant to the field."
         
         elif query_type == 'section_specific':
-            # Handle section-specific queries using RAG
-            if RAG_AVAILABLE:
-                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                
-                if os.path.isdir(index_path):
-                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
-                    results = vectorstore.similarity_search(question, k=3)
-                    context = "\n\n".join([r.page_content for r in results])
+            # Handle section-specific queries using RAG or fallback to direct analysis
+            try:
+                if RAG_AVAILABLE:
+                    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+                    index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
                     
-                    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    
-                    prompt = f"""You are a CV enhancement assistant.
-                    Answer the user's question using the CV context below.
-                    Provide specific, actionable advice.
-
-                    CV Context:
-                    {context}
-
-                    Question: {question}
-                    
-                    Provide a helpful answer with specific examples and suggestions.
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    answer = _extract_genai_text(response).strip()
+                    if os.path.isdir(index_path):
+                        vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+                        results = vectorstore.similarity_search(question, k=3)
+                        context = "\n\n".join([r.page_content for r in results])
+                    else:
+                        # Fallback: use full CV text
+                        context = cv_text[:2000]  # Use first 2000 chars
                 else:
-                    answer = "Please re-upload your CV to enable detailed section analysis."
-            else:
-                answer = "Section analysis requires additional setup. Please check the installation."
+                    # Fallback: use full CV text
+                    context = cv_text[:2000]
+                
+                genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                
+                prompt = f"""You are a CV enhancement assistant.
+                Answer the user's question using the CV context below.
+                Provide specific, actionable advice.
+
+                CV Context:
+                {context}
+
+                Question: {question}
+                
+                Provide a helpful answer with specific examples and suggestions.
+                """
+                
+                response = model.generate_content(prompt)
+                answer = _extract_genai_text(response).strip()
+            except Exception as e:
+                current_app.logger.warning(f"RAG query failed, using direct analysis: {e}")
+                # Fallback to direct Gemini analysis
+                genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                prompt = f"""You are a CV enhancement assistant.
+                Answer this question about the CV: {question}
+                
+                CV Content (first 2000 chars):
+                {cv_text[:2000]}
+                """
+                response = model.generate_content(prompt)
+                answer = _extract_genai_text(response).strip()
         
         elif query_type == 'extraction':
             # Extract specific information
@@ -433,41 +445,67 @@ You can download the updated version. Would you like me to make any specific adj
                 answer = "I'm preparing your updated CV. This includes improvements to formatting, content, and ATS optimization."
         
         else:
-            # General Q&A using RAG
-            if RAG_AVAILABLE:
-                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                
-                if os.path.isdir(index_path):
-                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
-                    results = vectorstore.similarity_search(question, k=3)
-                    context = "\n\n".join([r.page_content for r in results])
+            # General Q&A - try RAG first, fallback to direct analysis
+            try:
+                if RAG_AVAILABLE:
+                    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+                    index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
                     
-                    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    
-                    # Check conversation context for continuity
-                    conv_context = get_conversation_context()
-                    context_note = ""
-                    if conv_context.get('last_section'):
-                        context_note = f"\nNote: We were previously discussing the {conv_context['last_section']} section."
-                    
-                    prompt = f"""You are a helpful CV assistant.
-                    Answer the user's question using the CV context below.
-                    If the information is not available, say so.{context_note}
-
-                    CV Context:
-                    {context}
-
-                    Question: {question}
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    answer = _extract_genai_text(response).strip()
+                    if os.path.isdir(index_path):
+                        vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+                        results = vectorstore.similarity_search(question, k=3)
+                        context = "\n\n".join([r.page_content for r in results])
+                    else:
+                        # Fallback: use full CV text
+                        context = cv_text[:2000]
                 else:
-                    answer = "Please re-upload your CV to enable Q&A."
-            else:
-                answer = "CV Q&A requires additional setup. Please check the installation."
+                    # Fallback: use full CV text
+                    context = cv_text[:2000]
+                
+                genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                
+                # Check conversation context for continuity
+                conv_context = get_conversation_context()
+                context_note = ""
+                if conv_context.get('last_section'):
+                    context_note = f"\nNote: We were previously discussing the {conv_context['last_section']} section."
+                
+                prompt = f"""You are a helpful CV assistant.
+                Answer the user's question using the CV context below.
+                If the information is not available, say so.{context_note}
+
+                CV Context:
+                {context}
+
+                Question: {question}
+                """
+                
+                response = model.generate_content(prompt)
+                answer = _extract_genai_text(response).strip()
+            except Exception as e:
+                current_app.logger.warning(f"RAG/embeddings failed, using direct analysis: {e}")
+                # Fallback to direct Gemini analysis without embeddings
+                genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                
+                conv_context = get_conversation_context()
+                context_note = ""
+                if conv_context.get('last_section'):
+                    context_note = f"\nNote: We were previously discussing the {conv_context['last_section']} section."
+                
+                prompt = f"""You are a helpful CV assistant.
+                Answer the user's question based on this CV content.
+                If the information is not available, say so.{context_note}
+
+                CV Content (first 2000 chars):
+                {cv_text[:2000]}
+
+                Question: {question}
+                """
+                
+                response = model.generate_content(prompt)
+                answer = _extract_genai_text(response).strip()
         
         # Update chat history
         update_chat_history(question, answer)
