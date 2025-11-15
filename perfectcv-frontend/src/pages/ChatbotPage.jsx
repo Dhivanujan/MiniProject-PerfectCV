@@ -452,69 +452,59 @@ export default function ChatbotPage() {
   const isSendDisabled = !hasCv || isBotTyping || !message.trim();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
       {/* Header with animated gradient */}
-      <div className="sticky top-0 z-10 backdrop-blur-md bg-white/70 dark:bg-gray-900/70 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+      <div className="flex-shrink-0 backdrop-blur-md bg-white/70 dark:bg-gray-900/70 border-b border-gray-200 dark:border-gray-700 shadow-sm">
+        <div className="px-6 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
-                <span className="text-2xl">🤖</span>
+              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
+                <span className="text-xl">🤖</span>
               </div>
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   PerfectCV AI Assistant
                 </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Your intelligent CV enhancement partner</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Your intelligent CV enhancement partner</p>
               </div>
             </div>
-            {hasCv && (
-              <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-full">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm font-medium text-green-700 dark:text-green-400">CV Loaded</span>
-              </div>
+            {hasGeneratedCv && (
+              <button
+                onClick={handleDownloadCV}
+                className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
+              >
+                <FaDownload />
+                <span className="hidden md:inline">Download CV</span>
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6 flex flex-col gap-6">
-        {/* Error Alert */}
-        {error && (
-          <div className="animate-slide-in-down p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 rounded-r-xl flex items-center gap-3 shadow-md">
-            <FaExclamationCircle className="flex-shrink-0 text-xl" />
-            <span className="font-medium">{error}</span>
-          </div>
-        )}
+      {/* Error Alert */}
+      {error && (
+        <div className="flex-shrink-0 mx-4 mt-3 animate-slide-in-down p-3 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 rounded-r-xl flex items-center gap-3 shadow-md">
+          <FaExclamationCircle className="flex-shrink-0" />
+          <span className="font-medium text-sm">{error}</span>
+        </div>
+      )}
 
-        {/* Download Button */}
-        {hasGeneratedCv && (
-          <div className="animate-slide-in-up">
-            <button
-              onClick={handleDownloadCV}
-              className="w-full p-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl flex items-center justify-center gap-3 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
-            >
-              <FaDownload className="text-xl" />
-              <span className="font-semibold text-lg">Download Improved CV</span>
-            </button>
-          </div>
-        )}
-
-        <div className="grid md:grid-cols-3 gap-6">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row gap-2 p-2 overflow-hidden">
           {/* Left Column - Upload Section */}
-          <div className="md:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
-                <FaUpload className="text-blue-500" />
+          <div className="md:w-64 flex-shrink-0">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-3 border border-gray-200 dark:border-gray-700 h-full overflow-y-auto">
+              <h2 className="text-sm font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-1.5">
+                <FaUpload className="text-blue-500 text-xs" />
                 Upload CV
               </h2>
               
               <label 
-                className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-300 ${
+                className={`flex flex-col items-center justify-center p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-300 ${
                   isUploading 
                     ? 'border-gray-400 bg-gray-50 dark:bg-gray-700/50' 
                     : hasCv
-                      ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30'
+                      ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
                       : 'border-blue-400 hover:border-blue-500 hover:bg-blue-50 dark:border-blue-600 dark:hover:bg-blue-900/20'
                 }`}
               >
@@ -526,53 +516,53 @@ export default function ChatbotPage() {
                   disabled={isUploading} 
                 />
                 {isUploading ? (
-                  <FaSpinner className="text-5xl mb-3 text-gray-500 animate-spin" />
+                  <FaSpinner className="text-2xl mb-1 text-gray-500 animate-spin" />
                 ) : hasCv ? (
-                  <div className="text-5xl mb-3 animate-bounce">✅</div>
+                  <div className="text-2xl mb-1">✅</div>
                 ) : (
-                  <FaUpload className="text-5xl mb-3 text-blue-500 group-hover:scale-110 transition-transform" />
+                  <FaUpload className="text-2xl mb-1 text-blue-500" />
                 )}
-                <span className="text-center text-sm font-medium text-gray-600 dark:text-gray-300">
+                <span className="text-center text-xs font-medium text-gray-600 dark:text-gray-300">
                   {isUploading 
-                    ? "Processing your CV..."
+                    ? "Processing..."
                     : hasCv 
-                      ? "✓ CV uploaded successfully!"
+                      ? "CV uploaded"
                       : cvFiles.length 
-                        ? `Selected: ${cvFiles[0].name}`
-                        : "Click to upload CV"}
+                        ? cvFiles[0].name.substring(0, 15) + '...'
+                        : "Upload CV"}
                 </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 mt-2">PDF, DOC, or DOCX</span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">PDF/DOC/DOCX</span>
               </label>
               
               {cvFiles.length > 0 && !hasCv && (
                 <button
                   onClick={handleUpload}
                   disabled={isUploading}
-                  className={`mt-4 w-full p-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 font-semibold
+                  className={`mt-2 w-full p-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 text-sm font-semibold
                     ${isUploading 
                       ? 'bg-gray-400 cursor-wait' 
-                      : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 hover:shadow-lg transform hover:scale-[1.02]'} text-white`}
+                      : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'} text-white`}
                 >
-                  {isUploading ? <FaSpinner className="animate-spin" /> : <FaUpload />}
-                  <span>{isUploading ? "Processing..." : "Upload & Analyze"}</span>
+                  {isUploading ? <FaSpinner className="animate-spin text-xs" /> : <FaUpload className="text-xs" />}
+                  <span>{isUploading ? "Processing..." : "Analyze"}</span>
                 </button>
               )}
 
               {hasCv && (
-                <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">✨ Ready to assist!</p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400">Your CV has been analyzed. Ask me anything or use quick actions below.</p>
+                <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">✨ Ready to assist!</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Your CV has been analyzed. Ask me anything or use quick actions.</p>
                 </div>
               )}
             </div>
           </div>
 
           {/* Right Column - Chat Section */}
-          <div className="md:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 flex flex-col h-[calc(100vh-16rem)]">
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 flex flex-col h-full overflow-hidden">
               {/* Chat Header */}
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                <h2 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
                   <span className="text-2xl">💬</span>
                   Chat Assistant
                 </h2>
@@ -610,54 +600,41 @@ export default function ChatbotPage() {
               </div>
 
               {/* Quick Actions */}
-              {hasCv && (
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50/60 to-purple-50/60 dark:from-blue-900/10 dark:to-purple-900/10">
-                  <button
-                    type="button"
-                    onClick={() => setIsQuickActionsOpen((prev) => !prev)}
-                    className="w-full flex items-center justify-between gap-3 text-sm font-semibold text-gray-700 dark:text-gray-200"
-                  >
-                    <span className="flex items-center gap-2">
-                      <FaLightbulb className="text-amber-500" />
-                      Smart jump-start suggestions
-                    </span>
-                    {isQuickActionsOpen ? <FaChevronUp /> : <FaChevronDown />}
-                  </button>
-                  {isQuickActionsOpen && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {QUICK_ACTIONS.map((action, idx) => (
-                        <button
-                          key={action.label}
-                          onClick={() => handleQuickAction(action.query)}
-                          className="px-3 py-2 bg-white/90 dark:bg-gray-700/80 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-600 hover:text-white"
-                          disabled={isBotTyping}
-                        >
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+              {hasCv && chatHistory.length === 0 && (
+                <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_ACTIONS.slice(0, 4).map((action, idx) => (
+                      <button
+                        key={action.label}
+                        onClick={() => handleQuickAction(action.query)}
+                        className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-medium transition-all hover:bg-blue-500 hover:text-white"
+                        disabled={isBotTyping}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               
               {/* Chat Messages */}
-              <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-transparent to-gray-50/50 dark:to-gray-900/50">
+              <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-gradient-to-b from-transparent to-gray-50/50 dark:to-gray-900/50">
                 {chatHistory.length === 0 && hasCv && (
-                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-center p-4">
+                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-center p-3">
                     <div className="animate-fade-in">
-                      <div className="text-6xl mb-4">👋</div>
-                      <p className="text-xl font-semibold mb-2 text-gray-700 dark:text-gray-300">Hi! I'm your CV Assistant</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Try the quick actions above or ask me anything about your CV!</p>
+                      <div className="text-4xl mb-3">👋</div>
+                      <p className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-300">Hi! I'm your CV Assistant</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Ask me anything about your CV</p>
                     </div>
                   </div>
                 )}
                 
                 {chatHistory.length === 0 && !hasCv && (
-                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-center p-4">
+                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 text-center p-3">
                     <div className="animate-fade-in">
-                      <div className="text-6xl mb-4">📄</div>
-                      <p className="text-xl font-semibold mb-2 text-gray-700 dark:text-gray-300">Upload Your CV to Get Started</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">I'll analyze it and help you improve it!</p>
+                      <div className="text-4xl mb-3">📄</div>
+                      <p className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-300">Upload Your CV to Get Started</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">I'll analyze it and help you improve it!</p>
                     </div>
                   </div>
                 )}
@@ -682,28 +659,13 @@ export default function ChatbotPage() {
               </div>
 
               {/* Input Section */}
-              <div className="p-5 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                {hasCv && (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {QUICK_SUGGESTIONS.map((chip) => (
-                      <button
-                        key={chip.label}
-                        onClick={() => handleSuggestionClick(chip.query)}
-                        className="px-3 py-1.5 text-xs sm:text-sm rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-600 hover:text-white transition-all duration-200"
-                        disabled={isBotTyping}
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex items-end gap-3">
+              <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+                <div className="flex items-end gap-2">
                   <textarea
                     ref={messageInputRef}
                     rows={1}
-                    className="flex-1 resize-none p-4 rounded-2xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-all text-sm leading-relaxed"
-                    placeholder={hasCv ? "Ask a question, e.g. 'Rewrite my experience section with stronger verbs'" : "Upload your CV to start chatting"}
+                    className="flex-1 resize-none p-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-all text-sm leading-relaxed max-h-32"
+                    placeholder={hasCv ? "Ask about your CV..." : "Upload your CV to start chatting"}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
@@ -717,13 +679,13 @@ export default function ChatbotPage() {
                   <button
                     onClick={() => handleSend()}
                     disabled={isSendDisabled}
-                    className={`p-4 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 ${
+                    className={`p-2.5 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSendDisabled
                         ? "bg-gray-400"
                         : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                     } text-white`}
                   >
-                    {isBotTyping ? <FaSpinner className="animate-spin text-xl" /> : <FaPaperPlane className="text-xl" />}
+                    {isBotTyping ? <FaSpinner className="animate-spin text-lg" /> : <FaPaperPlane className="text-lg" />}
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
