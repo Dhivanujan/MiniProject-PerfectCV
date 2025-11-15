@@ -1,6 +1,22 @@
 // ChatbotPage.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { FaUpload, FaPaperPlane, FaSpinner, FaExclamationCircle, FaDownload, FaLightbulb, FaCheckCircle } from "react-icons/fa";
+import {
+  FaUpload,
+  FaPaperPlane,
+  FaSpinner,
+  FaExclamationCircle,
+  FaDownload,
+  FaLightbulb,
+  FaCheckCircle,
+  FaRobot,
+  FaUserCircle,
+  FaChevronDown,
+  FaChevronUp,
+  FaRegClock,
+  FaClipboardList,
+  FaMagic,
+  FaTags
+} from "react-icons/fa";
 
 // Simple component to render formatted text
 const FormattedText = ({ text }) => {
@@ -61,6 +77,175 @@ const QUICK_ACTIONS = [
   { label: "Generate Updated CV", query: "Generate an improved version of my CV" },
 ];
 
+const QUICK_SUGGESTIONS = [
+  { label: "Highlight strengths", query: "Can you summarize the strongest parts of my CV?" },
+  { label: "Tailor for role", query: "How can I tailor this CV for a product manager position?" },
+  { label: "Boost achievements", query: "Can you rewrite a few achievements to sound more impactful?" },
+  { label: "Skill gaps", query: "What skills should I add to stand out for tech roles?" }
+];
+
+const toTitleCase = (value = "") =>
+  value
+    .split(" ")
+    .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1) : ""))
+    .join(" ");
+
+const formatTimestamp = (iso) => {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
+
+const KeywordPills = ({ title, items = [] }) => {
+  if (!items.length) return null;
+  return (
+    <div className="bg-white/70 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/40 rounded-xl p-3 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300 flex items-center gap-2"><FaTags />{title}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.slice(0, 10).map((keyword, idx) => (
+          <span
+            key={`${keyword}-${idx}`}
+            className="px-2.5 py-1 text-xs font-medium bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 rounded-full"
+          >
+            {keyword}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MetadataCards = ({ metadata }) => {
+  if (!metadata) return null;
+  const { ats_result: atsResult, keywords, improved_text: improvedText, generated_cv: generatedCv } = metadata;
+
+  const improvedContent = typeof improvedText === "string" && improvedText.trim()
+    ? improvedText.trim()
+    : typeof generatedCv === "string" && generatedCv.trim()
+      ? generatedCv.trim()
+      : "";
+
+  return (
+    <div className="mt-4 space-y-4">
+      {atsResult && (
+        <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-900/20 p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-semibold text-sm">
+              <FaClipboardList />
+              ATS Snapshot
+            </div>
+            <div className="text-right">
+              <p className="text-xs uppercase text-emerald-500/80">Score</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-300">
+                {typeof atsResult.ats_score === "number" ? `${Math.round(atsResult.ats_score)} / 100` : atsResult.ats_score || "N/A"}
+              </p>
+            </div>
+          </div>
+          {Array.isArray(atsResult.issues) && atsResult.issues.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm text-emerald-800 dark:text-emerald-200">
+              {atsResult.issues.slice(0, 3).map((issue, idx) => (
+                <li key={`issue-${idx}`} className="flex gap-2">
+                  <span className="text-emerald-500">•</span>
+                  <span>{issue}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {atsResult.overall_recommendation && (
+            <p className="mt-3 text-sm text-emerald-800 dark:text-emerald-200">
+              {atsResult.overall_recommendation}
+            </p>
+          )}
+        </div>
+      )}
+
+      {keywords && (
+        <div className="rounded-2xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-900/10 p-4 shadow-sm space-y-3">
+          <p className="text-sm font-semibold text-blue-700 dark:text-blue-200 flex items-center gap-2">
+            <FaLightbulb className="text-amber-400" /> Suggested Keywords
+          </p>
+          {keywords.priority_additions && (
+            <KeywordPills title="High Priority" items={keywords.priority_additions} />
+          )}
+          {keywords.suggested_keywords && (
+            <KeywordPills title="Additional Ideas" items={keywords.suggested_keywords} />
+          )}
+          {keywords.existing_keywords && (
+            <div className="bg-white/60 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">Already in your CV</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {keywords.existing_keywords.slice(0, 12).map((item, idx) => (
+                  <span key={`existing-${idx}`} className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-full">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {improvedContent && (
+        <div className="rounded-2xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/70 dark:bg-purple-900/20 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-purple-700 dark:text-purple-200 flex items-center gap-2">
+            <FaMagic /> Preview of improvements
+          </p>
+          <div className="mt-3 text-sm text-purple-900 dark:text-purple-100 bg-white/70 dark:bg-gray-900/50 border border-purple-100 dark:border-purple-800/40 rounded-xl p-3 max-h-56 overflow-y-auto">
+            <FormattedText text={improvedContent.length > 1200 ? `${improvedContent.slice(0, 1200)}...` : improvedContent} />
+          </div>
+          <p className="mt-2 text-xs text-purple-600 dark:text-purple-200">Download the improved CV to see the full version.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ChatMessage = ({ message }) => {
+  const isUser = message.sender === "user";
+  const timestamp = formatTimestamp(message.timestamp);
+  const queryLabel = message.queryType ? toTitleCase(message.queryType.replace(/_/g, " ")) : null;
+
+  return (
+    <div className={`flex items-start gap-3 animate-slide-in ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+      <div className={`${isUser ? "bg-gradient-to-br from-green-500 to-emerald-500" : "bg-gradient-to-br from-blue-500 to-purple-600"} w-11 h-11 text-white flex items-center justify-center rounded-2xl shadow-lg flex-shrink-0`}>
+        {isUser ? <FaUserCircle className="text-xl" /> : <FaRobot className="text-xl" />}
+      </div>
+
+      <div className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-2xl`}>
+        <div
+          className={`p-4 rounded-3xl shadow-lg border transition-all duration-200 hover:shadow-xl ${
+            isUser
+              ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400"
+              : "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white"
+          }`}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.text}</p>
+          ) : (
+            <div className="text-sm leading-relaxed">
+              <FormattedText text={message.text} />
+              {queryLabel && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                  <FaCheckCircle className="text-green-500" />
+                  {queryLabel} insight
+                </div>
+              )}
+              <MetadataCards metadata={message.metadata} />
+            </div>
+          )}
+        </div>
+        {timestamp && (
+          <div className={`mt-2 flex items-center gap-1 text-xs text-gray-400 ${isUser ? "flex-row-reverse" : ""}`}>
+            <FaRegClock />
+            <span>{timestamp}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function ChatbotPage() {
   const [chatHistory, setChatHistory] = useState([]);
   const [message, setMessage] = useState("");
@@ -70,9 +255,18 @@ export default function ChatbotPage() {
   const [error, setError] = useState(null);
   const [hasCv, setHasCv] = useState(false);
   const [hasGeneratedCv, setHasGeneratedCv] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(true);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(true);
   const chatEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const messageInputRef = useRef(null);
+
+  const createMessage = (sender, text, extras = {}) => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    sender,
+    text,
+    timestamp: new Date().toISOString(),
+    ...extras,
+  });
 
   // Only scroll when there's actual chat content
   useEffect(() => {
@@ -88,6 +282,14 @@ export default function ChatbotPage() {
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  useEffect(() => {
+    if (messageInputRef.current) {
+      const el = messageInputRef.current;
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    }
+  }, [message]);
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -124,15 +326,18 @@ export default function ChatbotPage() {
       const data = await res.json();
       
       if (data.success) {
-        setChatHistory([{ sender: "bot", text: data.message }]);
+        setChatHistory([createMessage("bot", data.message)]);
         setHasCv(true);
         setCvFiles([]);
+        setIsQuickActionsOpen(true);
       } else {
         setError(data.message || "Upload failed. Please try again.");
-        setChatHistory([{ 
-          sender: "bot", 
-          text: "I encountered an error processing your CV. Please try uploading again." 
-        }]);
+        setChatHistory([
+          createMessage(
+            "bot",
+            "I encountered an error processing your CV. Please try uploading again."
+          ),
+        ]);
       }
     } catch (err) {
       setError("Network error. Please check your connection and try again.");
@@ -151,12 +356,12 @@ export default function ChatbotPage() {
       return;
     }
 
-    const userMessage = { sender: "user", text: queryText };
+    const userMessage = createMessage("user", queryText);
     setChatHistory(prev => [...prev, userMessage]);
     setMessage("");
     setIsBotTyping(true);
     setError(null);
-    setShowQuickActions(false);
+    setIsQuickActionsOpen(false);
 
     try {
       const res = await fetch(API_ENDPOINTS.ask, {
@@ -170,20 +375,21 @@ export default function ChatbotPage() {
       const data = await res.json();
       
       if (data.success) {
-        const botMessage = { 
-          sender: "bot", 
-          text: data.answer,
+        const botMessage = createMessage("bot", data.answer, {
           queryType: data.query_type,
           metadata: {
             ats_result: data.ats_result,
             keywords: data.keywords,
             improved_text: data.improved_text,
             generated_cv: data.generated_cv,
-          }
-        };
-        
-        // Check if CV was generated
-        if (data.generated_cv) {
+          },
+        });
+
+        const generatedContent = data.generated_cv;
+        const hasGeneratedContent = typeof generatedContent === "string"
+          ? generatedContent.trim().length > 0
+          : Boolean(generatedContent);
+        if (hasGeneratedContent) {
           setHasGeneratedCv(true);
         }
         
@@ -197,15 +403,25 @@ export default function ChatbotPage() {
     } catch (err) {
       console.error("Chat error:", err);
       setError(err.message || "Failed to get response. Please try again.");
-      setChatHistory(prev => [...prev, { 
-        sender: "bot", 
-        text: "I'm having trouble processing your question. Please try again." 
-      }]);
+      setChatHistory(prev => [
+        ...prev,
+        createMessage(
+          "bot",
+          "I'm having trouble processing your question. Please try again."
+        ),
+      ]);
       setIsBotTyping(false);
     }
   };
 
   const handleQuickAction = (query) => {
+    if (isBotTyping) return;
+    setIsQuickActionsOpen(false);
+    handleSend(query);
+  };
+
+  const handleSuggestionClick = (query) => {
+    if (!hasCv || isBotTyping) return;
     handleSend(query);
   };
 
@@ -232,6 +448,8 @@ export default function ChatbotPage() {
       console.error("Download error:", err);
     }
   };
+
+  const isSendDisabled = !hasCv || isBotTyping || !message.trim();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -361,26 +579,64 @@ export default function ChatbotPage() {
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                   {hasCv ? "Ask me anything about your CV or use quick actions" : "Upload a CV to start chatting"}
                 </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                      hasCv
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    <FaCheckCircle className={hasCv ? "text-emerald-500" : "text-gray-500"} />
+                    CV Uploaded
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                      chatHistory.length
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+                        : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                    }`}
+                  >
+                    <FaRobot className={chatHistory.length ? "text-blue-500" : "text-gray-500"} />
+                    Conversation {chatHistory.length ? "active" : "pending"}
+                  </span>
+                  {hasGeneratedCv && (
+                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
+                      <FaMagic className="text-purple-500" />
+                      Improved CV ready
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Quick Actions */}
-              {hasCv && showQuickActions && chatHistory.length === 0 && (
-                <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/10 dark:to-purple-900/10 border-b border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 mb-3">
-                    <FaLightbulb className="text-amber-500 animate-pulse" />
-                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Quick Actions:</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {QUICK_ACTIONS.map((action, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleQuickAction(action.query)}
-                        className="px-3 py-2 bg-white dark:bg-gray-700 hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-600 hover:text-white border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm transition-all duration-200 hover:shadow-md hover:scale-105 font-medium"
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
+              {hasCv && (
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50/60 to-purple-50/60 dark:from-blue-900/10 dark:to-purple-900/10">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickActionsOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between gap-3 text-sm font-semibold text-gray-700 dark:text-gray-200"
+                  >
+                    <span className="flex items-center gap-2">
+                      <FaLightbulb className="text-amber-500" />
+                      Smart jump-start suggestions
+                    </span>
+                    {isQuickActionsOpen ? <FaChevronUp /> : <FaChevronDown />}
+                  </button>
+                  {isQuickActionsOpen && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {QUICK_ACTIONS.map((action, idx) => (
+                        <button
+                          key={action.label}
+                          onClick={() => handleQuickAction(action.query)}
+                          className="px-3 py-2 bg-white/90 dark:bg-gray-700/80 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-600 hover:text-white"
+                          disabled={isBotTyping}
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -407,49 +663,15 @@ export default function ChatbotPage() {
                 )}
                 
                 {chatHistory.map((msg, idx) => (
-                  <div key={idx} className={`flex items-start gap-3 animate-slide-in ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
-                    {msg.sender === "bot" && (
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center rounded-full shadow-lg flex-shrink-0">
-                        <span className="text-lg">🤖</span>
-                      </div>
-                    )}
-                    
-                    <div className={`p-4 rounded-2xl max-w-xl break-words shadow-lg transition-all hover:shadow-xl ${
-                      msg.sender === "user"
-                        ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white"
-                        : "bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600"
-                    }`}>
-                      {msg.sender === "bot" ? (
-                        <div className="text-sm">
-                          <FormattedText text={msg.text} />
-                          {msg.queryType && (
-                            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                <FaCheckCircle className="text-green-500" />
-                                Analysis: {msg.queryType.replace('_', ' ')}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="whitespace-pre-wrap font-medium">{msg.text}</p>
-                      )}
-                    </div>
-
-                    {msg.sender === "user" && (
-                      <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center rounded-full shadow-lg flex-shrink-0">
-                        <span className="text-lg">👤</span>
-                      </div>
-                    )}
-                  </div>
+                  <ChatMessage key={msg.id || idx} message={msg} />
                 ))}
 
                 {isBotTyping && (
                   <div className="flex items-start gap-3 animate-slide-in">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center rounded-full shadow-lg">
-                      <span className="text-lg">🤖</span>
+                    <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center rounded-2xl shadow-lg">
+                      <FaRobot className="text-xl" />
                     </div>
-                    <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-4 rounded-2xl flex gap-2 shadow-lg">
+                    <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-5 py-4 rounded-3xl flex gap-2 shadow-lg">
                       <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></span>
                       <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></span>
                       <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }}></span>
@@ -460,31 +682,53 @@ export default function ChatbotPage() {
               </div>
 
               {/* Input Section */}
-              <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    className="flex-1 p-4 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-all text-sm"
-                    placeholder={hasCv ? "Type your question here..." : "Upload your CV to start chatting..."}
+              <div className="p-5 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                {hasCv && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {QUICK_SUGGESTIONS.map((chip) => (
+                      <button
+                        key={chip.label}
+                        onClick={() => handleSuggestionClick(chip.query)}
+                        className="px-3 py-1.5 text-xs sm:text-sm rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-600 hover:text-white transition-all duration-200"
+                        disabled={isBotTyping}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-3">
+                  <textarea
+                    ref={messageInputRef}
+                    rows={1}
+                    className="flex-1 resize-none p-4 rounded-2xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-all text-sm leading-relaxed"
+                    placeholder={hasCv ? "Ask a question, e.g. 'Rewrite my experience section with stronger verbs'" : "Upload your CV to start chatting"}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
                     disabled={!hasCv || isBotTyping}
                   />
                   <button
                     onClick={() => handleSend()}
-                    disabled={!hasCv || !message.trim() || isBotTyping}
-                    className={`p-4 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 ${
-                      isBotTyping 
-                        ? 'bg-gray-400' 
-                        : message.trim() 
-                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700' 
-                          : 'bg-gray-400'
+                    disabled={isSendDisabled}
+                    className={`p-4 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 ${
+                      isSendDisabled
+                        ? "bg-gray-400"
+                        : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                     } text-white`}
                   >
                     {isBotTyping ? <FaSpinner className="animate-spin text-xl" /> : <FaPaperPlane className="text-xl" />}
                   </button>
                 </div>
+                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  Press <span className="font-semibold">Enter</span> to send or <span className="font-semibold">Shift + Enter</span> for a new line.
+                </p>
               </div>
             </div>
           </div>
