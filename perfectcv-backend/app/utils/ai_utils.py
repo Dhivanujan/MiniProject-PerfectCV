@@ -52,7 +52,7 @@ def structure_cv_sections(cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Given the following CV text, identify and structure its key sections. 
         Format the response as a JSON object with these sections (if present):
         - personal_info: Basic information like name, contact details
@@ -90,7 +90,7 @@ def extract_ats_keywords(cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Analyze this CV text and extract key ATS-relevant keywords and phrases.
         Format the response as a JSON object with these categories:
         1. Technical skills: Programming languages, tools, frameworks
@@ -129,7 +129,7 @@ def analyze_cv_content(cv_text, question):
         # Extract ATS-relevant keywords
         ats_keywords = extract_ats_keywords(cv_text)
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         chat = model.start_chat(history=[])
         
         prompt = f"""Analyze the CV content below and answer the following question.
@@ -165,7 +165,7 @@ def extract_personal_info(cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Extract personal information from this CV and return as JSON.
         Include: name, email, phone, location, linkedin, github, website (if available).
         Return ONLY valid JSON, no additional text.
@@ -192,7 +192,7 @@ def detect_missing_sections(cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Analyze this CV and identify missing elements. Return as JSON with these keys:
         - missing_sections: array of missing standard sections (e.g., "Summary", "Skills", "Projects", "Achievements")
         - missing_professional_elements: array of objects with "issue" and "suggestion" 
@@ -224,7 +224,7 @@ def improve_sentence(sentence, context="work experience"):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Improve this CV sentence to be more professional and impactful.
         - Add action verbs
         - Add measurable achievements where possible
@@ -251,7 +251,7 @@ def suggest_achievements(cv_text, role_context=""):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Based on this CV content, suggest 5 achievement-oriented bullet points.
         Focus on:
         - Measurable outcomes (reduced time, increased sales, improved efficiency)
@@ -289,7 +289,7 @@ def check_ats_compatibility(cv_text, job_description=""):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Analyze this CV for ATS (Applicant Tracking System) compatibility.
         Return as JSON with these keys:
         - ats_score: number 0-100
@@ -324,7 +324,7 @@ def suggest_keywords_for_role(role, cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Suggest relevant keywords and skills for a {role} position.
         Compare with the current CV and identify gaps.
         Return as JSON with these keys:
@@ -358,7 +358,7 @@ def generate_improved_cv(cv_text, focus_areas=None):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         focus = ", ".join(focus_areas) if focus_areas else "overall improvement"
         
         prompt = f"""Rewrite this CV to be more professional and ATS-friendly.
@@ -391,7 +391,7 @@ def analyze_cv_comprehensively(cv_text):
         if not setup_gemini():
             return None
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""Perform a comprehensive analysis of this CV. Return as JSON with these keys:
         - personal_info: object with extracted personal details
         - sections_present: array of sections found in CV
