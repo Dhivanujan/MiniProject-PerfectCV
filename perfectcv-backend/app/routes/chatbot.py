@@ -1,20 +1,35 @@
-from flask import Blueprint, request, jsonify, current_app, session
+# app/blueprints/chatbot.py
+import os
+import io
+import re
+import json
+from functools import wraps
+from typing import Any, Dict, Optional
+
+from dotenv import load_dotenv
+load_dotenv()  # ensure environment variables are loaded
+
+from flask import Blueprint, request, jsonify, current_app, session, send_file
 from flask_login import login_required, current_user
+
+# External AI SDK (Google Generative AI)
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
+
+# GridFS for storing CV text/files
+import gridfs
+from bson import ObjectId
+
+# utils (assumed present in your project)
 from app.utils.cv_utils import extract_text_from_pdf, allowed_file
 from app.utils.ai_utils import (
     extract_personal_info, detect_missing_sections, improve_sentence,
     suggest_achievements, check_ats_compatibility, suggest_keywords_for_role,
-    generate_improved_cv, analyze_cv_comprehensively
+    generate_improved_cv, analyze_cv_comprehensively, get_generative_model,
+    DEFAULT_GENERATION_MODELS
 )
-from werkzeug.utils import secure_filename
-import gridfs
-from bson import ObjectId
-import os
-import io
-import re
 
-# LangChain Imports for RAG (optional)
+# Optional RAG dependencies - keep them guarded
 RAG_AVAILABLE = True
 try:
     from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -22,512 +37,603 @@ try:
     from langchain_community.vectorstores import FAISS
 except Exception as e:
     RAG_AVAILABLE = False
-    print(f"Warning: RAG dependencies import failed: {e}")
-
-from typing import Any
+    current_app_logger = current_app.logger if hasattr(current_app, "logger") else None
+    if current_app_logger:
+        current_app_logger.warning(f"RAG deps not available: {e}")
 
 chatbot = Blueprint("chatbot", __name__)
 
-# ---------- HELPER FUNCTIONS ----------
+# --------- Constants ----------
+CHAT_HISTORY_LIMIT = 10    # store last 10 messages
+CONTEXT_CHARS = 2000       # how many chars of CV to include in prompts as fallback
+EMBEDDING_MODEL = "models/embedding-001"  # change if needed
+def _unique_model_candidates():
+    seen = set()
+    for name in [os.getenv("GENAI_MODEL_OVERRIDE"), *DEFAULT_GENERATION_MODELS]:
+        if name and name not in seen:
+            seen.add(name)
+            yield name
 
-def get_cv_context():
-    """Get the CV text stored in user's session or GridFS."""
-    cv_text = session.get('cv_text')
-    if not cv_text and session.get('cv_file_id'):
-        try:
-            fs = gridfs.GridFS(current_app.mongo.db)
-            file_obj = fs.get(ObjectId(session['cv_file_id']))
-            cv_text = file_obj.read().decode('utf-8')
-            session['cv_text'] = cv_text
-        except Exception:
-            current_app.logger.exception("Failed to retrieve CV text")
-    return cv_text
+# --------- Helpers ----------
 
+def gridfs_instance():
+    """Return GridFS instance for current app's mongo DB."""
+    try:
+        return gridfs.GridFS(current_app.mongo.db)
+    except Exception:
+        current_app.logger.exception("Failed to create GridFS instance")
+        raise
 
-def get_cv_analysis():
-    """Get or create CV analysis stored in session."""
-    analysis = session.get('cv_analysis')
-    if not analysis:
-        cv_text = get_cv_context()
-        if cv_text:
-            # Perform initial analysis
-            analysis = analyze_cv_comprehensively(cv_text)
-            if analysis:
-                session['cv_analysis'] = analysis
-    return analysis
+def require_cv(func):
+    """Decorator to ensure a CV has been uploaded (GridFS id in session)."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not session.get("cv_file_id"):
+            return jsonify({"success": False, "message": "Please upload a CV first"}), 400
+        return func(*args, **kwargs)
+    return wrapper
 
-
-def get_conversation_context():
-    """Get conversation context for maintaining state."""
-    return session.get('conversation_context', {})
-
-
-def update_conversation_context(key, value):
-    """Update conversation context."""
-    context = get_conversation_context()
-    context[key] = value
-    session['conversation_context'] = context
-
-
-def classify_query(question):
-    """Classify the type of query to provide appropriate response."""
-    question_lower = question.lower()
-    
-    # ATS Check queries
-    if any(keyword in question_lower for keyword in ['ats', 'applicant tracking', 'ats friendly', 'ats score']):
-        return 'ats_check'
-    
-    # Missing information queries
-    if any(keyword in question_lower for keyword in ['missing', 'what\'s missing', 'what am i missing', 'gaps']):
-        return 'missing_info'
-    
-    # Improvement/enhancement queries
-    if any(keyword in question_lower for keyword in ['improve', 'enhance', 'better', 'rewrite', 'fix']):
-        return 'improvement'
-    
-    # Keyword/skills queries
-    if any(keyword in question_lower for keyword in ['keywords', 'skills to add', 'what skills', 'add skills']):
-        return 'keywords'
-    
-    # Section-specific queries
-    if any(keyword in question_lower for keyword in ['summary', 'experience', 'education', 'projects', 'achievements']):
-        return 'section_specific'
-    
-    # Generate/download queries
-    if any(keyword in question_lower for keyword in ['generate', 'create cv', 'updated cv', 'download', 'final version']):
-        return 'generate'
-    
-    # Extraction queries (personal info, skills, etc.)
-    if any(keyword in question_lower for keyword in ['extract', 'what are my', 'list my', 'show my']):
-        return 'extraction'
-    
-    # General Q&A
-    return 'general'
-
+def fetch_cv_text_from_gridfs() -> Optional[str]:
+    """Get CV text from GridFS using file id in session. Returns None if not available."""
+    file_id = session.get("cv_file_id")
+    if not file_id:
+        return None
+    try:
+        fs = gridfs_instance()
+        file_obj = fs.get(ObjectId(file_id))
+        # stored as text/plain bytes
+        raw = file_obj.read()
+        if isinstance(raw, bytes):
+            try:
+                return raw.decode("utf-8", errors="ignore")
+            except Exception:
+                return raw.decode("latin-1", errors="ignore")
+        return str(raw)
+    except Exception:
+        current_app.logger.exception("Failed to fetch CV from GridFS")
+        return None
 
 def _extract_genai_text(resp: Any) -> str:
-    """Try to extract text content from various genai response shapes."""
+    """Safely extract text from Google Generative AI responses (robust to shape changes)."""
     try:
-        # genai SDK response object sometimes exposes text or candidates
-        if hasattr(resp, "text") and isinstance(resp.text, str):
-            return resp.text
-        # some responses expose 'candidates' or 'outputs'
+        # SDK object-like responses
+        if hasattr(resp, "candidates") and getattr(resp, "candidates"):
+            cand = resp.candidates[0]
+            # cand.content might be nested parts
+            if hasattr(cand, "content"):
+                content = cand.content
+                # Some SDKs put parts array
+                if hasattr(content, "parts") and content.parts:
+                    part0 = content.parts[0]
+                    # part0 may have text attr
+                    if hasattr(part0, "text"):
+                        return part0.text
+                    # part0 may be string
+                    if isinstance(part0, str):
+                        return part0
+                # or content may have text directly
+                if hasattr(content, "text"):
+                    return content.text
+        # dict-shaped responses
         if isinstance(resp, dict):
-            # common keys
-            for key in ("text", "output", "content", "candidates", "outputs"):
-                if key in resp and resp[key]:
-                    v = resp[key]
-                    if isinstance(v, list) and len(v) > 0:
-                        first = v[0]
-                        # nested structure
-                        if isinstance(first, dict):
-                            for subk in ("text", "output", "content"):
-                                if subk in first and isinstance(first[subk], str):
-                                    return first[subk]
-                        elif isinstance(first, str):
-                            return first
-                    elif isinstance(v, str):
-                        return v
-        # fallback to string representation
+            # try common keys
+            for key in ("text", "output", "content"):
+                v = resp.get(key)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+                if isinstance(v, list) and v:
+                    first = v[0]
+                    if isinstance(first, dict):
+                        for subk in ("text", "content", "output"):
+                            if subk in first and isinstance(first[subk], str):
+                                return first[subk].strip()
+                    elif isinstance(first, str):
+                        return first.strip()
+            # special 'candidates' structure
+            cand = resp.get("candidates")
+            if cand and isinstance(cand, list):
+                first = cand[0]
+                if isinstance(first, dict):
+                    for subk in ("content", "text", "output"):
+                        if subk in first and isinstance(first[subk], str):
+                            return first[subk].strip()
+        # last fallback
         return str(resp)
     except Exception:
         current_app.logger.exception("Failed to parse genai response")
         return str(resp)
 
 def get_chat_history():
-    return session.get('chat_history', [])
+    return session.get("chat_history", [])
 
-def update_chat_history(user_msg, bot_msg):
+def update_chat_history(user_msg: str, bot_msg: str):
     history = get_chat_history()
     history.append({"role": "user", "content": user_msg})
     history.append({"role": "assistant", "content": bot_msg})
-    session['chat_history'] = history[-10:]
+    # store only last N messages
+    session['chat_history'] = history[-(CHAT_HISTORY_LIMIT*2):]
 
-# ---------- ROUTES ----------
+def safe_generate_with_gemini(prompt: str) -> str:
+    """Call Gemini safely and return text; raises on missing API key."""
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY")
+    if not api_key:
+        current_app.logger.error("GOOGLE_API_KEY/API_KEY not set in environment")
+        raise RuntimeError("Server is missing GOOGLE_API_KEY")
+
+    genai.configure(api_key=api_key)
+    last_error: Optional[Exception] = None
+
+    for model_name in _unique_model_candidates():
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            text = _extract_genai_text(response).strip()
+            if text:
+                return text
+        except google_exceptions.ResourceExhausted as exc:
+            current_app.logger.warning("Gemini quota exceeded for %s: %s", model_name, exc)
+            raise
+        except google_exceptions.NotFound as exc:
+            current_app.logger.warning("Gemini model %s not available: %s", model_name, exc)
+            last_error = exc
+        except Exception as exc:
+            current_app.logger.warning("Gemini model %s failed: %s", model_name, exc)
+            last_error = exc
+
+    # Final fallback using ai_utils helper (may discover newly added models)
+    fallback_model = get_generative_model([])
+    if fallback_model:
+        response = fallback_model.generate_content(prompt)
+        return _extract_genai_text(response).strip()
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("No Gemini models available to handle the request")
+
+# Improved classifier using word boundaries
+def classify_query(question: str) -> str:
+    q = question.lower()
+    # tokenized words plus some phrase checks
+    words = re.findall(r"\w+", q)
+
+    if any(k in q for k in ['ats', 'applicant tracking', 'ats friendly', 'ats score']):
+        return 'ats_check'
+    if any(word in words for word in ['missing', 'gaps', 'lack']) or "what am i missing" in q or "what's missing" in q:
+        return 'missing_info'
+    if any(word in words for word in ['improve', 'enhance', 'better', 'rewrite', 'fix', 'update', 'upgrade', 'improved']):
+        return 'improvement'
+    if any(word in words for word in ['keywords', 'skills', 'skill', 'keyword']):
+        return 'keywords'
+    if any(word in words for word in ['summary', 'experience', 'education', 'projects', 'achievements', 'skills']):
+        return 'section_specific'
+    if any(k in q for k in ['generate', 'create cv', 'updated cv', 'download', 'final version', 'export', 'save']):
+        return 'generate'
+    if any(word in words for word in ['extract', 'list', 'show', 'what are my', 'what is my']):
+        return 'extraction'
+    return 'general'
+
+# --------- Route handlers (small modular functions) ----------
+
+def handle_ats_check(cv_text: str, payload: Dict) -> Dict:
+    job_desc = payload.get('job_description', '')
+    try:
+        ats_result = check_ats_compatibility(cv_text, job_desc)
+    except Exception:
+        current_app.logger.exception("ATS check failed")
+        ats_result = None
+
+    if ats_result:
+        issues = ats_result.get('issues', [])
+        keyword_found = ats_result.get('keyword_analysis', {}).get('found', [])
+        keyword_missing = ats_result.get('keyword_analysis', {}).get('missing', [])
+        formatting = ats_result.get('formatting_suggestions', []) or []
+        return {
+            "answer": (
+                f"**ATS Compatibility Analysis**\n\n"
+                f"Score: {ats_result.get('ats_score', 'N/A')}/100\n\n"
+                f"Issues:\n" + "\n".join(f"• {i}" for i in issues) + "\n\n"
+                f"Keywords Found: {', '.join(keyword_found[:10])}\n"
+                f"Keywords Missing: {', '.join(keyword_missing[:10])}\n\n"
+                f"Formatting Suggestions:\n" + "\n".join(f"• {s}" for s in formatting) + "\n\n"
+                f"Recommendation: {ats_result.get('overall_recommendation', 'Consider improving keywords and formatting.')}"
+            ),
+            "ats_result": ats_result
+        }
+    else:
+        return {"answer": "I couldn't perform a full ATS analysis. Ensure you provided a job description and try again."}
+
+def handle_missing_info(cv_text: str) -> Dict:
+    try:
+        missing_analysis = detect_missing_sections(cv_text)
+    except Exception:
+        current_app.logger.exception("Missing sections detection failed")
+        missing_analysis = None
+
+    if missing_analysis:
+        missing_sections = missing_analysis.get('missing_sections', [])
+        missing_prof = missing_analysis.get('missing_professional_elements', [])
+        formatting_gaps = missing_analysis.get('formatting_gaps', [])
+        return {
+            "answer": (
+                f"**Missing Elements Analysis**\n\n"
+                f"Completeness Score: {missing_analysis.get('completeness_score','N/A')}/100\n\n"
+                f"Missing Sections:\n" + "\n".join(f"• {s}" for s in missing_sections) + "\n\n"
+                f"Missing Professional Elements:\n" + "\n".join(f"• {p.get('issue','')} - {p.get('suggestion','')}" for p in missing_prof) + "\n\n"
+                f"Formatting Gaps:\n" + "\n".join(f"• {g}" for g in formatting_gaps) + "\n\n"
+                f"Would you like me to add any of these missing elements?"
+            ),
+            "missing_analysis": missing_analysis
+        }
+    else:
+        return {"answer": "I couldn't detect specific missing elements. Consider adding a professional summary, quantifiable achievements, and a clear skills section."}
+
+def handle_improvement(cv_text: str, question: str) -> Dict:
+    # detect section
+    section_match = re.search(r'\b(summary|experience|education|skills|projects|achievements)\b', question, re.I)
+    section = section_match.group(1).lower() if section_match else None
+
+    try:
+        if section:
+            improved_section = generate_improved_cv(cv_text, focus_areas=[section])
+            if improved_section:
+                return {
+                    "answer": f"**Improved {section.title()} Section:**\n\n{improved_section}\n\nWould you like me to apply these?",
+                    "improved_text": improved_section
+                }
+            else:
+                return {"answer": f"I couldn't generate an improved {section} automatically. Please paste the section content and I'll rewrite it."}
+        else:
+            improved_cv = generate_improved_cv(cv_text)
+            if improved_cv:
+                preview = improved_cv if len(improved_cv) < 1200 else improved_cv[:1200] + "..."
+                # store generated in GridFS instead of session? We store in session id only (for download), but keep small text
+                session['generated_cv_preview'] = preview
+                session['generated_cv_text'] = improved_cv[:10000]  # safe partial store; avoid storing full long text if too large
+                return {"answer": f"**Improved CV (preview):**\n\n{preview}\n\nWould you like the full version?", "generated_cv": improved_cv}
+            else:
+                return {"answer": "I couldn't generate an improved CV automatically. Try again or provide the specific part you want improved."}
+    except Exception:
+        current_app.logger.exception("CV improvement failed")
+        return {"answer": "An error occurred while generating improvements. Try again later."}
+
+def handle_keywords(cv_text: str, question: str, payload: Dict) -> Dict:
+    role_match = re.search(r'(?:for|as a|as an|in)\s+([a-z\s]+?)(?:\s+role|\s+position|job|\?|$)', question, re.I)
+    role = role_match.group(1).strip() if role_match else payload.get('target_role', 'software engineer')
+    try:
+        ks = suggest_keywords_for_role(role, cv_text)
+    except Exception:
+        current_app.logger.exception("Keyword suggestion failed")
+        ks = None
+
+    if ks:
+        return {
+            "answer": (
+                f"**Keywords for {role.title()}**\n\n"
+                f"Priority additions:\n" + "\n".join(f"• {k}" for k in ks.get('priority_additions', [])) + "\n\n"
+                f"Suggested keywords:\n" + "\n".join(f"• {k}" for k in ks.get('suggested_keywords', [])[:15]) + "\n\n"
+                f"Already present:\n" + "\n".join(f"• {k}" for k in ks.get('existing_keywords', [])[:10]) + "\n\n"
+                f"Would you like me to integrate these?"
+            ),
+            "keywords": ks
+        }
+    else:
+        return {"answer": f"For a {role.title()} role, consider adding role-specific tools, frameworks, and measurable achievements."}
+
+def handle_section_specific(cv_text: str, question: str) -> Dict:
+    # Prefer RAG if available and index exists, else fallback to direct CV slice + Gemini
+    context = ""
+    try:
+        if RAG_AVAILABLE:
+            try:
+                embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
+                if os.path.isdir(index_path):
+                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+                    results = vectorstore.similarity_search(question, k=3)
+                    context = "\n\n".join([r.page_content for r in results])
+                else:
+                    context = cv_text[:CONTEXT_CHARS]
+            except Exception:
+                current_app.logger.warning("RAG similarity search failed; falling back to plain context")
+                context = cv_text[:CONTEXT_CHARS]
+        else:
+            context = cv_text[:CONTEXT_CHARS]
+
+        prompt = f"""You are an expert CV consultant specializing in resume optimization.
+
+Analyze the CV section content below and provide detailed, actionable feedback for the user's question.
+
+GUIDELINES:
+- Reference specific content from the CV in your answer
+- Provide concrete examples and suggestions
+- Use professional but friendly language
+- Format your response clearly with bullet points when appropriate
+- Be specific about what's working well and what could be improved
+
+CV SECTION CONTENT:
+{context}
+
+USER QUESTION: {question}
+
+DETAILED RESPONSE:"""
+        answer_text = safe_generate_with_gemini(prompt)
+        return {"answer": answer_text}
+    except Exception:
+        current_app.logger.exception("Section-specific handling failed")
+        return {"answer": "I encountered an error analyzing that section. Please try asking about a specific section (summary, experience, education, skills, etc.)."}
+
+def handle_extraction(cv_text: str, question: str) -> Dict:
+    q = question.lower()
+    try:
+        if 'personal' in q or 'contact' in q or 'email' in q or 'phone' in q:
+            info = extract_personal_info(cv_text)
+            if info:
+                return {"answer": (
+                    f"**Personal Information:**\n"
+                    f"• Name: {info.get('name','Not found')}\n"
+                    f"• Email: {info.get('email','Not found')}\n"
+                    f"• Phone: {info.get('phone','Not found')}\n"
+                    f"• Location: {info.get('location','Not found')}\n"
+                    f"• LinkedIn: {info.get('linkedin','Not found')}\n"
+                    f"• GitHub: {info.get('github','Not found')}\n"
+                ), "personal_info": info}
+            else:
+                return {"answer": "I couldn't extract complete personal info. Ensure your CV includes contact details."}
+        if 'skill' in q or 'skills' in q:
+            analysis = analyze_cv_comprehensively(cv_text)
+            skills = analysis.get('skills') if isinstance(analysis, dict) else None
+            if skills:
+                return {"answer": "**Skills Found in Your CV:**\n\n" + "\n".join(f"• {s}" for s in skills), "skills": skills}
+            else:
+                return {"answer": "I couldn't reliably extract a skills list. Consider listing skills under a clear 'Skills' heading."}
+        # fallback generic extraction: use RAG-ish or gemini
+        prompt = f"Extract the answer to: {question}\n\nFrom this CV: {cv_text[:CONTEXT_CHARS]}"
+        txt = safe_generate_with_gemini(prompt)
+        return {"answer": txt}
+    except Exception:
+        current_app.logger.exception("Extraction failed")
+        return {"answer": "Extraction failed. Try again or paste the section you want extracted."}
+
+def handle_generate(cv_text: str) -> Dict:
+    try:
+        improved = generate_improved_cv(cv_text)
+    except Exception:
+        current_app.logger.exception("Generate improved CV failed")
+        improved = None
+
+    if improved:
+        # store full improved CV in GridFS so user can download safely later
+        try:
+            fs = gridfs_instance()
+            file_id = fs.put(improved.encode('utf-8'), filename=f"generated_cv_{current_user.get_id()}.txt", content_type='text/plain', user_id=str(current_user.get_id()))
+            session['generated_cv_file_id'] = str(file_id)
+        except Exception:
+            current_app.logger.exception("Failed to store generated CV in GridFS")
+            # as fallback store a preview only
+            session['generated_cv_preview'] = improved[:1000]
+
+        return {
+            "answer": (
+                "**Your Updated CV is Ready!**\n\n"
+                "I've generated an improved version of your CV with:\n"
+                "• Enhanced formatting for ATS compatibility\n"
+                "• Stronger action verbs and quantifiable achievements\n"
+                "• Better section organization\n"
+                "• Relevant keywords\n\n"
+                "You can download the updated version. Would you like any specific adjustments?"
+            ),
+            "generated_cv": True
+        }
+    else:
+        return {"answer": "I couldn't generate an improved CV at this time. Try again later."}
+
+def handle_general(cv_text: str, question: str) -> Dict:
+    # Use RAG first if available, otherwise fallback to Gemini with a short CV context
+    try:
+        context = cv_text[:CONTEXT_CHARS]
+        conv_context = session.get('conversation_context', {})
+        context_note = f"\n\nPrevious context: We were discussing the {conv_context.get('last_section')} section." if conv_context.get('last_section') else ""
+        prompt = f"""You are an expert CV/Resume consultant and career advisor. 
+
+Analyze the CV content below and provide a detailed, helpful answer to the user's question.
+
+IMPORTANT INSTRUCTIONS:
+- Be specific and reference actual content from the CV
+- Provide actionable suggestions and concrete examples
+- If the CV is missing information relevant to the question, point that out
+- Be professional but conversational
+- Use bullet points for clarity when listing multiple items{context_note}
+
+CV CONTENT:
+{context}
+
+USER QUESTION: {question}
+
+DETAILED ANSWER:"""
+        answer = safe_generate_with_gemini(prompt)
+        return {"answer": answer}
+    except Exception:
+        current_app.logger.exception("General handling failed")
+        return {"answer": "I encountered an error processing your question. Please try rephrasing or ask something more specific about your CV."}
+
+# --------- Routes ----------
 
 @chatbot.route("/upload", methods=["POST"])
 @login_required
 def upload_cv():
-    """Upload and process CV + Create FAISS vector index"""
+    """Upload and store CV (text) to GridFS. Build optional vectorstore if possible."""
     if 'files' not in request.files:
         return jsonify({"success": False, "message": "No file uploaded"}), 400
-    
+
     file = request.files['files']
     if file.filename == '':
         return jsonify({"success": False, "message": "No file selected"}), 400
-        
-    if not file or not allowed_file(file.filename):
+
+    if not allowed_file(file.filename):
         return jsonify({"success": False, "message": "Invalid file type"}), 400
-        
+
     try:
-        # Extract CV text
+        # Extract CV text (PDF or text)
         if file.filename.lower().endswith('.pdf'):
             cv_text = extract_text_from_pdf(file)
         else:
-            cv_text = file.read().decode('utf-8')
+            cv_text = file.read().decode('utf-8', errors='ignore')
 
-        # Store in GridFS
-        fs = gridfs.GridFS(current_app.mongo.db)
-        filename = secure_filename(f"chat_{current_user.get_id()}_{file.filename}")
+        # store cv_text in GridFS (NOT session) to avoid session cookie limits
+        fs = gridfs_instance()
+        filename = f"chat_{current_user.get_id()}_{file.filename}"
         file_id = fs.put(cv_text.encode('utf-8'), filename=filename, content_type='text/plain', user_id=str(current_user.get_id()))
 
-        # Save in session
+        # Save only file-id in session
         session['cv_file_id'] = str(file_id)
-        session['cv_text'] = cv_text
+        # clear previous generated content ids if any
+        session.pop('generated_cv_file_id', None)
         session['chat_history'] = []
+        session['conversation_context'] = {}
 
-        # ---- NEW: Build FAISS Vector Store ----
-        if not RAG_AVAILABLE:
-            current_app.logger.warning("RAG dependencies not available; skipping vector index build.")
-            return jsonify({
-                "success": False,
-                "message": "RAG support (langchain/faiss) is not installed on the server. Install optional dependencies to enable CV&A." 
-            }), 501
-
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-        chunks = text_splitter.split_text(cv_text)
-
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        vectorstore = FAISS.from_texts(chunks, embeddings)
-        os.makedirs("vectorstores", exist_ok=True)
-        index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-        # Save local index
-        try:
-            vectorstore.save_local(index_path)
-        except Exception:
-            current_app.logger.exception("Failed to save FAISS vectorstore locally")
-            # attempt to remove any incomplete files and raise
-            raise
+        # Optional: create vectorstore for RAG
+        vector_store_created = False
+        if RAG_AVAILABLE:
+            try:
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+                chunks = text_splitter.split_text(cv_text)
+                embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+                vectorstore = FAISS.from_texts(chunks, embeddings)
+                os.makedirs("vectorstores", exist_ok=True)
+                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
+                vectorstore.save_local(index_path)
+                vector_store_created = True
+                current_app.logger.info("Vector store created successfully")
+            except Exception:
+                current_app.logger.exception("Could not create vector store; continuing without RAG")
 
         return jsonify({
             "success": True,
-            "message": "CV uploaded and processed successfully! You can now ask me questions about your CV."
+            "message": "CV uploaded and processed successfully. You can now ask questions about your CV.",
+            "rag_enabled": vector_store_created
         })
     except Exception as e:
         current_app.logger.exception("Error processing CV upload")
         return jsonify({"success": False, "message": str(e)}), 500
 
-
 @chatbot.route("/ask", methods=["POST"])
 @login_required
+@require_cv
 def ask():
-    """Answer CV-based question using intelligent query classification and context awareness"""
+    """Answer CV-based question using classification + modular handlers."""
     data = request.get_json() or {}
     question = data.get("question", "").strip()
-    
     if not question:
         return jsonify({"success": False, "message": "No question provided"}), 400
-        
-    cv_text = get_cv_context()
+
+    cv_text = fetch_cv_text_from_gridfs()
     if not cv_text:
-        return jsonify({"success": False, "message": "Please upload a CV first to enable Q&A"}), 400
-    
+        return jsonify({"success": False, "message": "Could not read CV text from storage."}), 500
+
     try:
-        # Classify the query type
-        query_type = classify_query(question)
-        current_app.logger.info(f"Query classified as: {query_type}")
-        
-        answer = ""
-        response_data = {"success": True, "hasCV": True}
-        
-        # Handle different query types
-        if query_type == 'ats_check':
-            # Check ATS compatibility
-            job_desc = data.get('job_description', '')
-            ats_result = check_ats_compatibility(cv_text, job_desc)
-            
-            if ats_result:
-                answer = f"""**ATS Compatibility Analysis**
+        qtype = classify_query(question)
+        current_app.logger.info(f"Query classified as: {qtype}")
 
-**Score:** {ats_result.get('ats_score', 'N/A')}/100
-
-**Issues Found:**
-{chr(10).join(['• ' + issue for issue in ats_result.get('issues', [])])}
-
-**Keyword Analysis:**
-- Found: {', '.join(ats_result.get('keyword_analysis', {}).get('found', [])[:10])}
-- Missing: {', '.join(ats_result.get('keyword_analysis', {}).get('missing', [])[:10])}
-
-**Formatting Suggestions:**
-{chr(10).join(['• ' + suggestion for suggestion in ats_result.get('formatting_suggestions', [])])}
-
-**Recommendation:** {ats_result.get('overall_recommendation', 'Continue improving your CV for better ATS compatibility.')}
-"""
-                response_data['ats_result'] = ats_result
-            else:
-                answer = "I couldn't perform a complete ATS analysis. Let me check basic compatibility..."
-                # Fallback to basic analysis
-                answer += "\n\nYour CV should include clear section headers, use standard fonts, and include relevant keywords for your target role."
-        
-        elif query_type == 'missing_info':
-            # Detect missing sections and elements
-            missing_analysis = detect_missing_sections(cv_text)
-            
-            if missing_analysis:
-                answer = f"""**Missing Elements Analysis**
-
-**Completeness Score:** {missing_analysis.get('completeness_score', 'N/A')}/100
-
-**Missing Sections:**
-{chr(10).join(['• ' + section for section in missing_analysis.get('missing_sections', [])])}
-
-**Missing Professional Elements:**
-{chr(10).join(['• ' + elem.get('issue', '') + ' - ' + elem.get('suggestion', '') for elem in missing_analysis.get('missing_professional_elements', [])])}
-
-**Formatting Gaps:**
-{chr(10).join(['• ' + gap for gap in missing_analysis.get('formatting_gaps', [])])}
-
-Would you like me to help you add any of these missing elements?
-"""
-                response_data['missing_analysis'] = missing_analysis
-            else:
-                answer = "I couldn't detect specific missing elements. Your CV appears to have the basic sections, but consider adding a professional summary, quantifiable achievements, and relevant skills."
-        
-        elif query_type == 'improvement':
-            # Handle improvement requests
-            # Check if it's a specific section or sentence
-            context = get_conversation_context()
-            
-            # Check for specific section mentions
+        # Dispatch to handlers
+        if qtype == 'ats_check':
+            result = handle_ats_check(cv_text, data)
+        elif qtype == 'missing_info':
+            result = handle_missing_info(cv_text)
+        elif qtype == 'improvement':
+            result = handle_improvement(cv_text, question)
+            # set last_section context if applicable
             section_match = re.search(r'\b(summary|experience|education|skills|projects|achievements)\b', question, re.I)
-            
             if section_match:
-                section = section_match.group(1).lower()
-                update_conversation_context('last_section', section)
-                
-                # Generate improved version of that section
-                improved = generate_improved_cv(cv_text, focus_areas=[section])
-                if improved:
-                    # Extract the specific section from improved CV
-                    answer = f"""**Improved {section.title()} Section:**
-
-{improved}
-
-Would you like me to apply these improvements or make any adjustments?
-"""
-                    response_data['improved_text'] = improved
-                else:
-                    answer = f"Let me help improve your {section} section. Can you share the current content?"
-            else:
-                # General improvement
-                improved = generate_improved_cv(cv_text)
-                if improved:
-                    answer = f"""**Improved CV:**
-
-{improved[:1000]}...
-
-I've rewritten your CV to be more professional and ATS-friendly. Would you like to see the full version or make specific adjustments?
-"""
-                    response_data['improved_text'] = improved
-                else:
-                    answer = "I can help improve your CV! Which section would you like me to focus on? (summary, experience, skills, etc.)"
-        
-        elif query_type == 'keywords':
-            # Suggest keywords for a specific role
-            role_match = re.search(r'(?:for|as a?|in)\s+([a-z\s]+?)(?:\s+role|\s+position|job|\?|$)', question, re.I)
-            role = role_match.group(1).strip() if role_match else data.get('target_role', 'software engineer')
-            
-            keyword_suggestions = suggest_keywords_for_role(role, cv_text)
-            
-            if keyword_suggestions:
-                answer = f"""**Keywords for {role.title()} Role**
-
-**Priority Additions:**
-{chr(10).join(['• ' + kw for kw in keyword_suggestions.get('priority_additions', [])])}
-
-**Suggested Keywords:**
-{chr(10).join(['• ' + kw for kw in keyword_suggestions.get('suggested_keywords', [])[:15]])}
-
-**Already Present:**
-{chr(10).join(['• ' + kw for kw in keyword_suggestions.get('existing_keywords', [])[:10]])}
-
-Would you like me to help integrate these keywords into your CV?
-"""
-                response_data['keywords'] = keyword_suggestions
-            else:
-                answer = f"For a {role} position, consider adding technical skills, tools, and industry-specific terms relevant to the field."
-        
-        elif query_type == 'section_specific':
-            # Handle section-specific queries using RAG
-            if RAG_AVAILABLE:
-                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                
-                if os.path.isdir(index_path):
-                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
-                    results = vectorstore.similarity_search(question, k=3)
-                    context = "\n\n".join([r.page_content for r in results])
-                    
-                    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    
-                    prompt = f"""You are a CV enhancement assistant.
-                    Answer the user's question using the CV context below.
-                    Provide specific, actionable advice.
-
-                    CV Context:
-                    {context}
-
-                    Question: {question}
-                    
-                    Provide a helpful answer with specific examples and suggestions.
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    answer = _extract_genai_text(response).strip()
-                else:
-                    answer = "Please re-upload your CV to enable detailed section analysis."
-            else:
-                answer = "Section analysis requires additional setup. Please check the installation."
-        
-        elif query_type == 'extraction':
-            # Extract specific information
-            if 'personal' in question.lower() or 'contact' in question.lower():
-                personal_info = extract_personal_info(cv_text)
-                if personal_info:
-                    answer = f"""**Personal Information:**
-
-• Name: {personal_info.get('name', 'Not found')}
-• Email: {personal_info.get('email', 'Not found')}
-• Phone: {personal_info.get('phone', 'Not found')}
-• Location: {personal_info.get('location', 'Not found')}
-• LinkedIn: {personal_info.get('linkedin', 'Not found')}
-• GitHub: {personal_info.get('github', 'Not found')}
-"""
-                    response_data['personal_info'] = personal_info
-                else:
-                    answer = "I couldn't extract complete personal information. Please ensure your CV includes name, email, phone, and location."
-            
-            elif 'skill' in question.lower():
-                # Extract skills from CV analysis
-                analysis = get_cv_analysis()
-                if analysis and 'skills' in str(analysis):
-                    answer = "**Skills Found in Your CV:**\n\n"
-                    answer += "I've identified your skills. Would you like me to suggest additional relevant skills to add?"
-                else:
-                    answer = "Let me analyze your skills section. Consider organizing skills by category (Technical, Soft Skills, Tools, etc.)"
-            
-            else:
-                # General extraction - use RAG
-                answer = "I can help extract information from your CV. What specifically would you like to know?"
-        
-        elif query_type == 'generate':
-            # Generate final/updated CV
-            improved = generate_improved_cv(cv_text)
-            
-            if improved:
-                answer = """**Your Updated CV is Ready!**
-
-I've generated an improved version of your CV with:
-• Enhanced formatting for ATS compatibility
-• Stronger action verbs and quantifiable achievements
-• Better section organization
-• Relevant keywords
-
-You can download the updated version. Would you like me to make any specific adjustments?
-"""
-                response_data['generated_cv'] = improved
-                # Store for potential download
-                session['generated_cv'] = improved
-            else:
-                answer = "I'm preparing your updated CV. This includes improvements to formatting, content, and ATS optimization."
-        
+                conv = session.get('conversation_context', {})
+                conv['last_section'] = section_match.group(1).lower()
+                session['conversation_context'] = conv
+        elif qtype == 'keywords':
+            result = handle_keywords(cv_text, question, data)
+        elif qtype == 'section_specific':
+            result = handle_section_specific(cv_text, question)
+        elif qtype == 'extraction':
+            result = handle_extraction(cv_text, question)
+        elif qtype == 'generate':
+            result = handle_generate(cv_text)
         else:
-            # General Q&A using RAG
-            if RAG_AVAILABLE:
-                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                
-                if os.path.isdir(index_path):
-                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
-                    results = vectorstore.similarity_search(question, k=3)
-                    context = "\n\n".join([r.page_content for r in results])
-                    
-                    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    
-                    # Check conversation context for continuity
-                    conv_context = get_conversation_context()
-                    context_note = ""
-                    if conv_context.get('last_section'):
-                        context_note = f"\nNote: We were previously discussing the {conv_context['last_section']} section."
-                    
-                    prompt = f"""You are a helpful CV assistant.
-                    Answer the user's question using the CV context below.
-                    If the information is not available, say so.{context_note}
+            result = handle_general(cv_text, question)
 
-                    CV Context:
-                    {context}
-
-                    Question: {question}
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    answer = _extract_genai_text(response).strip()
-                else:
-                    answer = "Please re-upload your CV to enable Q&A."
-            else:
-                answer = "CV Q&A requires additional setup. Please check the installation."
-        
         # Update chat history
-        update_chat_history(question, answer)
-        
-        response_data['answer'] = answer
-        response_data['query_type'] = query_type
-        
-        return jsonify(response_data)
+        update_chat_history(question, result.get("answer", ""))
+        response_payload = {"success": True, "answer": result.get("answer", ""), "query_type": qtype}
+        # attach any extra data
+        for k in ("ats_result", "missing_analysis", "keywords", "improved_text", "personal_info", "skills", "generated_cv"):
+            if k in result:
+                response_payload[k] = result[k]
 
+        return jsonify(response_payload)
     except Exception as e:
-        current_app.logger.exception("Error during CV Q&A")
-        return jsonify({"success": False, "message": str(e)}), 500
-
+        current_app.logger.exception("Error during /ask processing")
+        return jsonify({"success": False, "message": str(e), "error_type": type(e).__name__}), 500
 
 @chatbot.route("/download-cv", methods=["GET"])
 @login_required
 def download_generated_cv():
-    """Download the generated/improved CV"""
+    """Download the generated/improved CV stored in GridFS (if available)."""
     try:
-        generated_cv = session.get('generated_cv')
-        
-        if not generated_cv:
+        file_id = session.get('generated_cv_file_id')
+        if not file_id:
+            # fallback: maybe preview stored
+            preview = session.get('generated_cv_preview')
+            if preview:
+                # return text as file-like
+                buf = io.BytesIO(preview.encode('utf-8'))
+                buf.seek(0)
+                return send_file(buf, mimetype='text/plain', as_attachment=True, download_name=f'improved_cv_{current_user.get_id()}.txt')
             return jsonify({"success": False, "message": "No generated CV available. Please generate one first."}), 404
-        
-        # Import here to avoid circular imports
-        from app.utils.cv_utils import generate_pdf
-        
-        # Generate PDF from the improved text
-        pdf_bytes = generate_pdf(generated_cv)
-        
-        from flask import send_file
-        return send_file(
-            pdf_bytes,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'improved_cv_{current_user.get_id()}.pdf'
-        )
-        
-    except Exception as e:
-        current_app.logger.exception("Error downloading generated CV")
-        return jsonify({"success": False, "message": str(e)}), 500
 
+        fs = gridfs_instance()
+        file_obj = fs.get(ObjectId(file_id))
+        content = file_obj.read()
+        buf = io.BytesIO(content)
+        buf.seek(0)
+        # If you prefer PDF generation, ensure app.utils.cv_utils.generate_pdf exists and returns BytesIO
+        return send_file(buf, mimetype='text/plain', as_attachment=True, download_name=f'improved_cv_{current_user.get_id()}.txt')
+    except Exception:
+        current_app.logger.exception("Error downloading generated CV")
+        return jsonify({"success": False, "message": "Failed to download generated CV."}), 500
 
 @chatbot.route("/analysis", methods=["GET"])
 @login_required
+@require_cv
 def get_analysis():
-    """Get comprehensive CV analysis"""
+    """Return a stored or freshly computed comprehensive analysis (store analysis in GridFS if large)."""
     try:
-        cv_text = get_cv_context()
+        # If we previously stored analysis in session as file id, try to fetch it
+        analysis_file_id = session.get('cv_analysis_file_id')
+        if analysis_file_id:
+            try:
+                fs = gridfs_instance()
+                f = fs.get(ObjectId(analysis_file_id))
+                raw = f.read()
+                analysis = json.loads(raw.decode('utf-8'))
+                return jsonify({"success": True, "analysis": analysis})
+            except Exception:
+                current_app.logger.exception("Failed to load analysis from GridFS - will re-run analysis")
+
+        # Otherwise run analysis now (and store result in GridFS)
+        cv_text = fetch_cv_text_from_gridfs()
         if not cv_text:
-            return jsonify({"success": False, "message": "Please upload a CV first"}), 400
-        
-        # Get or create analysis
-        analysis = get_cv_analysis()
-        
+            return jsonify({"success": False, "message": "Could not read CV text."}), 500
+
+        analysis = analyze_cv_comprehensively(cv_text)
         if not analysis:
-            return jsonify({"success": False, "message": "Unable to analyze CV at this time"}), 500
-        
+            return jsonify({"success": False, "message": "Analysis returned empty result."}), 500
+
+        # store analysis in GridFS to avoid session bloat
+        try:
+            fs = gridfs_instance()
+            fid = fs.put(json.dumps(analysis).encode('utf-8'), filename=f"analysis_{current_user.get_id()}.json", content_type='application/json', user_id=str(current_user.get_id()))
+            session['cv_analysis_file_id'] = str(fid)
+        except Exception:
+            current_app.logger.exception("Failed to store analysis in GridFS")
+
         return jsonify({"success": True, "analysis": analysis})
-        
-    except Exception as e:
+    except Exception:
         current_app.logger.exception("Error getting CV analysis")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({"success": False, "message": "Failed to produce analysis."}), 500
