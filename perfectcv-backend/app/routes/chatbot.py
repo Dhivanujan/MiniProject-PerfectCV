@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 load_dotenv()  # ensure environment variables are loaded
 
 from flask import Blueprint, request, jsonify, current_app, session, send_file
+import logging
+
+logger = logging.getLogger(__name__)
 from flask_login import login_required, current_user
 
 # External AI SDK (Google Generative AI)
@@ -30,16 +33,16 @@ from app.utils.ai_utils import (
 )
 
 # Optional RAG dependencies - keep them guarded
-RAG_AVAILABLE = True
+RAG_AVAILABLE = False
 try:
     from langchain.text_splitter import RecursiveCharacterTextSplitter
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
     from langchain_community.vectorstores import FAISS
+    RAG_AVAILABLE = True
 except Exception as e:
     RAG_AVAILABLE = False
-    current_app_logger = current_app.logger if hasattr(current_app, "logger") else None
-    if current_app_logger:
-        current_app_logger.warning(f"RAG deps not available: {e}")
+    # Avoid accessing current_app at import time; use module logger instead
+    logger.warning("RAG deps not available: %s", e)
 
 chatbot = Blueprint("chatbot", __name__)
 
@@ -53,6 +56,64 @@ def _unique_model_candidates():
         if name and name not in seen:
             seen.add(name)
             yield name
+
+
+def get_embeddings_instance():
+    """Return an embeddings object compatible with LangChain FAISS operations if available.
+    Tries GoogleGenerativeAIEmbeddings (if API key present) then HuggingFaceEmbeddings.
+    Returns None if no embedding provider is available.
+    """
+    # Try Google generative embeddings if API key present
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY")
+    if api_key:
+        try:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+        except Exception as e:
+            logger.debug("GoogleGenerativeAIEmbeddings not available: %s", e)
+
+    # Try HuggingFace / sentence-transformers via LangChain
+    try:
+        from langchain.embeddings import HuggingFaceEmbeddings
+        return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    except Exception as e:
+        logger.debug("HuggingFaceEmbeddings not available: %s", e)
+
+    logger.info("No embeddings provider available (install langchain-google-genai or sentence-transformers for embeddings)")
+    return None
+
+
+def load_or_build_vectorstore_for_user(user_id: str, cv_text: str):
+    """Load existing FAISS index for user or build it from cv_text. Returns vectorstore or None."""
+    try:
+        embeddings = get_embeddings_instance()
+        if not embeddings or FAISS is None or RecursiveCharacterTextSplitter is None:
+            logger.info("Vectorstore unavailable: missing embeddings provider or FAISS/text-splitter")
+            return None
+
+        index_path = os.path.join("vectorstores", f"{user_id}_cv_index")
+        # If index exists, load it
+        if os.path.isdir(index_path):
+            try:
+                return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+            except Exception:
+                logger.exception("Failed to load existing vectorstore; rebuilding")
+
+        # Build new index
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+        chunks = splitter.split_text(cv_text)
+        if not chunks:
+            return None
+        vectorstore = FAISS.from_texts(chunks, embeddings)
+        os.makedirs(index_path, exist_ok=True)
+        try:
+            vectorstore.save_local(index_path)
+        except Exception:
+            logger.exception("Failed to save FAISS index locally")
+        return vectorstore
+    except Exception:
+        logger.exception("Error building or loading vectorstore")
+        return None
 
 # --------- Helpers ----------
 
@@ -325,16 +386,14 @@ def handle_section_specific(cv_text: str, question: str) -> Dict:
     try:
         if RAG_AVAILABLE:
             try:
-                embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                if os.path.isdir(index_path):
-                    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+                vectorstore = load_or_build_vectorstore_for_user(str(current_user.get_id()), cv_text)
+                if vectorstore:
                     results = vectorstore.similarity_search(question, k=3)
                     context = "\n\n".join([r.page_content for r in results])
                 else:
                     context = cv_text[:CONTEXT_CHARS]
             except Exception:
-                current_app.logger.warning("RAG similarity search failed; falling back to plain context")
+                logger.warning("RAG similarity search failed; falling back to plain context")
                 context = cv_text[:CONTEXT_CHARS]
         else:
             context = cv_text[:CONTEXT_CHARS]
@@ -430,7 +489,18 @@ def handle_generate(cv_text: str) -> Dict:
 def handle_general(cv_text: str, question: str) -> Dict:
     # Use RAG first if available, otherwise fallback to Gemini with a short CV context
     try:
-        context = cv_text[:CONTEXT_CHARS]
+        # Try to use vectorstore retrieval for better answers
+        context = None
+        try:
+            vectorstore = load_or_build_vectorstore_for_user(str(current_user.get_id()), cv_text)
+            if vectorstore:
+                results = vectorstore.similarity_search(question, k=4)
+                context = "\n\n".join([r.page_content for r in results])
+        except Exception:
+            logger.debug("No vectorstore available for general handler; using short CV context")
+
+        if not context:
+            context = cv_text[:CONTEXT_CHARS]
         conv_context = session.get('conversation_context', {})
         context_note = f"\n\nPrevious context: We were discussing the {conv_context.get('last_section')} section." if conv_context.get('last_section') else ""
         prompt = f"""You are an expert CV/Resume consultant and career advisor. 
@@ -450,8 +520,30 @@ CV CONTENT:
 USER QUESTION: {question}
 
 DETAILED ANSWER:"""
-        answer = safe_generate_with_gemini(prompt)
-        return {"answer": answer}
+        try:
+            answer = safe_generate_with_gemini(prompt)
+            return {"answer": answer}
+        except Exception:
+            logger.warning("Gemini generation unavailable, falling back to local QA")
+            # Simple local fallback: score sentences by keyword overlap
+            try:
+                # simple sentence matcher
+                qwords = [w.lower() for w in re.findall(r"\w{3,}", question)]
+                sentences = re.split(r'(?<=[.!?])\s+', cv_text)
+                scored = []
+                for s in sentences:
+                    sl = s.lower()
+                    score = sum(1 for w in qwords if w in sl)
+                    if score:
+                        scored.append((score, s.strip()))
+                if not scored:
+                    return {"answer": "I don't have enough information in your CV to answer that."}
+                scored.sort(key=lambda x: x[0], reverse=True)
+                top = ' '.join([s for _, s in scored[:3]])
+                return {"answer": top}
+            except Exception:
+                logger.exception("Local fallback QA failed")
+                return {"answer": "I couldn't generate an answer right now. Please try again later."}
     except Exception:
         current_app.logger.exception("General handling failed")
         return {"answer": "I encountered an error processing your question. Please try rephrasing or ask something more specific about your CV."}
@@ -491,21 +583,15 @@ def upload_cv():
         session['chat_history'] = []
         session['conversation_context'] = {}
 
-        # Optional: create vectorstore for RAG
+        # Optional: create or load vectorstore for RAG (tries Google embeddings then HF)
         vector_store_created = False
-        if RAG_AVAILABLE:
-            try:
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
-                chunks = text_splitter.split_text(cv_text)
-                embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
-                vectorstore = FAISS.from_texts(chunks, embeddings)
-                os.makedirs("vectorstores", exist_ok=True)
-                index_path = os.path.join("vectorstores", f"{current_user.get_id()}_cv_index")
-                vectorstore.save_local(index_path)
+        try:
+            vs = load_or_build_vectorstore_for_user(str(current_user.get_id()), cv_text)
+            if vs is not None:
                 vector_store_created = True
-                current_app.logger.info("Vector store created successfully")
-            except Exception:
-                current_app.logger.exception("Could not create vector store; continuing without RAG")
+                logger.info("Vector store created or loaded successfully for user %s", current_user.get_id())
+        except Exception:
+            logger.exception("Could not create or load vector store; continuing without RAG")
 
         return jsonify({
             "success": True,
