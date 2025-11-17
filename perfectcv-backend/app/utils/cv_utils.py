@@ -40,18 +40,30 @@ DOMAIN_KEYWORDS = {
 
 
 def normalize_text(text):
-    """Clean and normalize text while preserving meaningful spacing."""
+    """Clean and normalize text while preserving meaningful spacing and structure."""
     # Replace multiple spaces with single space
     text = re.sub(r'\s+', ' ', text)
+    
     # Preserve newlines that likely indicate sections or list items
     text = re.sub(r'([.!?])\s*\n\s*([A-Z])', r'\1\n\n\2', text)
+    
     # Ensure list items and bullets start on new lines
     text = re.sub(r'\s*([•\-\*]|\d+\.)\s*', r'\n\1 ', text)
+    
     # Fix collapsed words (missing spaces after punctuation)
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
     text = re.sub(r'([.!?])([A-Za-z])', r'\1 \2', text)
+    
+    # Fix email addresses that may be split
+    text = re.sub(r'(\w+)\s+@\s+(\w+)', r'\1@\2', text)
+    
     # Remove repeated newlines while preserving paragraph breaks
     text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Clean up extra spaces in lines
+    lines = [line.strip() for line in text.split('\n')]
+    text = '\n'.join(lines)
+    
     return text.strip()
 
 def extract_text_from_pdf(file_stream):
@@ -238,41 +250,78 @@ def compute_ats_score(text, domain=None):
 
 
 def extract_sections(text):
-    """Split text into structured sections: about, education, experience, projects, achievements, skills, other.
-
-    Note: the key name for work experience is `experience` (consistent with other helpers).
+    """Split text into structured sections with improved accuracy.
+    
+    Sections: about, education, experience, projects, achievements, skills, other
+    Uses multiple regex passes to handle various formatting styles.
     """
-    sections = {"about": "", "skills": "", "experience": "", "education": "", "projects": "", "achievements": "", "other": ""}
-    # Split by a broader set of headings
-    parts = re.split(r"\n\s*(about|summary|profile|professional summary|skills|experience|work experience|education|projects|project|achievements|certifications|volunteer|extracurricular|activities)\s*\n", text, flags=re.I)
+    sections = {
+        "about": "",
+        "skills": "",
+        "experience": "",
+        "education": "",
+        "projects": "",
+        "achievements": "",
+        "other": ""
+    }
+    
+    # Enhanced regex with word boundaries for better section detection
+    section_pattern = r"\n\s*(?:^|\s)(" \
+        r"about|summary|profile|professional\s+summary|" \
+        r"skills|key\s+skills|technical\s+skills|" \
+        r"experience|work\s+experience|career|employment|" \
+        r"education|academic|qualifications|" \
+        r"projects?|" \
+        r"achievements?|certifications?|volunteer|extracurricular|activities|awards|" \
+        r"languages?|interests?|references?" \
+        r")\s*[\n:]"
+    
+    parts = re.split(section_pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+    
     if len(parts) <= 1:
-        sections["other"] = text.strip()
+        # No sections found - try to split first entry as name/contact
+        lines = text.strip().split('\n')
+        if lines:
+            sections["about"] = '\n'.join(lines)
         return sections
-    # parts: [before, heading1, content1, heading2, content2, ...]
-    # take pairs
+    
+    # parts: [before_heading1, heading1, content1, heading2, content2, ...]
     prefix = parts[0].strip()
-    if prefix:
+    if prefix and len(prefix) > 5:  # Only treat as "about" if meaningful
         sections["about"] = prefix
+    
+    # Process heading-content pairs
     for i in range(1, len(parts), 2):
-        heading = parts[i].lower()
-        content = parts[i+1].strip() if i+1 < len(parts) else ""
-        if any(k in heading for k in ("about", "summary", "profile")):
-            sections["about"] += "\n" + content
+        if i + 1 >= len(parts):
+            break
+            
+        heading = parts[i].lower().strip()
+        content = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        
+        if not content:
+            continue
+        
+        # Classify heading and append to appropriate section
+        if any(k in heading for k in ("about", "summary", "profile", "professional")):
+            sections["about"] = (sections["about"] + "\n" + content).strip()
         elif "skill" in heading:
-            sections["skills"] += "\n" + content
-        elif "experience" in heading or "work" in heading:
-            sections["experience"] += "\n" + content
-        elif "education" in heading:
-            sections["education"] += "\n" + content
-        elif any(k in heading for k in ("project", "projects")):
-            sections["projects"] += "\n" + content
-        elif any(k in heading for k in ("achiev", "certif", "volunteer", "extracurr", "activities")):
-            sections["achievements"] += "\n" + content
+            sections["skills"] = (sections["skills"] + "\n" + content).strip()
+        elif any(k in heading for k in ("experience", "work", "career", "employment")):
+            sections["experience"] = (sections["experience"] + "\n" + content).strip()
+        elif "education" in heading or "academic" in heading or "qualification" in heading:
+            sections["education"] = (sections["education"] + "\n" + content).strip()
+        elif "project" in heading:
+            sections["projects"] = (sections["projects"] + "\n" + content).strip()
+        elif any(k in heading for k in ("achiev", "certif", "volunteer", "extracurr", "activity", "award", "language", "interest", "reference")):
+            sections["achievements"] = (sections["achievements"] + "\n" + content).strip()
         else:
-            sections["other"] += "\n" + content
-    # clean
+            sections["other"] = (sections["other"] + "\n" + content).strip()
+    
+    # Final cleanup and whitespace normalization
     for k in sections:
-        sections[k] = sections[k].strip()
+        # Remove leading/trailing whitespace and collapse multiple newlines
+        sections[k] = re.sub(r'\n{2,}', '\n', sections[k].strip())
+    
     return sections
 
 
@@ -377,147 +426,328 @@ def optimize_cv_rule_based(cv_text, job_domain=None):
     }
 
 def parse_experience_section(text):
-    """Parse experience section text into structured format for ResumeTemplate.
-
+    """Parse experience section text into structured format.
+    
+    Handles multiple formats:
+    - Job Title at Company (Date Range)
+    - Company | Job Title | Dates
+    - Date Range: Job Title at Company
+    
     Returns list of {title, company, dates, points[]}.
     """
+    if not text or not text.strip():
+        return []
+    
     jobs = []
     current_job = None
+    lines = text.split('\n')
     
-    for line in text.split('\n'):
+    # Regex patterns for date ranges
+    date_pattern = r'\(([^)]*(?:20|19)\d{2}[^)]*)\)|\[([^\]]*(?:20|19)\d{2}[^\]]*)\]|(\w+\s+\d{4}\s*[-–]\s*(?:\w+\s+)?\d{4}|Present|Current)'
+    
+    for line in lines:
         line = line.strip()
         if not line:
-            continue
-            
-        # New job entry typically starts with non-bulleted line
-        if not line.startswith(('-', '•', '*')):
-            # Save previous job if exists
             if current_job and current_job.get('points'):
                 jobs.append(current_job)
+                current_job = None
+            continue
+        
+        # Check if this is a new job entry (non-bulleted, contains company/title info)
+        if not line.startswith(('-', '•', '*')) and any(sep in line for sep in [' at ', ' | ', ' - ', '–']):
+            # Save previous job
+            if current_job and (current_job.get('points') or current_job.get('title')):
+                jobs.append(current_job)
             
-            # Try to split into title and company/dates
-            parts = line.split(' at ', 1)
-            if len(parts) == 2:
-                title, company = parts
-                # Try to extract dates from company line
-                company_parts = company.rsplit('(', 1)
-                if len(company_parts) == 2:
-                    company = company_parts[0].strip()
-                    dates = company_parts[1].rstrip(')').strip()
-                else:
-                    dates = "Present"  # Default if no dates found
+            # Parse new job
+            title = ""
+            company = ""
+            dates = ""
+            
+            # Extract dates first
+            date_match = re.search(date_pattern, line, re.IGNORECASE)
+            if date_match:
+                dates = date_match.group(1) or date_match.group(2) or date_match.group(3)
+                line_without_dates = re.sub(date_pattern, '', line).strip()
             else:
-                # Fallback if can't parse cleanly
-                title = line
-                company = ""
-                dates = "Present"
-                
+                line_without_dates = line
+            
+            # Parse title and company
+            if ' at ' in line_without_dates:
+                title, company = [x.strip() for x in line_without_dates.split(' at ', 1)]
+            elif ' | ' in line_without_dates:
+                parts = [x.strip() for x in line_without_dates.split('|')]
+                if len(parts) == 2:
+                    company, title = parts
+                elif len(parts) == 3:
+                    company, title, dates_alt = parts
+                    if not dates:
+                        dates = dates_alt
+            elif ' - ' in line_without_dates or '–' in line_without_dates:
+                sep = ' – ' if '–' in line_without_dates else ' - '
+                parts = [x.strip() for x in line_without_dates.split(sep, 1)]
+                if len(parts) == 2 and any(year in parts[1] for year in ['20', '19', 'Present']):
+                    title = parts[0]
+                    dates = parts[1]
+                else:
+                    title = line_without_dates
+            else:
+                title = line_without_dates
+            
             current_job = {
-                'title': title,
-                'company': company,
-                'dates': dates,
+                'title': title or 'Position',
+                'company': company or 'Company',
+                'dates': dates or 'Present',
                 'points': []
             }
-        elif current_job:  # Bullet point
+        elif current_job and (line.startswith(('-', '•', '*')) or (current_job and current_job.get('points'))):
+            # Bullet point or continuation
             point = line.lstrip('-•* ').strip()
             if point:
                 current_job['points'].append(point)
+        elif not current_job and line and any(sep in line for sep in [' at ', ' | ', ' - ', '–']):
+            # Start new job entry
+            title = ""
+            company = ""
+            dates = ""
+            
+            date_match = re.search(date_pattern, line, re.IGNORECASE)
+            if date_match:
+                dates = date_match.group(1) or date_match.group(2) or date_match.group(3)
+                line_without_dates = re.sub(date_pattern, '', line).strip()
+            else:
+                line_without_dates = line
+            
+            if ' at ' in line_without_dates:
+                title, company = [x.strip() for x in line_without_dates.split(' at ', 1)]
+            elif ' | ' in line_without_dates:
+                parts = [x.strip() for x in line_without_dates.split('|')]
+                if len(parts) >= 2:
+                    company = parts[0]
+                    title = parts[1]
+            
+            current_job = {
+                'title': title or 'Position',
+                'company': company or 'Company',
+                'dates': dates or 'Present',
+                'points': [line] if line.startswith(('-', '•', '*')) else []
+            }
     
-    # Add last job
-    if current_job and current_job.get('points'):
+    # Add last job if it has content
+    if current_job and (current_job.get('points') or current_job.get('title')):
         jobs.append(current_job)
-        
-    return jobs
+    
+    # Filter out empty jobs and return
+    return [j for j in jobs if j.get('title') and j.get('company')]
 
 
 def parse_education_section(text):
-    """Parse education section into [{degree, school, year}]."""
+    """Parse education section into structured format.
+    
+    Handles formats:
+    - Degree - University (Year)
+    - University | Degree | Year
+    - Degree (Year)
+    - Bachelor of Science in Computer Science - MIT (2020)
+    
+    Returns list of {degree, school, year}.
+    """
+    if not text or not text.strip():
+        return []
+    
     education = []
+    year_pattern = r'\(([^)]*(?:20|19)\d{2}[^)]*)\)|\[([^\]]*)\]|(?:^|\s)(\d{4})(?:\s|$)|(?:graduating|graduated|expected)\s+(\d{4}|present)'
+    
     for line in text.split('\n'):
         line = line.strip()
-        if not line:
+        if not line or line.startswith(('-', '•', '*')):
+            # Skip bullets - they might be details
+            if line and line.startswith(('-', '•', '*')):
+                point = line.lstrip('-•* ').strip()
+                # Only process if looks like an achievement detail
+                continue
             continue
-            
-        # Try to extract components
-        # Pattern: Degree - School (Year) or similar
-        parts = line.split(' - ', 1)
-        if len(parts) == 2:
-            degree = parts[0]
-            rest = parts[1]
-            # Try to extract year
-            rest_parts = rest.rsplit('(', 1)
-            if len(rest_parts) == 2:
-                school = rest_parts[0].strip()
-                year = rest_parts[1].rstrip(')').strip()
-            else:
-                school = rest.strip()
-                year = ""
+        
+        degree = ""
+        school = ""
+        year = ""
+        
+        # Extract year/date
+        year_match = re.search(year_pattern, line, re.IGNORECASE)
+        if year_match:
+            year = year_match.group(1) or year_match.group(2) or year_match.group(3) or year_match.group(4)
+            line_without_year = re.sub(year_pattern, '', line, flags=re.IGNORECASE).strip()
         else:
-            # Fallback if can't parse cleanly
-            degree = line
-            school = ""
-            year = ""
-            
-        education.append({
-            'degree': degree,
-            'school': school,
-            'year': year
-        })
+            line_without_year = line
+        
+        # Split by common separators
+        if ' - ' in line_without_year or '–' in line_without_year:
+            sep = ' – ' if '–' in line_without_year else ' - '
+            parts = [x.strip() for x in line_without_year.split(sep, 1)]
+            if len(parts) == 2:
+                # Could be "Degree - School" or "School - Degree"
+                # Try to detect which is which
+                if any(deg_term in parts[0].lower() for deg_term in ['bachelor', 'master', 'phd', 'diploma', 'certificate', 'associate', 'degree', 'b.', 'm.']):
+                    degree = parts[0]
+                    school = parts[1]
+                elif any(deg_term in parts[1].lower() for deg_term in ['bachelor', 'master', 'phd', 'diploma', 'certificate', 'associate', 'degree', 'b.', 'm.']):
+                    school = parts[0]
+                    degree = parts[1]
+                else:
+                    # Assume first is degree, second is school
+                    degree = parts[0]
+                    school = parts[1]
+        elif ' | ' in line_without_year:
+            parts = [x.strip() for x in line_without_year.split('|')]
+            if len(parts) == 2:
+                school = parts[0]
+                degree = parts[1]
+            elif len(parts) >= 3:
+                school = parts[0]
+                degree = parts[1]
+        else:
+            # Can't parse cleanly, treat whole line as degree
+            degree = line_without_year
+        
+        # Only add if we have at least degree or school
+        if degree or school:
+            education.append({
+                'degree': degree or 'Qualification',
+                'school': school or 'Institution',
+                'year': year or 'Present'
+            })
     
     return education
 
 
 def parse_projects_section(text):
-    """Parse projects section into [{name, desc}]."""
+    """Parse projects section into structured format.
+    
+    Handles formats:
+    - Project Name
+      - Description
+    - Project Name - Description
+    - Project Name | Description
+    
+    Returns list of {name, desc, technologies[]}.
+    """
+    if not text or not text.strip():
+        return []
+    
     projects = []
-    current = None
+    current_project = None
     
     for line in text.split('\n'):
         line = line.strip()
         if not line:
+            if current_project and current_project.get('name'):
+                projects.append(current_project)
+                current_project = None
             continue
-            
-        if line.startswith(('-', '•', '*')):
-            # Bullet point - treat as description
-            if current:
-                current['desc'] = line.lstrip('-•* ').strip()
-                projects.append(current)
-                current = None
-        else:
-            # Non-bullet - treat as project name
-            current = {'name': line, 'desc': ''}
-    
-    # Add last project if pending
-    if current:
-        projects.append(current)
         
-    return projects
+        if line.startswith(('-', '•', '*')):
+            # Bullet point - treat as description or tech
+            content = line.lstrip('-•* ').strip()
+            if current_project:
+                if not current_project.get('desc'):
+                    current_project['desc'] = content
+                elif 'technologies' not in current_project:
+                    current_project['technologies'] = [content]
+                else:
+                    current_project['technologies'].append(content)
+            continue
+        
+        # Non-bullet line - could be project name or name-desc combination
+        if ' - ' in line or '–' in line or ' | ' in line:
+            sep = ' – ' if '–' in line else (' | ' if ' | ' in line else ' - ')
+            parts = [x.strip() for x in line.split(sep, 1)]
+            
+            if current_project and current_project.get('name'):
+                projects.append(current_project)
+            
+            current_project = {
+                'name': parts[0],
+                'desc': parts[1] if len(parts) > 1 else '',
+                'technologies': []
+            }
+        else:
+            # Simple project name
+            if current_project and current_project.get('name'):
+                projects.append(current_project)
+            
+            current_project = {
+                'name': line,
+                'desc': '',
+                'technologies': []
+            }
+    
+    # Add last project
+    if current_project and current_project.get('name'):
+        projects.append(current_project)
+    
+    # Clean up empty entries
+    return [p for p in projects if p.get('name')]
 
 
 def convert_to_template_format(sections):
-    """Convert raw sections dict into format expected by ResumeTemplate.jsx."""
+    """Convert raw sections dict into format expected by ResumeTemplate.jsx.
+    
+    Improved extraction of contact info and structured parsing of all sections.
+    """
     # Defensive: ensure sections is a dict (AI may return a string or null for sections)
     if not isinstance(sections, dict):
         sections = {}
-    # Extract name and contact from about/summary if possible
+    
+    # Extract contact info from about/summary section
     about = sections.get('about', '').strip()
-    name_line = ""
-    contact_line = ""
+    
+    # Initialize contact info
+    contact_info = {
+        'name': 'Your Name',
+        'email': 'email@example.com',
+        'phone': '+1 (555) 000-0000',
+        'location': 'City, Country'
+    }
+    
+    # Try to extract contact details from first lines
     if about:
         lines = about.split('\n')
-        if lines:
-            name_line = lines[0]
-            if len(lines) > 1:
-                contact_line = lines[1]
-
+        extracted = extract_contact_info(about)
+        contact_info['name'] = extracted['name'] or contact_info['name']
+        contact_info['email'] = extracted['email'] or contact_info['email']
+        contact_info['phone'] = extracted['phone'] or contact_info['phone']
+        contact_info['location'] = extracted['location'] or contact_info['location']
+        
+        # Remove contact info from summary text (keep only the actual summary)
+        summary_lines = []
+        for line in lines:
+            # Skip email, phone, location lines
+            if not any(re.search(pattern, line) for pattern in [
+                r'[\w.+-]+@[\w-]+\.[\w.-]+',
+                r'\+?[\d\s\-()]{10,}',
+                r'^(location|city|address|based in):', 
+                r'^(phone|mobile|email|website):'
+            ]):
+                summary_lines.append(line)
+        
+        about = '\n'.join(summary_lines).strip()
+    
+    # Build contact string
+    contact_str = f"{contact_info['email']}"
+    if contact_info['phone'] and contact_info['phone'] != '+1 (555) 000-0000':
+        contact_str += f" | {contact_info['phone']}"
+    if contact_info['location'] and contact_info['location'] != 'City, Country':
+        contact_str += f" | {contact_info['location']}"
+    
     # Parse skills into list
     skills_text = sections.get('skills', '').strip()
-    skills = [s.strip() for s in re.split(r'[,;]', skills_text) if s.strip()]
-
+    skills = [s.strip() for s in re.split(r'[,;]|\n', skills_text) if s.strip()]
+    
+    # Parse structured sections
     template_data = {
-        'name': name_line or 'Your Name',
-        'contact': contact_line or 'email@example.com | phone | location',
-        'summary': sections.get('about', '').strip(),
+        'name': contact_info['name'],
+        'contact': contact_str,
+        'summary': about or 'Professional summary goes here.',
         'skills': skills,
         'experience': parse_experience_section(sections.get('experience', '')),
         'projects': parse_projects_section(sections.get('projects', '')),
@@ -536,6 +766,55 @@ def convert_to_template_format(sections):
             template_data['certifications'] = certs
 
     return template_data
+
+
+def extract_contact_info(text):
+    """Extract name, email, phone, and location from text.
+    
+    Returns dict with keys: name, email, phone, location
+    """
+    contact = {
+        'name': '',
+        'email': '',
+        'phone': '',
+        'location': ''
+    }
+    
+    lines = text.split('\n')
+    
+    # First 10 lines are likely to contain name and contact info
+    for i, line in enumerate(lines[:min(10, len(lines))]):
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Extract email
+        email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', line)
+        if email_match and not contact['email']:
+            contact['email'] = email_match.group(0)
+        
+        # Extract phone
+        phone_match = re.search(r'\+?[\d\s\-()]{10,}', line)
+        if phone_match and not contact['phone']:
+            phone = phone_match.group(0).strip()
+            if re.search(r'\d{7,}', phone):  # At least 7 digits
+                contact['phone'] = phone
+        
+        # Extract location (usually contains city, state/country)
+        if any(loc_word in line.lower() for loc_word in ['city', 'state', 'country', 'address', 'location', 'based in', '•']):
+            if not (email_match or phone_match or any(keyword in line.lower() for keyword in ['email', 'phone', 'mobile'])):
+                contact['location'] = line
+            continue
+        
+        # First non-contact line is likely the name
+        if not contact['name'] and not email_match and not phone_match:
+            # Skip if it looks like a title or section header
+            if not any(keyword in line.lower() for keyword in ['summary', 'profile', 'experience', 'education', 'skills', 'projects', 'certification']):
+                # Skip very short lines or lines that look like descriptors
+                if len(line) > 3 and not line.isupper():
+                    contact['name'] = line
+    
+    return contact
     
 
 

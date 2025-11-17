@@ -13,88 +13,135 @@ export default function ResumeTemplate({ data }) {
     certifications,
   } = data;
 
+  // Safely handle arrays and objects
+  const experienceList = Array.isArray(experience) ? experience : [];
+  const projectList = Array.isArray(projects) ? projects : [];
+  const skillsList = Array.isArray(skills) ? skills : [];
+  const educationList = Array.isArray(education) ? education : [];
+  const certificationList = Array.isArray(certifications) ? certifications : [];
+
   return (
-    <div className="max-w-3xl mx-auto p-6 text-gray-900 font-sans text-sm leading-relaxed bg-white">
+    <div className="max-w-4xl mx-auto p-8 text-gray-900 font-sans bg-white shadow-lg">
       {/* Header */}
-      <header className="border-b-2 border-gray-800 pb-2 mb-4">
-        <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-xs text-gray-600">{contact}</p>
+      <header className="border-b-2 border-blue-700 pb-4 mb-6">
+        <h1 className="text-3xl font-bold text-blue-900">{name || "Your Name"}</h1>
+        <p className="text-sm text-gray-700 mt-2">{contact || "email@example.com"}</p>
       </header>
 
-      {/* Summary */}
-      <section className="mb-3">
-        <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
-          Professional Summary
-        </h2>
-        <p>{summary}</p>
-      </section>
+      {/* Professional Summary */}
+      {summary && summary.trim() && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-2">
+            Professional Summary
+          </h2>
+          <p className="text-sm text-gray-800 leading-relaxed">{summary}</p>
+        </section>
+      )}
 
-      {/* Experience */}
-      <section className="mb-3">
-        <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
-          Experience
-        </h2>
-        {experience.map((job, i) => (
-          <div key={i} className="mb-2">
-            <div className="flex justify-between font-semibold">
-              <span>{job.title}</span>
-              <span className="text-xs text-gray-600">{job.dates}</span>
-            </div>
-            <div className="text-xs text-gray-500 mb-1">{job.company}</div>
-            <ul className="list-disc list-inside space-y-1">
-              {job.points.map((p, j) => (
-                <li key={j}>{p}</li>
-              ))}
-            </ul>
+      {/* Key Skills */}
+      {skillsList.length > 0 && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-2">
+            Key Skills
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {skillsList.map((skill, i) => (
+              <span
+                key={i}
+                className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium"
+              >
+                {skill}
+              </span>
+            ))}
           </div>
-        ))}
-      </section>
+        </section>
+      )}
+
+      {/* Work Experience */}
+      {experienceList.length > 0 && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-3">
+            Work Experience
+          </h2>
+          {experienceList.map((job, i) => (
+            <div key={i} className="mb-4 pb-3 border-b border-gray-300 last:border-0">
+              <div className="flex justify-between items-baseline">
+                <h3 className="font-semibold text-base text-gray-900">{job.title || "Position"}</h3>
+                <span className="text-xs text-gray-600 font-medium">{job.dates || "Present"}</span>
+              </div>
+              <p className="text-sm text-gray-700 font-medium">{job.company || "Company"}</p>
+              {job.points && job.points.length > 0 && (
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  {job.points.map((point, j) => (
+                    <li key={j} className="text-sm text-gray-800">
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Projects */}
-      <section className="mb-3">
-        <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
-          Projects
-        </h2>
-        <ul className="list-disc list-inside space-y-1">
-          {projects.map((p, i) => (
-            <li key={i}>
-              <strong>{p.name}</strong> — {p.desc}
-            </li>
+      {projectList.length > 0 && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-3">
+            Projects
+          </h2>
+          {projectList.map((project, i) => (
+            <div key={i} className="mb-3 pb-2 border-b border-gray-300 last:border-0">
+              <h3 className="font-semibold text-base text-gray-900">{project.name || "Project"}</h3>
+              {project.desc && <p className="text-sm text-gray-800 mt-1">{project.desc}</p>}
+              {project.technologies && project.technologies.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {project.technologies.map((tech, j) => (
+                    <span
+                      key={j}
+                      className="bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
-        </ul>
-      </section>
-
-      {/* Skills */}
-      <section className="mb-3">
-        <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
-          Skills
-        </h2>
-        <p>{skills.join(", ")}</p>
-      </section>
+        </section>
+      )}
 
       {/* Education */}
-      <section className="mb-3">
-        <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
-          Education
-        </h2>
-        <ul>
-          {education.map((e, i) => (
-            <li key={i}>
-              <strong>{e.degree}</strong> — {e.school} ({e.year})
-            </li>
+      {educationList.length > 0 && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-3">
+            Education
+          </h2>
+          {educationList.map((edu, i) => (
+            <div key={i} className="mb-3 pb-2 border-b border-gray-300 last:border-0">
+              <div className="flex justify-between items-baseline">
+                <h3 className="font-semibold text-base text-gray-900">
+                  {edu.degree || "Degree"}
+                </h3>
+                <span className="text-xs text-gray-600">{edu.year || "Present"}</span>
+              </div>
+              <p className="text-sm text-gray-700">{edu.school || "Institution"}</p>
+            </div>
           ))}
-        </ul>
-      </section>
+        </section>
+      )}
 
-      {/* Certifications */}
-      {certifications && certifications.length > 0 && (
-        <section className="mb-3">
-          <h2 className="font-semibold text-base border-b border-gray-300 pb-1 mb-1">
+      {/* Certifications & Awards */}
+      {certificationList.length > 0 && (
+        <section className="mb-5">
+          <h2 className="font-bold text-lg text-blue-900 border-b-2 border-blue-500 pb-2 mb-3">
             Certifications & Awards
           </h2>
-          <ul>
-            {certifications.map((c, i) => (
-              <li key={i}>{c}</li>
+          <ul className="list-disc list-inside space-y-2">
+            {certificationList.map((cert, i) => (
+              <li key={i} className="text-sm text-gray-800">
+                {cert}
+              </li>
             ))}
           </ul>
         </section>
