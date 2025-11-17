@@ -11,6 +11,9 @@ import {
   FaSpinner,
   FaBriefcase,
   FaChevronDown,
+  FaCheckCircle,
+  FaExclamationCircle,
+  FaStar,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 
@@ -33,6 +36,14 @@ export default function Dashboard({ user }) {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState("newest");
+
+  // Utility: truncate long filenames
+  const truncateFilename = (filename, maxLen = 30) => {
+    if (filename.length > maxLen) {
+      return filename.substring(0, maxLen - 3) + "...";
+    }
+    return filename;
+  };
 
   useEffect(() => {
     fetchFiles();
@@ -211,38 +222,44 @@ export default function Dashboard({ user }) {
       {/* Spacer for navbar */}
       <div className="h-16"></div>
 
-      {/* Header */}
+      {/* Header with professional styling */}
       <header
-        className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-800 dark:to-purple-900 
-        text-white pt-24 pb-32 relative z-0 -mt-16 transition-colors duration-500"
+        className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 dark:from-indigo-900 dark:via-purple-900 dark:to-pink-900
+        text-white pt-12 pb-16 relative z-0 transition-colors duration-500"
       >
-        <div className="max-w-6xl mx-auto text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            PerfectCV Dashboard
-          </h1>
-          <p className="text-lg md:text-xl mb-6">
-            Upload, optimize, and enhance your CV to impress recruiters!
-          </p>
-          <p className="text-md text-white/90 mt-2">
-            Hello {user?.full_name || user?.username || user?.email || "User"}
-          </p>
-          <img
-            src={CvIllustration}
-            alt="CV illustration"
-            className="mx-auto w-64 md:w-96 rounded-lg shadow-lg"
-          />
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex-1">
+              <h1 className="text-4xl md:text-5xl font-bold mb-3">
+                CV Dashboard
+              </h1>
+              <p className="text-lg md:text-xl mb-2 text-white/95">
+                Upload, optimize, and manage your professional resume
+              </p>
+              <p className="text-md text-white/80">
+                Welcome back, <span className="font-semibold">{user?.full_name || user?.username || user?.email || "User"}</span>
+              </p>
+            </div>
+            <div className="hidden md:block flex-shrink-0">
+              <img
+                src={CvIllustration}
+                alt="CV illustration"
+                className="w-48 h-48 rounded-lg shadow-xl object-cover"
+              />
+            </div>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 md:px-6 -mt-32 relative z-10">
+      <main className="max-w-6xl mx-auto px-4 md:px-6 py-8 relative z-10">
         {/* Upload Section */}
         <section
-          className="bg-white dark:bg-[#1E1E2F] shadow-lg rounded-xl p-6 mb-8
-          transition-all duration-500"
+          className="bg-white dark:bg-[#1E1E2F] shadow-lg rounded-2xl p-8 mb-8
+          transition-all duration-500 border border-gray-100 dark:border-gray-800"
         >
-          <h2 className="text-2xl font-bold mb-4 text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-            <FaUpload /> Upload & Optimize CV
+          <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
+            <FaUpload className="text-xl" /> Upload & Optimize CV
           </h2>
           <form
             onSubmit={handleUpload}
@@ -253,14 +270,13 @@ export default function Dashboard({ user }) {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`w-full md:w-auto border-dashed border-2 
+              className={`flex-1 border-dashed border-2 
               ${
                 dragActive
-                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30"
-                  : "border-gray-300 dark:border-gray-600"
-              } p-6 rounded-lg text-center 
-              cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400 
-              text-gray-600 dark:text-gray-300 transition-all`}
+                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
+                  : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
+              } p-8 rounded-xl text-center 
+              cursor-pointer transition-all duration-200`}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
@@ -269,11 +285,19 @@ export default function Dashboard({ user }) {
                 }
               }}
             >
-              {selectedFile
-                ? selectedFile.name
-                : dragActive
-                ? "Drop your CV here to upload"
-                : "Drag & drop or click to select a CV (.pdf, .doc, .docx)"}
+              <div className="text-gray-600 dark:text-gray-300">
+                <FaUpload className="mx-auto mb-2 text-2xl text-indigo-500" />
+                <div className="font-semibold text-sm mb-1">
+                  {selectedFile
+                    ? truncateFilename(selectedFile.name, 40)
+                    : dragActive
+                    ? "Drop your CV here"
+                    : "Drag & drop your CV here"}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  or click to select (.pdf, .doc, .docx)
+                </div>
+              </div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -283,9 +307,9 @@ export default function Dashboard({ user }) {
                 aria-label="Select CV file"
               />
             </label>
-            <div className="w-full md:w-60">
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <FaBriefcase className="w-4 h-4 text-blue-500" />
+            <div className="w-full md:w-72">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                <FaBriefcase className="w-4 h-4 text-indigo-500" />
                 Target Job Domain
               </label>
 
@@ -294,19 +318,19 @@ export default function Dashboard({ user }) {
                   value={jobDomain}
                   onChange={(e) => setJobDomain(e.target.value)}
                   className="w-full appearance-none p-3 rounded-xl 
-        border border-gray-300 dark:border-gray-700
-        bg-gradient-to-r from-white to-gray-50 dark:from-[#1f2937] dark:to-[#111827]
+        border border-gray-300 dark:border-gray-600
+        bg-white dark:bg-[#1f2937]
         text-gray-800 dark:text-gray-200
-        focus:outline-none focus:ring-2 focus:ring-blue-500 
+        focus:outline-none focus:ring-2 focus:ring-indigo-500 
         focus:border-transparent transition-all duration-200
-        hover:shadow-md dark:hover:shadow-lg cursor-pointer"
+        hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer"
                 >
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="">🌐 General</option>
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="software">💻 Software / Engineering</option>
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="data_science">📊 Data Science / ML</option>
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="product">📈 Product Management</option>
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="design">🎨 Design / UX</option>
-                  <option className="bg-white text-gray-800 dark:bg-[#1f2937] dark:text-gray-100" value="marketing">🚀 Marketing / Growth</option>
+                  <option value="">🌐 General</option>
+                  <option value="software">💻 Software / Engineering</option>
+                  <option value="data_science">📊 Data Science / ML</option>
+                  <option value="product">📈 Product Management</option>
+                  <option value="design">🎨 Design / UX</option>
+                  <option value="marketing">🚀 Marketing / Growth</option>
                 </select>
 
                 {/* Custom dropdown arrow */}
@@ -319,15 +343,18 @@ export default function Dashboard({ user }) {
             <button
               type="submit"
               disabled={loading}
-              className="bg-indigo-600 dark:bg-indigo-700 text-white px-6 py-3 rounded-xl 
-              hover:bg-indigo-700 dark:hover:bg-indigo-800 transition flex items-center gap-2"
+              className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 text-white px-8 py-3 rounded-xl 
+              hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900
+              transition-all duration-200 flex items-center gap-2 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
-                  <FaSpinner className="animate-spin mr-2" /> Uploading...
+                  <FaSpinner className="animate-spin" /> Uploading...
                 </>
               ) : (
-                "Upload & Optimize"
+                <>
+                  <FaUpload /> Upload & Optimize
+                </>
               )}
             </button>
           </form>
@@ -335,54 +362,63 @@ export default function Dashboard({ user }) {
 
         {/* Optimized CV & Suggestions */}
         {optimizedCV && (
-          <section className="mb-6">
+          <section className="mb-10">
             <div
-              className="bg-green-50 dark:bg-green-900/30 border-l-4 border-green-600 p-4 
-              rounded-xl shadow-md mb-4 text-gray-800 dark:text-gray-200"
+              className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 
+              border border-green-200 dark:border-green-700/50 p-6 
+              rounded-2xl shadow-md mb-6 text-gray-800 dark:text-gray-200"
             >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-semibold mb-2 text-green-800 dark:text-green-400 flex items-center gap-2">
-                    <FaFileAlt /> Optimized CV
+              <div className="flex items-start justify-between gap-6">
+                <div className="flex-1">
+                  <h3 className="text-2xl font-bold mb-4 text-green-800 dark:text-green-400 flex items-center gap-2">
+                    <FaCheckCircle className="text-xl" /> Optimized CV
                   </h3>
-                  <pre className="whitespace-pre-wrap max-h-72 overflow-auto">
-                    {optimizedCV}
-                  </pre>
+                  <div className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-green-100 dark:border-green-800/50">
+                    <pre className="whitespace-pre-wrap max-h-96 overflow-auto font-mono text-sm leading-relaxed">
+                      {optimizedCV}
+                    </pre>
+                  </div>
                 </div>
-                <div className="w-48 text-right">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    ATS Score
-                  </p>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 mt-1">
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-5 border border-green-100 dark:border-green-800/50 min-w-max">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <FaStar className="text-yellow-500" />
+                    <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                      ATS Score
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-3">
                     <div
-                      className={`bg-green-600 h-4 rounded-full`}
+                      className={`bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300`}
                       style={{
                         width: `${Math.min(100, Math.max(0, atsScore || 0))}%`,
                       }}
                     />
                   </div>
-                  <p className="mt-2 font-semibold">{atsScore ?? "N/A"}/100</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400 text-center">{atsScore ?? "N/A"}<span className="text-sm">/100</span></p>
                   {recommendedKeywords.length > 0 && (
-                    <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">
-                      <p className="font-semibold">Recommended keywords</p>
-                      <p>{recommendedKeywords.slice(0, 8).join(", ")}</p>
+                    <div className="mt-4 pt-4 border-t border-green-100 dark:border-green-800/50">
+                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Key Words</p>
+                      <div className="flex flex-wrap gap-1">
+                        {recommendedKeywords.slice(0, 5).map((kw, i) => (
+                          <span key={i} className="bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {lastUploadedFileId && (
-                    <div className="mt-4">
-                      <button
-                        onClick={() =>
-                          handleDownload(
-                            lastUploadedFileId,
-                            lastUploadedFilename || "optimized_cv.pdf"
-                          )
-                        }
-                        className="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg w-full"
-                      >
-                        <FaDownload className="inline mr-2" /> Download
-                        Optimized CV (PDF)
-                      </button>
-                    </div>
+                    <button
+                      onClick={() =>
+                        handleDownload(
+                          lastUploadedFileId,
+                          lastUploadedFilename || "optimized_cv.pdf"
+                        )
+                      }
+                      className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-3 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2"
+                    >
+                      <FaDownload className="text-sm" /> Download PDF
+                    </button>
                   )}
                 </div>
               </div>
@@ -390,17 +426,17 @@ export default function Dashboard({ user }) {
 
             {/* Structured sections preview */}
             {sections && Object.keys(sections).length > 0 && (
-              <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
                 {Object.entries(sections).map(([k, v]) =>
                   v ? (
                     <div
                       key={k}
-                      className="bg-white dark:bg-[#111827] p-4 rounded shadow"
+                      className="bg-white dark:bg-gray-900/50 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all"
                     >
-                      <h4 className="font-semibold text-indigo-600 mb-2 capitalize">
+                      <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3 capitalize text-sm">
                         {k.replace("_", " ")}
                       </h4>
-                      <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
+                      <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 overflow-hidden">
                         {v}
                       </div>
                     </div>
@@ -413,11 +449,12 @@ export default function Dashboard({ user }) {
             {(Object.keys(groupedSuggestions).length > 0 ||
               (suggestions && suggestions.length > 0)) && (
               <div
-                className="bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-600 p-4 
-                rounded-xl shadow-md text-gray-800 dark:text-gray-200"
+                className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
+                border border-blue-200 dark:border-blue-700/50 p-6 
+                rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
               >
-                <h3 className="text-xl font-semibold mb-2 text-blue-800 dark:text-blue-400 flex items-center gap-2">
-                  Suggestions for Improvement
+                <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
+                  <FaExclamationCircle className="text-lg" /> Improvement Suggestions
                 </h3>
                 {/* Prefer groupedSuggestions if provided by backend */}
                 {Object.keys(groupedSuggestions).length > 0 ? (
@@ -455,75 +492,93 @@ export default function Dashboard({ user }) {
         )}
 
         {/* Search & Sort */}
-        <section className="mb-4 flex flex-col md:flex-row items-center justify-between gap-4">
+        <section className="mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div
-            className="flex items-center gap-2 w-full md:w-1/2 border border-gray-300 dark:border-gray-600 
-            rounded px-2 py-1 bg-white dark:bg-[#1E1E2F] shadow text-gray-700 dark:text-gray-200"
+            className="flex items-center gap-3 flex-1 border border-gray-300 dark:border-gray-600 
+            rounded-lg px-4 py-3 bg-white dark:bg-[#1E1E2F] shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all"
           >
             <FaSearch className="text-gray-400 dark:text-gray-500" />
             <input
               type="text"
-              placeholder="Search by filename..."
+              placeholder="Search CVs by filename..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="outline-none w-full bg-transparent text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
             />
           </div>
-          <select
-            value={sortOption}
-            onChange={(e) => setSortOption(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 p-2 rounded 
-            w-full md:w-1/4 bg-white dark:bg-[#1E1E2F] text-gray-700 dark:text-gray-200"
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="alpha">A → Z</option>
-          </select>
+          <div className="flex gap-3 w-full md:w-auto">
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value)}
+              className="flex-1 md:flex-none border border-gray-300 dark:border-gray-600 px-4 py-3 rounded-lg 
+              bg-white dark:bg-[#1E1E2F] text-gray-700 dark:text-gray-200 font-medium focus:ring-2 focus:ring-indigo-500 transition-all"
+            >
+              <option value="newest">📅 Newest First</option>
+              <option value="oldest">📅 Oldest First</option>
+              <option value="alpha">🔤 A → Z</option>
+            </select>
+          </div>
         </section>
 
         {/* Uploaded CV Cards */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-            <FaFileAlt /> Your Uploaded CVs
-          </h2>
+        <section className="mb-16">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
+              <FaFileAlt className="text-2xl" /> Your Uploaded CVs
+              <span className="text-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full font-semibold">
+                {filteredFiles.length}
+              </span>
+            </h2>
+          </div>
           {filteredFiles.length === 0 ? (
-            <p className="text-gray-500 dark:text-gray-400">No CVs found.</p>
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900/30 dark:to-gray-800/30 rounded-2xl p-12 text-center border border-gray-200 dark:border-gray-700">
+              <FaFileAlt className="mx-auto text-5xl text-gray-300 dark:text-gray-600 mb-4" />
+              <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">No CVs uploaded yet</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Upload your first CV above to get started</p>
+            </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredFiles.map((file) => (
                 <div
                   key={file._id}
-                  className="bg-white dark:bg-[#1E1E2F] p-4 rounded-xl shadow hover:shadow-lg transition 
-                  flex flex-col justify-between text-gray-800 dark:text-gray-200"
+                  className="bg-white dark:bg-[#1E1E2F] p-6 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 
+                  flex flex-col justify-between text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-800 group"
                 >
-                  <div>
-                    <h3 className="text-lg font-semibold mb-1">
-                      {file.filename}
-                    </h3>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">
-                      Uploaded by{" "}
-                      {currentUser?.full_name ||
+                  <div className="mb-4">
+                    <div className="flex items-start gap-3 mb-2">
+                      <FaFileAlt className="text-indigo-500 text-xl flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-lg truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition" title={file.filename}>
+                          {truncateFilename(file.filename, 28)}
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {file.filename.split(".").pop()?.toUpperCase() || "FILE"} • {file.filename.length} chars
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                      Uploaded by <span className="font-medium">{currentUser?.full_name ||
                         user?.full_name ||
                         currentUser?.username ||
                         user?.username ||
                         user?.email ||
-                        "You"}
+                        "You"}</span>
                     </p>
                   </div>
-                  <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
                     <button
                       onClick={() => handleDownload(file._id, file.filename)}
-                      className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800
-                      text-white px-3 py-2 rounded-lg transition flex-1 flex items-center justify-center gap-2"
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 dark:from-green-700 dark:to-emerald-700 dark:hover:from-green-800 dark:hover:to-emerald-800
+                      text-white px-4 py-2 rounded-lg transition-all duration-200 flex-1 flex items-center justify-center gap-2 font-medium"
                     >
-                      <FaDownload /> Download
+                      <FaDownload className="text-sm" /> Download
                     </button>
                     <button
                       onClick={() => handleDelete(file._id)}
-                      className="bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800
-                      text-white px-3 py-2 rounded-lg transition flex-1 flex items-center justify-center gap-2"
+                      className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 dark:from-red-700 dark:to-pink-700 dark:hover:from-red-800 dark:hover:to-pink-800
+                      text-white px-4 py-2 rounded-lg transition-all duration-200 flex-1 flex items-center justify-center gap-2 font-medium"
                     >
-                      <FaTrash /> Delete
+                      <FaTrash className="text-sm" /> Delete
                     </button>
                   </div>
                 </div>
@@ -534,8 +589,11 @@ export default function Dashboard({ user }) {
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-800 dark:bg-[#111827] text-white py-6 text-center transition-colors duration-500">
-        <p>&copy; {new Date().getFullYear()} PerfectCV. All rights reserved.</p>
+      <footer className="bg-gradient-to-r from-gray-900 to-gray-950 dark:from-[#0D1117] dark:to-[#010409] text-gray-300 py-8 text-center transition-colors duration-500 border-t border-gray-800">
+        <div className="max-w-6xl mx-auto px-4">
+          <p className="text-sm">&copy; {new Date().getFullYear()} <span className="font-semibold text-indigo-400">PerfectCV</span>. All rights reserved.</p>
+          <p className="text-xs text-gray-500 mt-2">Craft your perfect resume with AI-powered insights</p>
+        </div>
       </footer>
     </div>
   );
