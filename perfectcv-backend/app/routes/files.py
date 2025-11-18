@@ -145,6 +145,8 @@ def upload_cv():
             "message": "Uploaded and optimized",
             "file_id": str(file_id),
             "optimized_text": optimized_cv,
+            "optimized_cv": optimized_cv,
+            "extracted": result.get('extracted') or template_data,
             "sections": sections,
             "template_data": template_data,
             "suggestions": suggestions,

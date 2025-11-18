@@ -6,7 +6,7 @@ import logging
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import google.generativeai as genai
-from app.utils.ai_utils import setup_gemini, get_valid_model
+from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence
 
 logger = logging.getLogger(__name__)
 
@@ -435,12 +435,22 @@ def optimize_cv_rule_based(cv_text, job_domain=None):
         # Join with double newlines for readability
         return "\n\n".join(out)
 
-    # Build optimized text from sections
+    # Build optimized text from sections (do not invent new facts; reuse cleaned sections)
     try:
         optimized_text = format_to_ats_text(sections)
     except Exception:
         # Fallback to raw text if formatting fails
         optimized_text = cv_text or ""
+
+    # Build extracted structured representation
+    extracted = build_extracted_sections(cv_text)
+
+    # The 'optimized_cv' should be a polished version of the optimized_text.
+    # We will reuse optimized_text (template) and ensure bullets are strengthened.
+    try:
+        optimized_cv = optimized_text
+    except Exception:
+        optimized_cv = optimized_text
 
     # Compute ATS score and keyword suggestions based on domain
     ats_score, missing_keywords, found_keywords = compute_ats_score(optimized_text, job_domain)
@@ -453,10 +463,12 @@ def optimize_cv_rule_based(cv_text, job_domain=None):
     if not sections.get("skills"):
         suggestions.append({"category": "format", "message": "Add a Key Skills section to improve ATS matching."})
 
-    # Return a consistent dict expected by callers
+    # Return a consistent dict expected by callers, plus new structured outputs
     return {
         "optimized_text": optimized_text,
+        "optimized_cv": optimized_cv,
         "sections": sections,
+        "extracted": extracted,
         "suggestions": suggestions,
         "ats_score": ats_score,
         "recommended_keywords": missing_keywords,
@@ -783,10 +795,10 @@ def convert_to_template_format(sections):
     
     # Parse structured sections
     template_data = {
-        'name': contact_info['name'],
-        'contact': contact_str,
-        'summary': about or 'Professional summary goes here.',
-        'skills': skills,
+        'name': contact_info['name'] or 'Not Provided',
+        'contact': contact_str or 'Not Provided',
+        'summary': about or 'Not Provided',
+        'skills': skills or [],
         'experience': parse_experience_section(sections.get('experience', '')),
         'projects': parse_projects_section(sections.get('projects', '')),
         'education': parse_education_section(sections.get('education', '')),
@@ -804,6 +816,73 @@ def convert_to_template_format(sections):
             template_data['certifications'] = certs
 
     return template_data
+
+
+def build_extracted_sections(cv_text):
+    """Return a cleaned, structured extracted representation of the CV.
+
+    Keys returned:
+    - header (dict): personal information (name, email, phone, location)
+    - professional_summary (string)
+    - skills (list)
+    - experience (list of jobs with title, company, dates, points)
+    - projects (list)
+    - education (list)
+    - certifications (list)
+    - achievements (list)
+    - additional (dict) other sections
+    """
+    sections = extract_sections(cv_text or "")
+
+    # ensure strings
+    for k in ['about', 'skills', 'experience', 'projects', 'education', 'achievements', 'other']:
+        sections[k] = (sections.get(k) or "").strip()
+
+    contact = extract_contact_info(sections.get('about', ''))
+
+    template = convert_to_template_format(sections)
+
+    extracted = {
+        'header': {
+            'name': template.get('name') or contact.get('name') or 'Not Provided',
+            'email': contact.get('email') or 'Not Provided',
+            'phone': contact.get('phone') or 'Not Provided',
+            'location': contact.get('location') or 'Not Provided'
+        },
+        'professional_summary': sections.get('about') or 'Not Provided',
+        'skills': template.get('skills') or [],
+        'experience': template.get('experience') or [],
+        'projects': template.get('projects') or [],
+        'education': template.get('education') or [],
+        'certifications': template.get('certifications') or [],
+        'achievements': [a for a in (sections.get('achievements') or '').split('\n') if a.strip()] or [],
+        'additional': {}
+    }
+
+    # Populate additional with anything left in 'other'
+    other = sections.get('other')
+    if other:
+        extracted['additional']['other'] = other
+    else:
+        extracted['additional']['other'] = 'Not Provided'
+
+    # Ensure Not Provided for empty list/string sections where appropriate
+    if not extracted['professional_summary']:
+        extracted['professional_summary'] = 'Not Provided'
+    if not extracted['skills']:
+        extracted['skills'] = []
+    if not extracted['experience']:
+        extracted['experience'] = []
+    if not extracted['projects']:
+        extracted['projects'] = []
+    if not extracted['education']:
+        extracted['education'] = []
+    if not extracted['certifications']:
+        extracted['certifications'] = []
+    if not extracted['achievements']:
+        extracted['achievements'] = []
+
+    return extracted
 
 
 def extract_contact_info(text):
@@ -918,6 +997,19 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
                 data.setdefault("found_keywords", found)
             # Add template-formatted data (handle case where 'sections' exists but is None)
             data['template_data'] = convert_to_template_format(data.get('sections') or {})
+            # Always provide a deterministic extracted structure (rule-based) to avoid hallucination
+            data['extracted'] = build_extracted_sections(cv_text)
+            # Ensure 'optimized_cv' exists (may be named optimized_text or optimized_cv)
+            if data.get('optimized_cv'):
+                data['optimized_cv'] = data.get('optimized_cv')
+            elif data.get('optimized_text'):
+                data['optimized_cv'] = data.get('optimized_text')
+            else:
+                try:
+                    fb = optimize_cv_rule_based(cv_text, job_domain)
+                    data['optimized_cv'] = fb.get('optimized_cv') or fb.get('optimized_text') or cv_text
+                except Exception:
+                    data['optimized_cv'] = data.get('optimized_text') or cv_text
             return data
         except Exception as e:
             logger.warning("AI optimization unavailable, falling back to rule-based: %s", e)
