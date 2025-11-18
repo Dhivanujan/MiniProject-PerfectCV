@@ -16,6 +16,7 @@ import {
   FaStar,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
+import ResumeTemplate from "../components/ResumeTemplate";
 
 export default function Dashboard({ user }) {
   const [files, setFiles] = useState([]);
@@ -25,6 +26,7 @@ export default function Dashboard({ user }) {
   const [optimizedCV, setOptimizedCV] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [sections, setSections] = useState({});
+  const [templateData, setTemplateData] = useState(null);
   const [atsScore, setAtsScore] = useState(null);
   const [recommendedKeywords, setRecommendedKeywords] = useState([]);
   const [foundKeywords, setFoundKeywords] = useState([]);
@@ -138,6 +140,7 @@ export default function Dashboard({ user }) {
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
       setSections(res.data.sections || {});
+      setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
       setFoundKeywords(res.data.found_keywords || []);
@@ -374,9 +377,40 @@ export default function Dashboard({ user }) {
                     <FaCheckCircle className="text-xl" /> Optimized CV
                   </h3>
                   <div className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-green-100 dark:border-green-800/50">
-                    <pre className="whitespace-pre-wrap max-h-96 overflow-auto font-mono text-sm leading-relaxed">
-                      {optimizedCV}
-                    </pre>
+                    {/* Toggle between raw optimized text and organized preview */}
+                    <div className="flex items-center justify-end mb-2">
+                      <button
+                        onClick={() => setExpandedPreview(!expandedPreview)}
+                        className="text-xs px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200"
+                      >
+                        {expandedPreview ? "Show Raw" : "Show Preview"}
+                      </button>
+                    </div>
+
+                    {!expandedPreview ? (
+                      <pre className="whitespace-pre-wrap max-h-96 overflow-auto font-mono text-sm leading-relaxed">
+                        {optimizedCV}
+                      </pre>
+                    ) : (
+                      <div className="max-h-96 overflow-auto">
+                        {templateData ? (
+                          <ResumeTemplate data={templateData} />
+                        ) : sections && Object.keys(sections).length > 0 ? (
+                          <div className="text-sm whitespace-pre-wrap">
+                            {Object.entries(sections).map(([k, v]) => (
+                              v ? (
+                                <div key={k} className="mb-3">
+                                  <strong className="block text-xs text-indigo-600">{k.replace("_", " ")}</strong>
+                                  <div className="text-sm text-gray-700 dark:text-gray-300">{v}</div>
+                                </div>
+                              ) : null
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No structured preview available.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="bg-white dark:bg-gray-900/50 rounded-xl p-5 border border-green-100 dark:border-green-800/50 min-w-max">
@@ -401,6 +435,18 @@ export default function Dashboard({ user }) {
                       <div className="flex flex-wrap gap-1">
                         {recommendedKeywords.slice(0, 5).map((kw, i) => (
                           <span key={i} className="bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {foundKeywords && foundKeywords.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-green-50 dark:border-green-900/20">
+                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Found Keywords</p>
+                      <div className="flex flex-wrap gap-1">
+                        {foundKeywords.slice(0, 8).map((kw, i) => (
+                          <span key={i} className="bg-gray-100 dark:bg-gray-800/30 text-gray-700 dark:text-gray-200 text-xs px-2 py-1 rounded-full">
                             {kw}
                           </span>
                         ))}

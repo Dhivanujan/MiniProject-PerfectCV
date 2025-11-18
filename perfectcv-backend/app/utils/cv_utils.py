@@ -358,14 +358,52 @@ def normalize_bullets(text):
     return "\n".join(lines)
 
 
+def strengthen_experience_points(text):
+    """Ensure experience bullets start with action verbs and are concise.
+
+    This is a lightweight, rule-based improvement applied when AI is unavailable.
+    """
+    if not text:
+        return text
+    out_lines = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            out_lines.append("")
+            continue
+        # if it's a bullet, ensure it begins with an action verb
+        is_bullet = line.startswith("-") or line.startswith("*") or line.startswith("•")
+        content = line.lstrip('-*• ').strip()
+        words = content.split()
+        if words:
+            first = words[0].lower()
+            if first not in ACTION_VERBS:
+                # Prepend a sensible action verb
+                content = ACTION_VERBS[0].capitalize() + ' ' + content
+            else:
+                # capitalize first word
+                content = words[0].capitalize() + ' ' + ' '.join(words[1:])
+
+        if is_bullet:
+            out_lines.append(f"- {content}")
+        else:
+            out_lines.append(content)
+
+    return '\n'.join(out_lines)
+
+
 def optimize_cv_rule_based(cv_text, job_domain=None):
     """Produce a cleaned, slightly rewritten ATS-friendly CV and suggestions without AI.
 
     Returns dict with keys: optimized_text, sections, suggestions (list), ats_score, recommended_keywords
     """
     sections = extract_sections(cv_text)
-    # normalize bullets inside experience and other
-    sections["experience"] = normalize_bullets(sections.get("experience", ""))
+    # normalize bullets inside experience and other, then strengthen bullets to start with action verbs
+    raw_experience = normalize_bullets(sections.get("experience", ""))
+    try:
+        sections["experience"] = strengthen_experience_points(raw_experience)
+    except Exception:
+        sections["experience"] = raw_experience
     sections["skills"] = re.sub(r"[,;]+", ", ", sections.get("skills", ""))
 
     # Compose a structured ATS-friendly text using a template
