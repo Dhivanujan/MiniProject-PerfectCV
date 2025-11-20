@@ -12,6 +12,8 @@ from bson import ObjectId
 from werkzeug.utils import secure_filename
 import gridfs
 
+from flask import current_app
+from app.utils.cv_utils import extract_text_from_any, optimize_cv
 import io
 from fpdf import FPDF
 from PyPDF2 import PdfReader
@@ -469,11 +471,73 @@ def api_upload_cv():
         return jsonify({"success": False, "message": "No file selected"}), 400
     if file and allowed_file(file.filename):
         filename = secure_filename(f"{current_user.id}_{file.filename}")
-        cv_text = extract_text_from_pdf(file) if file.filename.lower().endswith('.pdf') else file.read().decode('utf-8', errors='ignore')
-        optimized_cv, suggestions = optimize_cv_with_gemini(cv_text)
-        pdf_bytes = generate_pdf(optimized_cv)
-        file_id = fs.put(pdf_bytes, filename=f"ATS_{filename}", content_type="application/pdf", user_id=current_user.id)
-        return jsonify({"success": True, "optimized_cv": optimized_cv, "suggestions": suggestions, "file_id": str(file_id)})
+        file_bytes = file.read()
+        cv_text = extract_text_from_any(file_bytes, file.filename)
+
+        job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
+        result = optimize_cv(cv_text, job_domain=job_domain, use_ai=True)
+
+        if not isinstance(result, dict):
+            current_app.logger.warning('optimize_cv returned non-dict result; using safe defaults')
+            result = {}
+
+        optimized_cv = result.get('optimized_text') or result.get('optimized_cv') or cv_text
+        optimized_ats_cv = result.get('optimized_ats_cv') or optimized_cv
+        template_data = result.get('template_data') or {}
+        suggestions = result.get('suggestions') or []
+
+        grouped = {}
+        try:
+            if isinstance(suggestions, dict):
+                grouped = suggestions
+            else:
+                for s in suggestions:
+                    if isinstance(s, dict):
+                        cat = s.get('category', 'general')
+                        grouped.setdefault(cat, []).append(s.get('message'))
+                    else:
+                        grouped.setdefault('general', []).append(str(s))
+        except Exception:
+            grouped = {'general': [str(suggestions)]}
+
+        sections = result.get('sections', {})
+        ordered_sections = result.get('ordered_sections') or []
+        structured_sections = result.get('structured_sections') or {}
+        structured_cv = result.get('structured_cv') or {}
+        ats_score = result.get('ats_score')
+        recommended_keywords = result.get('recommended_keywords', [])
+        found_keywords = result.get('found_keywords', [])
+        extracted_text = result.get('extracted_text') or cv_text
+        structured_payload = structured_cv if isinstance(structured_cv, dict) else {}
+
+        try:
+            pdf_bytes = generate_pdf(optimized_ats_cv)
+        except Exception as e:
+            current_app.logger.warning("Error generating PDF, returning fallback text version: %s", e)
+            pdf_bytes = generate_pdf(cv_text)
+
+        file_id = fs.put(pdf_bytes.read(), filename=f"ATS_{filename}", content_type="application/pdf", user_id=str(current_user.id))
+
+        return jsonify({
+            "success": True,
+            "message": "CV uploaded and optimized",
+            "file_id": str(file_id),
+            "optimized_text": optimized_ats_cv,
+            "optimized_cv": optimized_ats_cv,
+            "optimized_ats_cv": optimized_ats_cv,
+            "extracted": result.get('extracted') or template_data,
+            "extracted_text": extracted_text,
+            "sections": sections,
+            "ordered_sections": ordered_sections,
+            "structured_sections": structured_sections,
+            "structured_cv": structured_payload,
+            "template_data": template_data,
+            "suggestions": suggestions,
+            "grouped_suggestions": grouped,
+            "ats_score": ats_score,
+            "recommended_keywords": recommended_keywords,
+            "found_keywords": found_keywords,
+        })
     return jsonify({"success": False, "message": "Invalid file type"}), 400
 
 @app.route('/api/download/<file_id>')

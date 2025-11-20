@@ -4,7 +4,7 @@ from werkzeug.utils import secure_filename
 from bson import ObjectId
 import gridfs
 import io
-from app.utils.cv_utils import extract_text_from_pdf, generate_pdf, optimize_cv
+from app.utils.cv_utils import extract_text_from_any, generate_pdf, optimize_cv
 
 files_bp = Blueprint('files', __name__)
 
@@ -29,14 +29,8 @@ def upload_cv():
     try:
         # Read file bytes once
         file_bytes = file.read()
-        # Extract text depending on type
-        if file.filename.lower().endswith('.pdf'):
-            text = extract_text_from_pdf(io.BytesIO(file_bytes))
-        else:
-            try:
-                text = file_bytes.decode('utf-8', errors='ignore')
-            except Exception:
-                text = ''
+        # Extract text with format-aware parser
+        text = extract_text_from_any(file_bytes, file.filename)
 
         # Accept optional job_domain form field to tailor optimization
         job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
@@ -49,6 +43,7 @@ def upload_cv():
             result = {}
 
         optimized_cv = result.get('optimized_text') or result.get('optimized_cv') or text
+        optimized_ats_cv = result.get('optimized_ats_cv') or optimized_cv
         template_data = result.get('template_data') or {}
         suggestions = result.get('suggestions') or []
         # normalize suggestions into list of {category, message}
@@ -70,13 +65,16 @@ def upload_cv():
         sections = result.get('sections', {})
         ordered_sections = result.get('ordered_sections') or []
         structured_sections = result.get('structured_sections') or {}
+        structured_cv = result.get('structured_cv') or {}
         ats_score = result.get('ats_score')
         recommended_keywords = result.get('recommended_keywords', [])
         found_keywords = result.get('found_keywords', [])
+        extracted_text = result.get('extracted_text') or text
+        structured_payload = structured_cv if isinstance(structured_cv, dict) else {}
 
         # Generate PDF directly from optimized preview text to ensure parity with UI
         try:
-            pdf_bytes = generate_pdf(optimized_cv)
+            pdf_bytes = generate_pdf(optimized_ats_cv)
         except Exception as e:
             current_app.logger.warning("Error generating PDF, returning fallback text version: %s", e)
             pdf_bytes = generate_pdf(text)
@@ -89,12 +87,15 @@ def upload_cv():
             "success": True,
             "message": "Uploaded and optimized",
             "file_id": str(file_id),
-            "optimized_text": optimized_cv,
-            "optimized_cv": optimized_cv,
+            "optimized_text": optimized_ats_cv,
+            "optimized_cv": optimized_ats_cv,
+            "optimized_ats_cv": optimized_ats_cv,
             "extracted": result.get('extracted') or template_data,
+            "extracted_text": extracted_text,
             "sections": sections,
             "ordered_sections": ordered_sections,
             "structured_sections": structured_sections,
+            "structured_cv": structured_payload,
             "template_data": template_data,
             "suggestions": suggestions,
             "grouped_suggestions": grouped,

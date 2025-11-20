@@ -3,7 +3,9 @@ import os
 import re
 import json
 import logging
+import zipfile
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from xml.etree import ElementTree as ET
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import google.generativeai as genai
@@ -49,6 +51,7 @@ STANDARD_SECTION_ORDER: List[Tuple[str, str]] = [
     ("certifications", "Certifications"),
     ("achievements", "Achievements / Awards"),
     ("languages", "Languages"),
+    ("volunteer_experience", "Volunteer Experience"),
     ("additional_information", "Additional Information"),
 ]
 
@@ -100,6 +103,54 @@ def normalize_text(text):
     text = '\n'.join(lines)
     
     return text.strip()
+
+
+def _safe_decode_bytes(data: bytes, encoding: str = "utf-8") -> str:
+    """Best-effort decode for binary CV uploads."""
+    try:
+        return data.decode(encoding, errors="ignore")
+    except Exception:
+        try:
+            return data.decode("latin-1", errors="ignore")
+        except Exception:
+            return ""
+
+
+def extract_text_from_docx_bytes(file_bytes: bytes) -> str:
+    """Extract plain text from a DOCX file without external dependencies."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+            xml_content = archive.read("word/document.xml")
+    except (KeyError, zipfile.BadZipFile, RuntimeError) as exc:
+        logger.warning("DOCX extraction failed: %s", exc)
+        return normalize_text(_safe_decode_bytes(file_bytes))
+
+    try:
+        tree = ET.fromstring(xml_content)
+    except ET.ParseError as exc:
+        logger.warning("DOCX XML parsing failed: %s", exc)
+        return normalize_text(_safe_decode_bytes(file_bytes))
+
+    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    paragraphs: List[str] = []
+
+    for paragraph in tree.iter(f"{namespace}p"):
+        texts: List[str] = []
+        for node in paragraph.iter(f"{namespace}t"):
+            if node.text:
+                texts.append(node.text)
+        if texts:
+            paragraphs.append("".join(texts))
+
+    raw_text = "\n".join(paragraphs)
+    return normalize_text(raw_text)
+
+
+def extract_text_from_doc_bytes(file_bytes: bytes) -> str:
+    """Fallback extraction for legacy DOC files using best-effort decoding."""
+    # Binary .doc format is proprietary; without external tools we attempt best-effort decoding.
+    decoded = _safe_decode_bytes(file_bytes)
+    return normalize_text(decoded)
 
 
 def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
@@ -331,6 +382,20 @@ def extract_text_from_pdf(file_stream):
         return ""
 
 
+def extract_text_from_any(file_bytes: bytes, filename: Optional[str]) -> str:
+    """Extract text from supported CV formats (PDF, DOC, DOCX, raw text)."""
+    name = (filename or "").lower()
+    if name.endswith(".pdf"):
+        return extract_text_from_pdf(io.BytesIO(file_bytes))
+    if name.endswith(".docx"):
+        return extract_text_from_docx_bytes(file_bytes)
+    if name.endswith(".doc"):
+        return extract_text_from_doc_bytes(file_bytes)
+
+    decoded = _safe_decode_bytes(file_bytes)
+    return normalize_text(decoded)
+
+
 def generate_pdf(text):
     pdf = FPDF()
     pdf.add_page()
@@ -486,6 +551,7 @@ def extract_sections(text):
         "education": "",
         "projects": "",
         "achievements": "",
+        "volunteer": "",
         "other": ""
     }
     
@@ -536,7 +602,9 @@ def extract_sections(text):
             sections["education"] = (sections["education"] + "\n" + content).strip()
         elif "project" in heading:
             sections["projects"] = (sections["projects"] + "\n" + content).strip()
-        elif any(k in heading for k in ("achiev", "certif", "volunteer", "extracurr", "activity", "award", "language", "interest", "reference")):
+        elif "volunteer" in heading:
+            sections["volunteer"] = (sections["volunteer"] + "\n" + content).strip()
+        elif any(k in heading for k in ("achiev", "certif", "extracurr", "activity", "award", "language", "interest", "reference")):
             sections["achievements"] = (sections["achievements"] + "\n" + content).strip()
         else:
             sections["other"] = (sections["other"] + "\n" + content).strip()
@@ -589,6 +657,8 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
     education_structured = parse_education_section(raw_sections.get("education", ""))
     education_formatted = _format_education_section(education_structured)
 
+    volunteer_structured = parse_experience_section(raw_sections.get("volunteer", ""))
+
     certifications_list: List[str] = []
     for source in (raw_sections.get("achievements", ""), raw_sections.get("other", "")):
         if not source:
@@ -626,6 +696,7 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
         "certifications": _dedupe_preserve_order(certifications_list),
         "achievements": _dedupe_preserve_order(achievements_list),
         "languages": languages,
+        "volunteer_experience": volunteer_structured,
         "additional_information": additional_text,
     }
 
@@ -659,6 +730,8 @@ def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str
         elif key in ("certifications", "achievements", "languages"):
             items = structured.get(key) or []
             content = _format_list_section(items) if items else "Not Provided"
+        elif key == "volunteer_experience":
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
         elif key == "additional_information":
             addl = structured.get(key) or ""
             content = addl if addl else "Not Provided"
@@ -691,7 +764,7 @@ def _structured_to_legacy_sections(structured: Dict[str, object]) -> Dict[str, s
     summary_block = "\n".join(line for line in (contact.get("block"), summary) if line)
 
     skills_section = structured.get("skills", {}) if isinstance(structured.get("skills"), dict) else {}
-    all_skills = []
+    all_skills: List[str] = []
     for bucket in ("technical", "soft", "other"):
         all_skills.extend(skills_section.get(bucket) or [])
     skills_text = ", ".join(_dedupe_preserve_order(all_skills))
@@ -705,7 +778,17 @@ def _structured_to_legacy_sections(structured: Dict[str, object]) -> Dict[str, s
     )
     if structured.get("languages"):
         achievements_combo.extend([f"Language: {lang}" for lang in structured.get("languages", [])])
-    achievements_text = "\n".join(achievements_combo)
+    for volunteer in structured.get("volunteer_experience", []) or []:
+        if isinstance(volunteer, dict):
+            title = (volunteer.get("title") or "Volunteer").strip()
+            organization = (volunteer.get("company") or volunteer.get("organization") or "Organization").strip()
+            dates = (volunteer.get("dates") or "").strip()
+            entry = f"Volunteer: {title} at {organization}"
+            if dates:
+                entry = f"{entry} ({dates})"
+            achievements_combo.append(entry)
+
+    achievements_text = "\n".join(_dedupe_preserve_order(achievements_combo))
 
     return {
         "about": summary_block,
@@ -789,6 +872,7 @@ def optimize_cv_rule_based(cv_text: str, job_domain: Optional[str] = None) -> Di
     """Produce a cleaned, ATS-friendly CV structure without relying on AI."""
     structured = build_standardized_sections(cv_text or "")
     ordered_sections, sections_map, optimized_text = _structured_to_preview(structured)
+    structured_payload = build_structured_cv_payload(structured)
 
     # Compute ATS score and keyword coverage
     ats_score, missing_keywords, found_keywords = compute_ats_score(optimized_text, job_domain)
@@ -802,10 +886,13 @@ def optimize_cv_rule_based(cv_text: str, job_domain: Optional[str] = None) -> Di
     return {
         "optimized_text": optimized_text,
         "optimized_cv": optimized_text,
+        "optimized_ats_cv": optimized_text,
         "sections": sections_map,
         "ordered_sections": ordered_sections,
         "structured_sections": structured,
+        "structured_cv": structured_payload,
         "extracted": extracted,
+        "extracted_text": cv_text,
         "suggestions": suggestions,
         "ats_score": ats_score,
         "recommended_keywords": missing_keywords,
@@ -1260,6 +1347,7 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
         "certifications": structured.get("certifications") or [],
         "achievements": structured.get("achievements") or [],
         "languages": structured.get("languages") or [],
+        "volunteer": structured.get("volunteer_experience") or [],
         "additional": {
             "other": structured.get("additional_information") or "Not Provided",
         },
@@ -1317,7 +1405,142 @@ def extract_contact_info(text):
     return contact
     
 
+def _clean_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    stripped = value.strip()
+    return "" if stripped.lower() == "not provided" else stripped
 
+
+def _clean_list(values: Optional[Sequence[str]]) -> List[str]:
+    cleaned: List[str] = []
+    if not values:
+        return cleaned
+    for value in values:
+        if value is None:
+            continue
+        text = _clean_text(str(value))
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _clean_experience_entries(entries: Optional[Sequence[Dict[str, object]]]) -> List[Dict[str, object]]:
+    cleaned_entries: List[Dict[str, object]] = []
+    if not entries:
+        return cleaned_entries
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        cleaned_entry = {
+            "title": _clean_text(entry.get("title") if isinstance(entry.get("title"), str) else str(entry.get("title") or "")),
+            "company": _clean_text(entry.get("company") if isinstance(entry.get("company"), str) else str(entry.get("company") or "")),
+            "dates": _clean_text(entry.get("dates") if isinstance(entry.get("dates"), str) else str(entry.get("dates") or "")),
+            "location": _clean_text(entry.get("location") if isinstance(entry.get("location"), str) else str(entry.get("location") or "")),
+            "points": _clean_list(entry.get("points")),
+        }
+        # Preserve organization field if available
+        if entry.get("organization"):
+            cleaned_entry["organization"] = _clean_text(
+                entry.get("organization") if isinstance(entry.get("organization"), str) else str(entry.get("organization") or "")
+            )
+        if any(cleaned_entry.values()) or cleaned_entry.get("points"):
+            cleaned_entries.append(cleaned_entry)
+    return cleaned_entries
+
+
+def _clean_project_entries(entries: Optional[Sequence[Dict[str, object]]]) -> List[Dict[str, object]]:
+    cleaned_projects: List[Dict[str, object]] = []
+    if not entries:
+        return cleaned_projects
+    for project in entries:
+        if not isinstance(project, dict):
+            continue
+        cleaned_project = {
+            "name": _clean_text(project.get("name") if isinstance(project.get("name"), str) else str(project.get("name") or "")),
+            "description": _clean_text(
+                project.get("desc") if isinstance(project.get("desc"), str) else project.get("description") if isinstance(project.get("description"), str) else str(project.get("desc") or project.get("description") or "")
+            ),
+            "technologies": _clean_list(project.get("technologies") or project.get("tech")),
+        }
+        if any((cleaned_project["name"], cleaned_project["description"], cleaned_project["technologies"])):
+            cleaned_projects.append(cleaned_project)
+    return cleaned_projects
+
+
+def _clean_education_entries(entries: Optional[Sequence[Dict[str, object]]]) -> List[Dict[str, object]]:
+    cleaned_education: List[Dict[str, object]] = []
+    if not entries:
+        return cleaned_education
+    for edu in entries:
+        if not isinstance(edu, dict):
+            continue
+        cleaned_entry = {
+            "degree": _clean_text(edu.get("degree") if isinstance(edu.get("degree"), str) else str(edu.get("degree") or "")),
+            "school": _clean_text(
+                edu.get("school") if isinstance(edu.get("school"), str) else edu.get("institution") if isinstance(edu.get("institution"), str) else str(edu.get("school") or edu.get("institution") or "")
+            ),
+            "year": _clean_text(edu.get("year") if isinstance(edu.get("year"), str) else edu.get("date") if isinstance(edu.get("date"), str) else str(edu.get("year") or edu.get("date") or "")),
+        }
+        if any(cleaned_entry.values()):
+            cleaned_education.append(cleaned_entry)
+    return cleaned_education
+
+
+def build_structured_cv_payload(structured: Dict[str, object]) -> Dict[str, object]:
+    """Build the JSON-ready structured CV output aligned with mandatory sections."""
+    structured = structured or {}
+
+    contact = structured.get("contact_information") if isinstance(structured.get("contact_information"), dict) else {}
+    contact_payload = {
+        "name": _clean_text(contact.get("name")),
+        "email": _clean_text(contact.get("email")),
+        "phone": _clean_text(contact.get("phone")),
+        "location": _clean_text(contact.get("location")),
+        "linkedin": _clean_text(contact.get("linkedin")),
+        "github": _clean_text(contact.get("github")),
+        "website": _clean_text(contact.get("website")),
+    }
+
+    skills_section = structured.get("skills") if isinstance(structured.get("skills"), dict) else {}
+    technical_skills = _clean_list(skills_section.get("technical"))
+    soft_skills = _clean_list(skills_section.get("soft"))
+    other_skills = _clean_list(skills_section.get("other"))
+    formatted_skills = _clean_text(skills_section.get("formatted"))
+    all_skills = _dedupe_preserve_order(technical_skills + soft_skills + other_skills)
+
+    structured_skills = {
+        "technical": technical_skills,
+        "soft": soft_skills,
+        "other": other_skills,
+        "formatted": formatted_skills,
+        "all": all_skills,
+    }
+
+    structured_payload = {
+        "Contact Information": contact_payload,
+        "Summary / Objective": _clean_text(structured.get("professional_summary")),
+        "Skills": structured_skills,
+        "Work Experience / Employment History": _clean_experience_entries(structured.get("work_experience")),
+        "Projects": _clean_project_entries(structured.get("projects")),
+        "Education": _clean_education_entries(structured.get("education")),
+        "Certifications": _clean_list(structured.get("certifications")),
+        "Achievements / Awards": _clean_list(structured.get("achievements")),
+        "Languages": _clean_list(structured.get("languages")),
+        "Volunteer Experience": _clean_experience_entries(structured.get("volunteer_experience")),
+        "Additional Information": _clean_text(structured.get("additional_information")),
+    }
+
+    # Ensure placeholders are present if sections empty
+    for key, value in structured_payload.items():
+        if isinstance(value, str) and not value:
+            structured_payload[key] = ""
+        elif isinstance(value, list) and not value:
+            structured_payload[key] = []
+        elif isinstance(value, dict) and not any(v for v in value.values() if v):
+            structured_payload[key] = {k: v for k, v in value.items()}
+
+    return structured_payload
 def optimize_cv_with_gemini(cv_text, job_domain=None):
     """Attempt to use Gemini to generate a structured JSON output for the optimized CV.
 

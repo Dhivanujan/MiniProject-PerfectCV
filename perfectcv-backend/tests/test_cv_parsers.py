@@ -44,3 +44,29 @@ def test_convert_to_template_format_minimal():
     assert isinstance(tpl['experience'], list)
     assert isinstance(tpl['projects'], list)
     assert isinstance(tpl['education'], list)
+
+
+def test_build_structured_cv_payload_sections_present():
+    raw_cv = """John Doe\njohn@example.com\n+1 555 555 5555\nSoftware Engineer with experience in Python.\n\nSkills\nPython, Flask\n\nWork Experience\nSoftware Engineer at Acme Corp (2020-2023)\n- Built APIs\n\nEducation\nBSc Computer Science - Tech University (2019)\n"""
+    structured = cv_utils.build_standardized_sections(raw_cv)
+    payload = cv_utils.build_structured_cv_payload(structured)
+
+    required_keys = {
+        "Contact Information",
+        "Summary / Objective",
+        "Skills",
+        "Work Experience / Employment History",
+        "Projects",
+        "Education",
+        "Certifications",
+        "Achievements / Awards",
+        "Languages",
+        "Volunteer Experience",
+        "Additional Information",
+    }
+
+    assert required_keys.issubset(payload.keys())
+    # Ensure extracted contact details preserved
+    assert payload["Contact Information"]["email"] == "john@example.com"
+    # Missing sections should not fabricate content
+    assert payload["Projects"] == []
