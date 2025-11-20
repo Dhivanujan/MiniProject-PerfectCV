@@ -3,6 +3,7 @@ import os
 import re
 import json
 import logging
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from PyPDF2 import PdfReader
 from fpdf import FPDF
 import google.generativeai as genai
@@ -38,6 +39,40 @@ DOMAIN_KEYWORDS = {
     "marketing": ["seo", "content", "campaign", "analytics", "growth", "google ads", "facebook ads", "email marketing"]
 }
 
+STANDARD_SECTION_ORDER: List[Tuple[str, str]] = [
+    ("contact_information", "Contact Information"),
+    ("professional_summary", "Professional Summary"),
+    ("skills", "Skills"),
+    ("work_experience", "Work Experience"),
+    ("projects", "Projects"),
+    ("education", "Education"),
+    ("certifications", "Certifications"),
+    ("achievements", "Achievements / Awards"),
+    ("languages", "Languages"),
+    ("additional_information", "Additional Information"),
+]
+
+SOFT_SKILL_KEYWORDS: Tuple[str, ...] = (
+    "communication", "leadership", "collaboration", "team", "problem", "critical", "creative",
+    "adaptability", "negotiation", "stakeholder", "mentoring", "mentorship", "coaching", "presentation",
+    "interpersonal", "time management", "conflict", "organization", "organisational", "empathy",
+)
+
+TECH_SKILL_HINTS: Tuple[str, ...] = (
+    "python", "java", "c++", "c#", "go", "javascript", "typescript", "sql", "nosql", "aws", "azure",
+    "gcp", "docker", "kubernetes", "linux", "react", "angular", "vue", "node", "django", "flask",
+    "spring", "ml", "machine", "data", "analytics", "cloud", "devops", "git", "spark", "hadoop",
+    "tensorflow", "pytorch", "api", "rest", "graphql", "microservice", "etl", "pandas", "numpy",
+    "tableau", "power bi", "excel", "jira", "confluence", "salesforce", "php", "html", "css",
+)
+
+LANGUAGE_NAMES: Tuple[str, ...] = (
+    "english", "french", "spanish", "german", "hindi", "mandarin", "cantonese", "arabic", "portuguese",
+    "italian", "japanese", "korean", "tamil", "telugu", "malayalam", "urdu", "bengali", "marathi",
+    "russian", "polish", "dutch", "swedish", "danish", "norwegian", "turkish", "thai", "vietnamese",
+    "indonesian", "malay", "finnish", "greek", "hebrew", "punjabi", "romanian", "czech", "slovak",
+)
+
 
 def normalize_text(text):
     """Clean and normalize text while preserving meaningful spacing and structure."""
@@ -65,6 +100,181 @@ def normalize_text(text):
     text = '\n'.join(lines)
     
     return text.strip()
+
+
+def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
+    """Return a list with duplicates removed while preserving original ordering."""
+    seen = set()
+    ordered: List[str] = []
+    for item in items:
+        if not item:
+            continue
+        normalized = item.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(normalized)
+    return ordered
+
+
+def _categorize_skills(skills: Sequence[str]) -> Dict[str, List[str]]:
+    """Split skills into technical, soft, and other buckets using heuristics."""
+    technical: List[str] = []
+    soft: List[str] = []
+    other: List[str] = []
+
+    for raw_skill in _dedupe_preserve_order(skills):
+        lowered = raw_skill.lower()
+        if any(keyword in lowered for keyword in TECH_SKILL_HINTS) or re.search(r"[0-9+/]|\bapi\b", lowered):
+            technical.append(raw_skill)
+            continue
+        if any(keyword in lowered for keyword in SOFT_SKILL_KEYWORDS):
+            soft.append(raw_skill)
+            continue
+        # Heuristic: short uppercase abbreviations (e.g., PMP, PRINCE2) are likely certifications/technical
+        if len(raw_skill) <= 5 and raw_skill.isupper():
+            technical.append(raw_skill)
+        else:
+            other.append(raw_skill)
+
+    return {
+        "technical": technical,
+        "soft": soft,
+        "other": other,
+    }
+
+
+def _format_skills_section(skills: Dict[str, List[str]]) -> str:
+    """Format categorized skills into a readable string."""
+    parts: List[str] = []
+    if skills.get("technical"):
+        parts.append("Technical: " + ", ".join(skills["technical"]))
+    if skills.get("soft"):
+        parts.append("Soft: " + ", ".join(skills["soft"]))
+    if skills.get("other"):
+        parts.append("Additional: " + ", ".join(skills["other"]))
+    return "\n".join(parts)
+
+
+def _format_contact_section(contact: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
+    """Return formatted contact block string and sanitized contact dict."""
+    sanitized = {
+        "name": (contact.get("name") or "" ).strip() or "Not Provided",
+        "email": (contact.get("email") or "" ).strip() or "Not Provided",
+        "phone": (contact.get("phone") or "" ).strip() or "Not Provided",
+        "location": (contact.get("location") or "" ).strip() or "Not Provided",
+        "linkedin": (contact.get("linkedin") or "" ).strip(),
+        "github": (contact.get("github") or "" ).strip(),
+        "website": (contact.get("website") or "" ).strip(),
+    }
+    lines = [
+        f"Name: {sanitized['name']}",
+        f"Email: {sanitized['email']}",
+    ]
+    if sanitized["phone"] != "Not Provided":
+        lines.append(f"Phone: {sanitized['phone']}")
+    if sanitized["location"] != "Not Provided":
+        lines.append(f"Location: {sanitized['location']}")
+    for field in ("linkedin", "github", "website"):
+        value = sanitized.get(field)
+        if value:
+            lines.append(f"{field.title()}: {value}")
+    return "\n".join(lines), sanitized
+
+
+def _format_experience_section(experience: Sequence[Dict[str, str]]) -> str:
+    """Format structured experience entries into ATS-friendly bullet lists."""
+    entries: List[str] = []
+    for job in experience:
+        if not isinstance(job, dict):
+            continue
+        title = (job.get("title") or "Role").strip() or "Role"
+        company = (job.get("company") or "Company").strip() or "Company"
+        dates = (job.get("dates") or "").strip()
+        location = (job.get("location") or "").strip()
+        header_parts = [title, "|", company]
+        header = " ".join(part for part in header_parts if part)
+        if location:
+            header = f"{header} ({location})"
+        if dates:
+            header = f"{header} — {dates}"
+
+        raw_points = [p.strip() for p in job.get("points", []) if isinstance(p, str) and p.strip()]
+        if raw_points:
+            prepped = "\n".join(f"- {point}" for point in raw_points)
+            strengthened = strengthen_experience_points(prepped)
+            bullet_lines = [line for line in strengthened.splitlines() if line.strip()]
+        else:
+            bullet_lines = []
+
+        section_lines = [header]
+        section_lines.extend(bullet_lines)
+        entries.append("\n".join(section_lines))
+
+    return "\n\n".join(entries)
+
+
+def _format_projects_section(projects: Sequence[Dict[str, str]]) -> str:
+    blocks: List[str] = []
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        name = (project.get("name") or "Project").strip()
+        if not name:
+            continue
+        desc = (project.get("desc") or project.get("description") or "").strip()
+        technologies = project.get("technologies") or project.get("tech") or []
+        lines = [name]
+        if desc:
+            lines.append(f"- {desc}")
+        if technologies:
+            tech = ", ".join(_dedupe_preserve_order(str(t) for t in technologies))
+            if tech:
+                lines.append(f"- Tech: {tech}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _format_education_section(education: Sequence[Dict[str, str]]) -> str:
+    entries: List[str] = []
+    for edu in education:
+        if not isinstance(edu, dict):
+            continue
+        degree = (edu.get("degree") or "Qualification").strip()
+        school = (edu.get("school") or edu.get("institution") or "Institution").strip()
+        year = (edu.get("year") or edu.get("date") or "").strip()
+        line = degree
+        if school:
+            line = f"{line} — {school}"
+        if year:
+            line = f"{line} ({year})"
+        entries.append(line)
+    return "\n".join(entries)
+
+
+def _format_list_section(items: Sequence[str], prefix: str = "- ") -> str:
+    cleaned = _dedupe_preserve_order(str(item) for item in items)
+    if not cleaned:
+        return ""
+    return "\n".join(f"{prefix}{item}" for item in cleaned)
+
+
+def _extract_languages(sections: Dict[str, str]) -> List[str]:
+    """Identify languages from any section content using simple heuristics."""
+    candidates: List[str] = []
+    search_space = "\n".join(str(v) for v in sections.values() if v)
+    for match in re.finditer(r"languages?\s*[:\-]\s*([^\n]+)", search_space, flags=re.IGNORECASE):
+        fragment = match.group(1)
+        parts = re.split(r"[,;/]", fragment)
+        candidates.extend(p.strip() for p in parts if p.strip())
+    for name in LANGUAGE_NAMES:
+        pattern = rf"\b{name}\b"
+        if re.search(pattern, search_space, flags=re.IGNORECASE):
+            candidates.append(name.title())
+    return _dedupe_preserve_order(candidates)
 
 def extract_text_from_pdf(file_stream):
     """Extract text from PDF while preserving structure and formatting."""
@@ -174,12 +384,26 @@ def generate_pdf(text):
         render_section("ACHIEVEMENTS & EXTRACURRICULAR", sections.get("achievements") or sections.get("other"))
         render_section("EDUCATION", sections.get("education"))
     else:
+        heading_prefixes = (
+            "education",
+            "experience",
+            "skills",
+            "projects",
+            "contact",
+            "professional summary",
+            "key skills",
+            "work experience",
+            "certifications",
+            "achievements",
+            "languages",
+            "additional information",
+        )
         for line in text.split("\n"):
             line = line.strip()
             if not line:
                 pdf.ln(5)
                 continue
-            if line.lower().startswith(("education", "experience", "skills", "projects", "contact", "professional summary", "key skills")):
+            if line.lower().startswith(heading_prefixes):
                 pdf.set_font(pdf.font_family, "B", 14)
                 pdf.cell(0, 10, line, ln=True)
                 pdf.set_font(pdf.font_family, size=12)
@@ -325,6 +549,175 @@ def extract_sections(text):
     return sections
 
 
+def build_standardized_sections(cv_text: str) -> Dict[str, object]:
+    """Return structured sections aligned with the standardized preview spec."""
+    normalized_text = normalize_text(cv_text or "")
+    raw_sections = extract_sections(normalized_text)
+
+    about_text = raw_sections.get("about", "")
+    contact_info = extract_contact_info(about_text)
+    contact_block, sanitized_contact = _format_contact_section(contact_info)
+
+    # Remove lines that contain contact details from summary
+    summary_lines: List[str] = []
+    for line in about_text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", stripped):
+            continue
+        if re.search(r"\+?[\d\s\-()]{7,}", stripped):
+            continue
+        if any(keyword in stripped.lower() for keyword in ("email", "phone", "mobile", "linkedin", "github")):
+            continue
+        summary_lines.append(stripped)
+    summary_text = " ".join(summary_lines).strip()
+
+    skills_candidates: List[str] = []
+    raw_skills = raw_sections.get("skills", "")
+    if raw_skills:
+        skills_candidates = [s.strip() for s in re.split(r"[,;\n]", raw_skills) if s.strip()]
+    categorized_skills = _categorize_skills(skills_candidates)
+    skills_formatted = _format_skills_section(categorized_skills)
+
+    experience_structured = parse_experience_section(raw_sections.get("experience", ""))
+    experience_formatted = _format_experience_section(experience_structured)
+
+    projects_structured = parse_projects_section(raw_sections.get("projects", ""))
+    projects_formatted = _format_projects_section(projects_structured)
+
+    education_structured = parse_education_section(raw_sections.get("education", ""))
+    education_formatted = _format_education_section(education_structured)
+
+    certifications_list: List[str] = []
+    for source in (raw_sections.get("achievements", ""), raw_sections.get("other", "")):
+        if not source:
+            continue
+        for line in source.split("\n"):
+            stripped = line.strip().lstrip("-•* ")
+            if not stripped:
+                continue
+            if any(keyword in stripped.lower() for keyword in ("cert", "award", "honor", "recognition")):
+                certifications_list.append(stripped)
+
+    achievements_list: List[str] = []
+    for source in (raw_sections.get("achievements", ""), raw_sections.get("other", "")):
+        if not source:
+            continue
+        for line in source.split("\n"):
+            stripped = line.strip().lstrip("-•* ")
+            if not stripped:
+                continue
+            if stripped not in certifications_list:
+                achievements_list.append(stripped)
+
+    languages = _extract_languages(raw_sections)
+
+    additional_text = raw_sections.get("other", "") or ""
+    additional_text = additional_text.strip()
+
+    structured = {
+        "contact_information": {**sanitized_contact, "block": contact_block},
+        "professional_summary": summary_text,
+        "skills": {**categorized_skills, "formatted": skills_formatted},
+        "work_experience": experience_structured,
+        "projects": projects_structured,
+        "education": education_structured,
+        "certifications": _dedupe_preserve_order(certifications_list),
+        "achievements": _dedupe_preserve_order(achievements_list),
+        "languages": languages,
+        "additional_information": additional_text,
+    }
+
+    return structured
+
+
+def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str, str]], Dict[str, str], str]:
+    """Convert structured sections into ordered preview sections and optimized text."""
+    ordered_sections: List[Dict[str, str]] = []
+    sections_map: Dict[str, str] = {}
+
+    for key, label in STANDARD_SECTION_ORDER:
+        content = ""
+        if key == "contact_information":
+            block = structured.get(key, {}).get("block") if isinstance(structured.get(key), dict) else ""
+            content = block or "Not Provided"
+        elif key == "professional_summary":
+            summary = structured.get(key) or ""
+            content = summary if summary else "Not Provided"
+        elif key == "skills":
+            skills_block = ""
+            if isinstance(structured.get(key), dict):
+                skills_block = structured[key].get("formatted") or ""
+            content = skills_block or "Not Provided"
+        elif key == "work_experience":
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+        elif key == "projects":
+            content = _format_projects_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+        elif key == "education":
+            content = _format_education_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+        elif key in ("certifications", "achievements", "languages"):
+            items = structured.get(key) or []
+            content = _format_list_section(items) if items else "Not Provided"
+        elif key == "additional_information":
+            addl = structured.get(key) or ""
+            content = addl if addl else "Not Provided"
+
+        clean_content = content.strip()
+        if not clean_content:
+            clean_content = "Not Provided"
+
+        sections_map[key] = clean_content
+        ordered_sections.append({
+            "key": key,
+            "label": label,
+            "content": clean_content,
+        })
+
+    optimized_lines: List[str] = []
+    for section in ordered_sections:
+        optimized_lines.append(section["label"].upper())
+        optimized_lines.append(section["content"])
+        optimized_lines.append("")
+
+    optimized_text = "\n".join(optimized_lines).strip()
+    return ordered_sections, sections_map, optimized_text
+
+
+def _structured_to_legacy_sections(structured: Dict[str, object]) -> Dict[str, str]:
+    """Create a legacy sections dict compatible with existing template utilities."""
+    contact = structured.get("contact_information", {}) if isinstance(structured.get("contact_information"), dict) else {}
+    summary = structured.get("professional_summary") or ""
+    summary_block = "\n".join(line for line in (contact.get("block"), summary) if line)
+
+    skills_section = structured.get("skills", {}) if isinstance(structured.get("skills"), dict) else {}
+    all_skills = []
+    for bucket in ("technical", "soft", "other"):
+        all_skills.extend(skills_section.get(bucket) or [])
+    skills_text = ", ".join(_dedupe_preserve_order(all_skills))
+
+    experience_text = _format_experience_section(structured.get("work_experience", []))
+    projects_text = _format_projects_section(structured.get("projects", []))
+    education_text = _format_education_section(structured.get("education", []))
+
+    achievements_combo = _dedupe_preserve_order(
+        list(structured.get("certifications", []) or []) + list(structured.get("achievements", []) or [])
+    )
+    if structured.get("languages"):
+        achievements_combo.extend([f"Language: {lang}" for lang in structured.get("languages", [])])
+    achievements_text = "\n".join(achievements_combo)
+
+    return {
+        "about": summary_block,
+        "skills": skills_text,
+        "experience": experience_text,
+        "projects": projects_text,
+        "education": education_text,
+        "achievements": achievements_text,
+        "other": structured.get("additional_information") or "",
+    }
+
+
 ACTION_VERBS = [
     "led", "built", "designed", "developed", "implemented", "improved", "optimized", "created",
     "reduced", "increased", "managed", "launched", "orchestrated", "analyzed", "automated", "mentored"
@@ -392,87 +785,32 @@ def strengthen_experience_points(text):
     return '\n'.join(out_lines)
 
 
-def optimize_cv_rule_based(cv_text, job_domain=None):
-    """Produce a cleaned, slightly rewritten ATS-friendly CV and suggestions without AI.
+def optimize_cv_rule_based(cv_text: str, job_domain: Optional[str] = None) -> Dict[str, object]:
+    """Produce a cleaned, ATS-friendly CV structure without relying on AI."""
+    structured = build_standardized_sections(cv_text or "")
+    ordered_sections, sections_map, optimized_text = _structured_to_preview(structured)
 
-    Returns dict with keys: optimized_text, sections, suggestions (list), ats_score, recommended_keywords
-    """
-    sections = extract_sections(cv_text)
-    # normalize bullets inside experience and other, then strengthen bullets to start with action verbs
-    raw_experience = normalize_bullets(sections.get("experience", ""))
-    try:
-        sections["experience"] = strengthen_experience_points(raw_experience)
-    except Exception:
-        sections["experience"] = raw_experience
-    sections["skills"] = re.sub(r"[,;]+", ", ", sections.get("skills", ""))
-
-    # Compose a structured ATS-friendly text using a template
-    def format_to_ats_text(sections_dict):
-        out = []
-        # Header placeholder (name/contact) - left blank for user to replace
-        out.append("NAME\nEmail: you@example.com | Phone: +1-555-555-5555\nLocation: City, Country\n")
-
-        if sections_dict.get("summary"):
-            out.append("PROFESSIONAL SUMMARY\n" + sections_dict["summary"].strip())
-
-        if sections_dict.get("skills"):
-            # ensure skills are comma separated
-            skills = sections_dict["skills"].replace("\n", ", ")
-            out.append("KEY SKILLS\n" + skills.strip())
-
-        if sections_dict.get("experience"):
-            out.append("EXPERIENCE\n" + sections_dict["experience"].strip())
-
-        if sections_dict.get("projects"):
-            out.append("PROJECTS\n" + sections_dict["projects"].strip())
-
-        if sections_dict.get("education"):
-            out.append("EDUCATION\n" + sections_dict["education"].strip())
-
-        if sections_dict.get("other"):
-            out.append("ADDITIONAL INFORMATION\n" + sections_dict["other"].strip())
-
-        # Join with double newlines for readability
-        return "\n\n".join(out)
-
-    # Build optimized text from sections (do not invent new facts; reuse cleaned sections)
-    try:
-        optimized_text = format_to_ats_text(sections)
-    except Exception:
-        # Fallback to raw text if formatting fails
-        optimized_text = cv_text or ""
-
-    # Build extracted structured representation
-    extracted = build_extracted_sections(cv_text)
-
-    # The 'optimized_cv' should be a polished version of the optimized_text.
-    # We will reuse optimized_text (template) and ensure bullets are strengthened.
-    try:
-        optimized_cv = optimized_text
-    except Exception:
-        optimized_cv = optimized_text
-
-    # Compute ATS score and keyword suggestions based on domain
+    # Compute ATS score and keyword coverage
     ats_score, missing_keywords, found_keywords = compute_ats_score(optimized_text, job_domain)
 
-    # Provide lightweight suggestions: missing keywords and formatting hints
-    suggestions = []
-    if missing_keywords:
-        suggestions.append({"category": "keywords", "message": f"Consider adding these keywords: {', '.join(missing_keywords[:10])}"})
-    # Suggest adding a skills section if none detected
-    if not sections.get("skills"):
-        suggestions.append({"category": "format", "message": "Add a Key Skills section to improve ATS matching."})
+    suggestions = _generate_suggestions(structured, missing_keywords)
 
-    # Return a consistent dict expected by callers, plus new structured outputs
+    legacy_sections = _structured_to_legacy_sections(structured)
+    template_data = convert_to_template_format(legacy_sections)
+    extracted = build_extracted_sections(cv_text, structured_sections=structured)
+
     return {
         "optimized_text": optimized_text,
-        "optimized_cv": optimized_cv,
-        "sections": sections,
+        "optimized_cv": optimized_text,
+        "sections": sections_map,
+        "ordered_sections": ordered_sections,
+        "structured_sections": structured,
         "extracted": extracted,
         "suggestions": suggestions,
         "ats_score": ats_score,
         "recommended_keywords": missing_keywords,
         "found_keywords": found_keywords,
+        "template_data": template_data,
     }
 
 def parse_experience_section(text):
@@ -739,6 +1077,86 @@ def parse_projects_section(text):
     return [p for p in projects if p.get('name')]
 
 
+def _generate_suggestions(structured: Dict[str, object], missing_keywords: Sequence[str]) -> List[Dict[str, str]]:
+    """Create actionable suggestions based on structured content gaps."""
+    suggestions: List[Dict[str, str]] = []
+
+    summary = structured.get("professional_summary") or ""
+    if len(summary.split()) < 25:
+        suggestions.append({
+            "category": "summary",
+            "message": "Expand the professional summary to highlight 2-3 quantifiable achievements and core strengths.",
+        })
+
+    skills = structured.get("skills", {}) if isinstance(structured.get("skills"), dict) else {}
+    if not skills.get("technical"):
+        suggestions.append({
+            "category": "skills",
+            "message": "Add a dedicated technical skills line with relevant tools, frameworks, and platforms.",
+        })
+    if not skills.get("soft"):
+        suggestions.append({
+            "category": "skills",
+            "message": "Include soft skills such as leadership, stakeholder communication, or team collaboration.",
+        })
+
+    experience = structured.get("work_experience", []) or []
+    if not experience:
+        suggestions.append({
+            "category": "experience",
+            "message": "Add recent work experience with job titles, companies, dates, and impact-driven bullet points.",
+        })
+    else:
+        for job in experience:
+            points = job.get("points") or []
+            if len(points) < 2:
+                suggestions.append({
+                    "category": "experience",
+                    "message": f"Add at least two bullet points quantifying impact for {job.get('title') or 'your roles'}.",
+                })
+                break
+
+    if structured.get("projects") and all(not (proj.get("desc") or proj.get("technologies")) for proj in structured.get("projects", [])):
+        suggestions.append({
+            "category": "projects",
+            "message": "Provide concise descriptions for projects, emphasizing scope, tech stack, and outcomes.",
+        })
+
+    if structured.get("education"):
+        missing_dates = any(not edu.get("year") for edu in structured.get("education"))
+        if missing_dates:
+            suggestions.append({
+                "category": "education",
+                "message": "Add graduation years or expected completion dates for each education entry.",
+            })
+    else:
+        suggestions.append({
+            "category": "education",
+            "message": "List your highest qualifications with institution names and completion years.",
+        })
+
+    if missing_keywords:
+        suggestions.append({
+            "category": "keywords",
+            "message": f"Incorporate role-specific keywords such as: {', '.join(missing_keywords[:10])}.",
+        })
+
+    if not structured.get("languages"):
+        suggestions.append({
+            "category": "languages",
+            "message": "Add a languages section if you are proficient in multiple languages relevant to the role.",
+        })
+
+    additional = structured.get("additional_information") or ""
+    if additional and len(additional.split()) > 120:
+        suggestions.append({
+            "category": "format",
+            "message": "Condense additional information into short bullet points to maintain readability.",
+        })
+
+    return suggestions
+
+
 def convert_to_template_format(sections):
     """Convert raw sections dict into format expected by ResumeTemplate.jsx.
     
@@ -818,69 +1236,34 @@ def convert_to_template_format(sections):
     return template_data
 
 
-def build_extracted_sections(cv_text):
-    """Return a cleaned, structured extracted representation of the CV.
+def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+    """Return a cleaned, structured extracted representation of the CV."""
+    structured = structured_sections or build_standardized_sections(cv_text or "")
 
-    Keys returned:
-    - header (dict): personal information (name, email, phone, location)
-    - professional_summary (string)
-    - skills (list)
-    - experience (list of jobs with title, company, dates, points)
-    - projects (list)
-    - education (list)
-    - certifications (list)
-    - achievements (list)
-    - additional (dict) other sections
-    """
-    sections = extract_sections(cv_text or "")
-
-    # ensure strings
-    for k in ['about', 'skills', 'experience', 'projects', 'education', 'achievements', 'other']:
-        sections[k] = (sections.get(k) or "").strip()
-
-    contact = extract_contact_info(sections.get('about', ''))
-
-    template = convert_to_template_format(sections)
+    contact_info = structured.get("contact_information", {}) if isinstance(structured.get("contact_information"), dict) else {}
+    skills_dict = structured.get("skills", {}) if isinstance(structured.get("skills"), dict) else {}
 
     extracted = {
-        'header': {
-            'name': template.get('name') or contact.get('name') or 'Not Provided',
-            'email': contact.get('email') or 'Not Provided',
-            'phone': contact.get('phone') or 'Not Provided',
-            'location': contact.get('location') or 'Not Provided'
+        "header": {
+            "name": contact_info.get("name") or "Not Provided",
+            "email": contact_info.get("email") or "Not Provided",
+            "phone": contact_info.get("phone") or "Not Provided",
+            "location": contact_info.get("location") or "Not Provided",
         },
-        'professional_summary': sections.get('about') or 'Not Provided',
-        'skills': template.get('skills') or [],
-        'experience': template.get('experience') or [],
-        'projects': template.get('projects') or [],
-        'education': template.get('education') or [],
-        'certifications': template.get('certifications') or [],
-        'achievements': [a for a in (sections.get('achievements') or '').split('\n') if a.strip()] or [],
-        'additional': {}
+        "professional_summary": structured.get("professional_summary") or "Not Provided",
+        "skills": _dedupe_preserve_order(
+            (skills_dict.get("technical") or []) + (skills_dict.get("soft") or []) + (skills_dict.get("other") or [])
+        ),
+        "experience": structured.get("work_experience") or [],
+        "projects": structured.get("projects") or [],
+        "education": structured.get("education") or [],
+        "certifications": structured.get("certifications") or [],
+        "achievements": structured.get("achievements") or [],
+        "languages": structured.get("languages") or [],
+        "additional": {
+            "other": structured.get("additional_information") or "Not Provided",
+        },
     }
-
-    # Populate additional with anything left in 'other'
-    other = sections.get('other')
-    if other:
-        extracted['additional']['other'] = other
-    else:
-        extracted['additional']['other'] = 'Not Provided'
-
-    # Ensure Not Provided for empty list/string sections where appropriate
-    if not extracted['professional_summary']:
-        extracted['professional_summary'] = 'Not Provided'
-    if not extracted['skills']:
-        extracted['skills'] = []
-    if not extracted['experience']:
-        extracted['experience'] = []
-    if not extracted['projects']:
-        extracted['projects'] = []
-    if not extracted['education']:
-        extracted['education'] = []
-    if not extracted['certifications']:
-        extracted['certifications'] = []
-    if not extracted['achievements']:
-        extracted['achievements'] = []
 
     return extracted
 
@@ -982,41 +1365,39 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
     Returns dict with keys: optimized_text, sections, template_data, suggestions,
     ats_score, recommended_keywords, found_keywords
     """
+    ai_data: Dict[str, object] = {}
     if use_ai:
         try:
-            data = optimize_cv_with_gemini(cv_text, job_domain=job_domain)
-            # Defensive: if the AI returned null or non-dict (e.g. JSON `null`), treat as failure
-            if not isinstance(data, dict):
-                logger.warning("AI returned non-dict response (null?), falling back to rule-based")
-                data = {}
-            # ensure ats_score and recommended keywords exist
-            if "ats_score" not in data:
-                ats_score, missing, found = compute_ats_score(data.get("optimized_text", cv_text), job_domain)
-                data.setdefault("ats_score", ats_score)
-                data.setdefault("recommended_keywords", missing)
-                data.setdefault("found_keywords", found)
-            # Add template-formatted data (handle case where 'sections' exists but is None)
-            data['template_data'] = convert_to_template_format(data.get('sections') or {})
-            # Always provide a deterministic extracted structure (rule-based) to avoid hallucination
-            data['extracted'] = build_extracted_sections(cv_text)
-            # Ensure 'optimized_cv' exists (may be named optimized_text or optimized_cv)
-            if data.get('optimized_cv'):
-                data['optimized_cv'] = data.get('optimized_cv')
-            elif data.get('optimized_text'):
-                data['optimized_cv'] = data.get('optimized_text')
-            else:
-                try:
-                    fb = optimize_cv_rule_based(cv_text, job_domain)
-                    data['optimized_cv'] = fb.get('optimized_cv') or fb.get('optimized_text') or cv_text
-                except Exception:
-                    data['optimized_cv'] = data.get('optimized_text') or cv_text
-            return data
-        except Exception as e:
-            logger.warning("AI optimization unavailable, falling back to rule-based: %s", e)
+            ai_data = optimize_cv_with_gemini(cv_text, job_domain=job_domain) or {}
+            if not isinstance(ai_data, dict):
+                logger.warning("AI returned non-dict response (null?), ignoring AI output")
+                ai_data = {}
+        except Exception as exc:
+            logger.warning("AI optimization unavailable, falling back to deterministic pipeline: %s", exc)
+            ai_data = {}
 
-    # Rule-based fallback
-    data = optimize_cv_rule_based(cv_text, job_domain)
-    # Add template-formatted data (handle None)
-    data['template_data'] = convert_to_template_format(data.get('sections') or {})
-    return data
+    rule_based = optimize_cv_rule_based(cv_text, job_domain)
+
+    # Merge AI insights (if any) without overwriting deterministic preview content
+    merged = {**rule_based}
+    if ai_data:
+        for key in ("ats_score", "recommended_keywords", "found_keywords"):
+            if key in ai_data and not merged.get(key):
+                merged[key] = ai_data[key]
+        if ai_data.get("suggestions"):
+            current = [s for s in merged.get("suggestions", []) if isinstance(s, dict)]
+            ai_suggestions: List[Dict[str, str]] = []
+            for suggestion in ai_data.get("suggestions", []):
+                if isinstance(suggestion, dict) and suggestion.get("message"):
+                    ai_suggestions.append(suggestion)
+                elif isinstance(suggestion, str):
+                    ai_suggestions.append({"category": "ai", "message": suggestion})
+
+            encoded = _dedupe_preserve_order(
+                [json.dumps(s, sort_keys=True) for s in current] +
+                [json.dumps(s, sort_keys=True) for s in ai_suggestions]
+            )
+            merged["suggestions"] = [json.loads(item) for item in encoded]
+
+    return merged
 

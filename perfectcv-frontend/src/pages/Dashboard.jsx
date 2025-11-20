@@ -7,7 +7,6 @@ import {
   FaTrash,
   FaFileAlt,
   FaSearch,
-  FaCopy,
   FaSpinner,
   FaBriefcase,
   FaChevronDown,
@@ -25,7 +24,7 @@ export default function Dashboard({ user }) {
   const [jobDomain, setJobDomain] = useState("");
   const [optimizedCV, setOptimizedCV] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-  const [sections, setSections] = useState({});
+  const [orderedSections, setOrderedSections] = useState([]);
   const [templateData, setTemplateData] = useState(null);
   const [atsScore, setAtsScore] = useState(null);
   const [recommendedKeywords, setRecommendedKeywords] = useState([]);
@@ -75,7 +74,7 @@ export default function Dashboard({ user }) {
     setOptimizedCV("");
     setSuggestions([]);
     setGroupedSuggestions({});
-    setSections({});
+    setOrderedSections([]);
     setAtsScore(null);
     setRecommendedKeywords([]);
     setFoundKeywords([]);
@@ -139,7 +138,7 @@ export default function Dashboard({ user }) {
       setSuggestions(res.data.suggestions || []);
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
-      setSections(res.data.sections || {});
+      setOrderedSections(res.data.ordered_sections || []);
       setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
@@ -395,15 +394,17 @@ export default function Dashboard({ user }) {
                       <div className="max-h-96 overflow-auto">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
-                        ) : sections && Object.keys(sections).length > 0 ? (
-                          <div className="text-sm whitespace-pre-wrap">
-                            {Object.entries(sections).map(([k, v]) => (
-                              v ? (
-                                <div key={k} className="mb-3">
-                                  <strong className="block text-xs text-indigo-600">{k.replace("_", " ")}</strong>
-                                  <div className="text-sm text-gray-700 dark:text-gray-300">{v}</div>
+                        ) : orderedSections && orderedSections.length > 0 ? (
+                          <div className="space-y-4 text-sm text-gray-800 dark:text-gray-200">
+                            {orderedSections.map((section) => (
+                              <div key={section.key} className="border-l-4 border-indigo-400 pl-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                  <span>&mdash; {section.label} &mdash;</span>
+                                </p>
+                                <div className="mt-1 whitespace-pre-wrap leading-relaxed">
+                                  {section.content}
                                 </div>
-                              ) : null
+                              </div>
                             ))}
                           </div>
                         ) : (
@@ -471,23 +472,23 @@ export default function Dashboard({ user }) {
             </div>
 
             {/* Structured sections preview */}
-            {sections && Object.keys(sections).length > 0 && (
+            {orderedSections && orderedSections.length > 0 && (
               <div className="grid md:grid-cols-2 gap-4 mb-6">
-                {Object.entries(sections).map(([k, v]) =>
-                  v ? (
+                {orderedSections.map(({ key, label, content }) => (
+                  content ? (
                     <div
-                      key={k}
+                      key={key}
                       className="bg-white dark:bg-gray-900/50 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all"
                     >
                       <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3 capitalize text-sm">
-                        {k.replace("_", " ")}
+                        {label}
                       </h4>
                       <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 overflow-hidden">
-                        {v}
+                        {content}
                       </div>
                     </div>
                   ) : null
-                )}
+                ))}
               </div>
             )}
 
