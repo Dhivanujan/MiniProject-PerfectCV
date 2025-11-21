@@ -42,7 +42,7 @@ DOMAIN_KEYWORDS = {
 }
 
 STANDARD_SECTION_ORDER: List[Tuple[str, str]] = [
-    ("contact_information", "Contact Information"),
+    ("contact_information", "Personal Information"),
     ("professional_summary", "Professional Summary"),
     ("skills", "Skills"),
     ("work_experience", "Work Experience"),
@@ -188,6 +188,26 @@ SECTION_KEYS: Tuple[str, ...] = (
 INLINE_HEADING_PATTERN = re.compile(r"^(?P<label>[A-Za-z][\w &+/().']{1,80})\s*[:\-–]\s*(?P<body>.+)$")
 BULLET_PREFIXES: Tuple[str, ...] = ("-", "*", "•")
 
+MONTH_PATTERN = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+DOB_DATE_PATTERN = re.compile(
+    rf"(\b\d{{1,2}}[-/.]\d{{1,2}}[-/.](?:19|20)\d{{2}}\b|\b(?:19|20)\d{{2}}[-/.]\d{{1,2}}[-/.]\d{{1,2}}\b|\b\d{{1,2}}\s+{MONTH_PATTERN}\s+(?:19|20)\d{{2}}\b|\b{MONTH_PATTERN}\s+\d{{1,2}},?\s+(?:19|20)\d{{2}}\b)",
+    re.IGNORECASE,
+)
+DOB_LABEL_PATTERN = re.compile(r"\b(?:dob|d\.o\.b|date of birth|birthdate|birthday|born)\b", re.IGNORECASE)
+ADDRESS_KEYWORDS: Tuple[str, ...] = (
+    "address",
+    "resides",
+    "residence",
+    "residing",
+    "living at",
+    "living in",
+    "permanent address",
+    "current address",
+    "mailing address",
+    "postal address",
+    "home address",
+)
+
 
 def _normalize_heading_label(label: str) -> str:
     cleaned = (label or "").strip().lower()
@@ -220,6 +240,19 @@ def _heading_lookup(label: str) -> Optional[str]:
         if normalized.startswith(keyword) and len(normalized.split()) <= len(keyword.split()) + 2:
             return key
     return None
+
+
+def _extract_dob_from_text(text: str, allow_year_only: bool = False) -> str:
+    if not text:
+        return ""
+    match = DOB_DATE_PATTERN.search(text)
+    if match:
+        return match.group(0).strip(" .,;|-")
+    if allow_year_only:
+        year_match = re.search(r"(19|20)\d{2}", text)
+        if year_match:
+            return year_match.group(0)
+    return ""
 
 
 def normalize_text(text):
@@ -416,21 +449,31 @@ def _format_skills_section(skills: Dict[str, List[str]]) -> str:
 def _format_contact_section(contact: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
     """Return formatted contact block string and sanitized contact dict."""
     sanitized = {
-        "name": (contact.get("name") or "" ).strip() or "Not Provided",
-        "email": (contact.get("email") or "" ).strip() or "Not Provided",
-        "phone": (contact.get("phone") or "" ).strip() or "Not Provided",
-        "location": (contact.get("location") or "" ).strip() or "Not Provided",
-        "linkedin": (contact.get("linkedin") or "" ).strip(),
-        "github": (contact.get("github") or "" ).strip(),
-        "website": (contact.get("website") or "" ).strip(),
+        "name": (contact.get("name") or "").strip() or "Not Provided",
+        "email": (contact.get("email") or "").strip() or "Not Provided",
+        "phone": (contact.get("phone") or "").strip() or "Not Provided",
+        "location": (contact.get("location") or "").strip() or "Not Provided",
+        "address": (contact.get("address") or contact.get("location") or "").strip(),
+        "dob": (contact.get("date_of_birth") or contact.get("dob") or "").strip(),
+        "linkedin": (contact.get("linkedin") or "").strip(),
+        "github": (contact.get("github") or "").strip(),
+        "website": (contact.get("website") or "").strip(),
     }
+    if not sanitized["address"] and sanitized["location"] != "Not Provided":
+        sanitized["address"] = sanitized["location"]
+    sanitized["date_of_birth"] = sanitized["dob"]
+
     lines = [
         f"Name: {sanitized['name']}",
         f"Email: {sanitized['email']}",
     ]
     if sanitized["phone"] != "Not Provided":
         lines.append(f"Phone: {sanitized['phone']}")
-    if sanitized["location"] != "Not Provided":
+    if sanitized.get("dob"):
+        lines.append(f"DOB: {sanitized['dob']}")
+    if sanitized.get("address"):
+        lines.append(f"Address: {sanitized['address']}")
+    elif sanitized["location"] != "Not Provided":
         lines.append(f"Location: {sanitized['location']}")
     for field in ("linkedin", "github", "website"):
         value = sanitized.get(field)
@@ -826,7 +869,14 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
             continue
         if re.search(r"\+?[\d\s\-()]{7,}", stripped):
             continue
-        if any(keyword in stripped.lower() for keyword in ("email", "phone", "mobile", "linkedin", "github")):
+        lowered = stripped.lower()
+        if any(keyword in lowered for keyword in ("email", "phone", "mobile", "linkedin", "github")):
+            continue
+        if DOB_LABEL_PATTERN.search(lowered):
+            continue
+        if sanitized_contact.get("dob") and sanitized_contact["dob"] in stripped:
+            continue
+        if sanitized_contact.get("address") and sanitized_contact["address"] in stripped:
             continue
         summary_lines.append(stripped)
     summary_text = " ".join(summary_lines).strip()
@@ -1455,7 +1505,9 @@ def convert_to_template_format(sections):
         'name': 'Your Name',
         'email': 'email@example.com',
         'phone': '+1 (555) 000-0000',
-        'location': 'City, Country'
+        'location': 'City, Country',
+        'address': '',
+        'dob': ''
     }
     
     # Try to extract contact details from first lines
@@ -1466,6 +1518,8 @@ def convert_to_template_format(sections):
         contact_info['email'] = extracted['email'] or contact_info['email']
         contact_info['phone'] = extracted['phone'] or contact_info['phone']
         contact_info['location'] = extracted['location'] or contact_info['location']
+        contact_info['address'] = extracted.get('address') or contact_info['address'] or extracted.get('location') or contact_info['location']
+        contact_info['dob'] = extracted.get('date_of_birth') or contact_info['dob']
         
         # Remove contact info from summary text (keep only the actual summary)
         summary_lines = []
@@ -1477,6 +1531,8 @@ def convert_to_template_format(sections):
                 r'^(location|city|address|based in):', 
                 r'^(phone|mobile|email|website):'
             ]):
+                if DOB_LABEL_PATTERN.search(line.lower()):
+                    continue
                 summary_lines.append(line)
         
         about = '\n'.join(summary_lines).strip()
@@ -1487,8 +1543,12 @@ def convert_to_template_format(sections):
         contact_parts.append(f"email: {contact_info['email']}")
     if contact_info.get('phone') and contact_info['phone'] != '+1 (555) 000-0000':
         contact_parts.append(f"phone: {contact_info['phone']}")
+    if contact_info.get('dob'):
+        contact_parts.append(f"dob: {contact_info['dob']}")
     if contact_info.get('location') and contact_info['location'] != 'City, Country':
         contact_parts.append(f"location: {contact_info['location']}")
+    if contact_info.get('address') and contact_info['address'] not in (contact_info.get('location'), ''):
+        contact_parts.append(f"address: {contact_info['address']}")
     contact_str = " | ".join(contact_parts) if contact_parts else 'Not Provided'
     
     # Parse skills into list
@@ -1539,6 +1599,8 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
             "email": contact_info.get("email") or "Not Provided",
             "phone": contact_info.get("phone") or "Not Provided",
             "location": contact_info.get("location") or "Not Provided",
+            "address": contact_info.get("address") or contact_info.get("location") or "Not Provided",
+            "date_of_birth": contact_info.get("dob") or contact_info.get("date_of_birth") or "Not Provided",
             "linkedin": contact_info.get("linkedin") or "Not Provided",
             "github": contact_info.get("github") or "Not Provided",
             "website": contact_info.get("website") or "Not Provided",
@@ -1569,6 +1631,8 @@ def extract_contact_info(text):
         'email': '',
         'phone': '',
         'location': '',
+        'address': '',
+        'date_of_birth': '',
         'linkedin': '',
         'github': '',
         'website': ''
@@ -1584,6 +1648,16 @@ def extract_contact_info(text):
     url_pattern = re.compile(r'(?:https?://|www\.)[\w./-]+', re.IGNORECASE)
 
     location_keywords = ('city', 'state', 'country', 'address', 'location', 'based in', 'remote', '•')
+    location_label_keywords = ('location', 'city', 'based in', 'residing in', 'located in')
+
+    def _strip_label(value: str, keywords: Sequence[str]) -> str:
+        if not value:
+            return ""
+        words = [re.escape(keyword) for keyword in keywords if keyword]
+        if not words:
+            return value.strip()
+        pattern = r"^(?:" + "|".join(words) + r")\s*[:\-–]?\s*"
+        return re.sub(pattern, "", value, flags=re.IGNORECASE).strip()
 
     def _looks_like_name(line: str) -> bool:
         if not line or len(line) > 80:
@@ -1608,8 +1682,16 @@ def extract_contact_info(text):
                 contact['email'] = email_match.group(0)
         if not contact['phone']:
             phone_match = phone_pattern.search(line)
-            if phone_match:
+            if phone_match and not DOB_LABEL_PATTERN.search(lower):
                 contact['phone'] = phone_match.group(0).strip()
+        if not contact['date_of_birth']:
+            dob_match = DOB_LABEL_PATTERN.search(lower)
+            if dob_match:
+                candidate = _extract_dob_from_text(line[dob_match.end():], allow_year_only=True)
+                if not candidate:
+                    candidate = _extract_dob_from_text(line, allow_year_only=True)
+                if candidate:
+                    contact['date_of_birth'] = candidate
         if not contact['linkedin']:
             match = linkedin_pattern.search(line)
             if match:
@@ -1624,9 +1706,14 @@ def extract_contact_info(text):
                 url = match.group(0)
                 if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
                     contact['website'] = _normalize_url(url)
+        if not contact['address'] and any(keyword in lower for keyword in ADDRESS_KEYWORDS):
+            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
+                contact['address'] = _strip_label(line, ADDRESS_KEYWORDS) or line
+                if not contact['location']:
+                    contact['location'] = _strip_label(line, location_label_keywords) or line
         if not contact['location'] and any(keyword in lower for keyword in location_keywords):
             if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
-                contact['location'] = line
+                contact['location'] = _strip_label(line, location_label_keywords) or line
         if not contact['name']:
             name_label = re.match(r'^(?:name|full name)\s*[:\-–]\s*(.+)', line, re.IGNORECASE)
             if name_label:
@@ -1651,15 +1738,31 @@ def extract_contact_info(text):
         if match:
             contact['email'] = match.group(0)
     if not contact['phone']:
-        match = phone_pattern.search(text)
-        if match:
-            contact['phone'] = match.group(0).strip()
+        for line in nonempty_lines:
+            lower = line.lower()
+            if DOB_LABEL_PATTERN.search(lower):
+                continue
+            match = phone_pattern.search(line)
+            if match:
+                contact['phone'] = match.group(0).strip()
+                break
+    if not contact['date_of_birth']:
+        dob_label = DOB_LABEL_PATTERN.search(text.lower()) if text else None
+        if dob_label and text:
+            start = dob_label.end()
+            candidate = _extract_dob_from_text(text[start:], allow_year_only=True)
+            if not candidate:
+                candidate = _extract_dob_from_text(text, allow_year_only=True)
+            if candidate:
+                contact['date_of_birth'] = candidate
     if not contact['location']:
         for line in nonempty_lines:
             lower = line.lower()
             if any(keyword in lower for keyword in location_keywords) and 'email' not in lower and 'phone' not in lower:
-                contact['location'] = line
+                contact['location'] = _strip_label(line, location_label_keywords) or line
                 break
+    if not contact['address'] and contact['location']:
+        contact['address'] = contact['location']
 
     if not contact['website']:
         match = url_pattern.search(text)
@@ -1777,6 +1880,8 @@ def build_structured_cv_payload(structured: Dict[str, object]) -> Dict[str, obje
         "email": _clean_text(contact.get("email")),
         "phone": _clean_text(contact.get("phone")),
         "location": _clean_text(contact.get("location")),
+        "address": _clean_text(contact.get("address")),
+        "date_of_birth": _clean_text(contact.get("dob") or contact.get("date_of_birth")),
         "linkedin": _clean_text(contact.get("linkedin")),
         "github": _clean_text(contact.get("github")),
         "website": _clean_text(contact.get("website")),
@@ -1798,7 +1903,7 @@ def build_structured_cv_payload(structured: Dict[str, object]) -> Dict[str, obje
     }
 
     structured_payload = {
-        "Contact Information": contact_payload,
+        "Personal Information": contact_payload,
         "Summary / Objective": _clean_text(structured.get("professional_summary")),
         "Skills": structured_skills,
         "Work Experience / Employment History": _clean_experience_entries(structured.get("work_experience")),

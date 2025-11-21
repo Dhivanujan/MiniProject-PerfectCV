@@ -52,7 +52,7 @@ def test_build_structured_cv_payload_sections_present():
     payload = cv_utils.build_structured_cv_payload(structured)
 
     required_keys = {
-        "Contact Information",
+        "Personal Information",
         "Summary / Objective",
         "Skills",
         "Work Experience / Employment History",
@@ -67,7 +67,7 @@ def test_build_structured_cv_payload_sections_present():
 
     assert required_keys.issubset(payload.keys())
     # Ensure extracted contact details preserved
-    assert payload["Contact Information"]["email"] == "john@example.com"
+    assert payload["Personal Information"]["email"] == "john@example.com"
     # Missing sections should not fabricate content
     assert payload["Projects"] == []
 
@@ -81,9 +81,11 @@ def test_extract_sections_inline_keywords():
 
 
 def test_extract_contact_info_labels():
-    resume_text = """Name: Jane Appleseed\nEmail: jane@example.com\nPhone: +1 555 1234 567\nBased in: San Francisco, CA\nSummary: Technical Program Manager with 10+ years of experience.\n"""
+    resume_text = """Name: Jane Appleseed\nDate of Birth: 1995-05-12\nEmail: jane@example.com\nPhone: +1 555 1234 567\nAddress: 123 Mission St, San Francisco, CA\nSummary: Technical Program Manager with 10+ years of experience.\n"""
     contact = cv_utils.extract_contact_info(resume_text)
     assert contact["name"] == "Jane Appleseed"
     assert contact["email"] == "jane@example.com"
     assert "555" in contact["phone"]
     assert "San Francisco" in contact["location"]
+    assert contact["date_of_birth"] == "1995-05-12"
+    assert "Mission" in contact["address"]
