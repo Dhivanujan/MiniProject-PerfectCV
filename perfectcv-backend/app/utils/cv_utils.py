@@ -76,6 +76,151 @@ LANGUAGE_NAMES: Tuple[str, ...] = (
     "indonesian", "malay", "finnish", "greek", "hebrew", "punjabi", "romanian", "czech", "slovak",
 )
 
+SECTION_SYNONYMS: Dict[str, Tuple[str, ...]] = {
+    "about": (
+        "about",
+        "summary",
+        "professional summary",
+        "profile",
+        "career summary",
+        "objective",
+        "career objective",
+        "about me",
+        "contact",
+        "contact information",
+        "contact details",
+        "personal information",
+        "highlights",
+    ),
+    "skills": (
+        "skills",
+        "technical skills",
+        "key skills",
+        "core skills",
+        "competencies",
+        "skill set",
+        "areas of expertise",
+        "summary of skills",
+    ),
+    "experience": (
+        "experience",
+        "work experience",
+        "professional experience",
+        "employment history",
+        "career history",
+        "employment",
+        "work history",
+        "relevant experience",
+        "experience highlights",
+    ),
+    "projects": ("projects", "project experience", "project work", "portfolio", "case studies"),
+    "education": (
+        "education",
+        "academic background",
+        "qualifications",
+        "education & training",
+        "academic history",
+        "academics",
+    ),
+    "achievements": (
+        "achievements",
+        "accomplishments",
+        "awards",
+        "honors",
+        "recognitions",
+        "events",
+        "extracurricular",
+        "activities",
+    ),
+    "certifications": (
+        "certifications",
+        "certification",
+        "licenses",
+        "licences",
+        "credentials",
+        "certificates",
+        "training",
+        "licensure",
+    ),
+    "volunteer": (
+        "volunteer",
+        "volunteer experience",
+        "volunteer work",
+        "community service",
+        "community involvement",
+        "service",
+    ),
+    "languages": (
+        "languages",
+        "language proficiency",
+        "language skills",
+        "spoken languages",
+        "languages known",
+    ),
+    "other": (
+        "additional information",
+        "other",
+        "interests",
+        "activities",
+        "extra",
+        "hobbies",
+        "additional details",
+    ),
+}
+
+ALL_SECTION_KEYWORDS = tuple(sorted({kw for values in SECTION_SYNONYMS.values() for kw in values}))
+ALL_SECTION_HEADINGS_PATTERN = "|".join(re.escape(keyword) for keyword in ALL_SECTION_KEYWORDS)
+
+SECTION_KEYS: Tuple[str, ...] = (
+    "about",
+    "summary",
+    "skills",
+    "experience",
+    "education",
+    "projects",
+    "achievements",
+    "certifications",
+    "volunteer",
+    "languages",
+    "other",
+)
+
+INLINE_HEADING_PATTERN = re.compile(r"^(?P<label>[A-Za-z][\w &+/().']{1,80})\s*[:\-–]\s*(?P<body>.+)$")
+BULLET_PREFIXES: Tuple[str, ...] = ("-", "*", "•")
+
+
+def _normalize_heading_label(label: str) -> str:
+    cleaned = (label or "").strip().lower()
+    cleaned = re.sub(r"[:\-–]+$", "", cleaned)
+    cleaned = re.sub(r"[^a-z0-9&+/ ]+", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def _build_section_heading_index() -> Dict[str, str]:
+    index: Dict[str, str] = {}
+    for key, keywords in SECTION_SYNONYMS.items():
+        for keyword in keywords:
+            normalized = _normalize_heading_label(keyword)
+            if normalized and normalized not in index:
+                index[normalized] = key
+    return index
+
+
+SECTION_HEADING_INDEX = _build_section_heading_index()
+
+
+def _heading_lookup(label: str) -> Optional[str]:
+    normalized = _normalize_heading_label(label)
+    if not normalized:
+        return None
+    if normalized in SECTION_HEADING_INDEX:
+        return SECTION_HEADING_INDEX[normalized]
+    for keyword, key in SECTION_HEADING_INDEX.items():
+        if normalized.startswith(keyword) and len(normalized.split()) <= len(keyword.split()) + 2:
+            return key
+    return None
+
 
 def normalize_text(text):
     """Clean and normalize text while preserving meaningful spacing and structure."""
@@ -90,7 +235,7 @@ def normalize_text(text):
     
     # Fix collapsed words (missing spaces after punctuation)
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
-    text = re.sub(r'([.!?])([A-Za-z])', r'\1 \2', text)
+    text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
     
     # Fix email addresses that may be split
     text = re.sub(r'(\w+)\s+@\s+(\w+)', r'\1@\2', text)
@@ -169,6 +314,64 @@ def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
         seen.add(key)
         ordered.append(normalized)
     return ordered
+
+
+def _split_section_lines(section_text: str) -> List[str]:
+    """Convert multiline/bulleted section text into normalized line items."""
+    if not section_text:
+        return []
+    entries: List[str] = []
+    for raw_line in section_text.split("\n"):
+        cleaned = raw_line.strip().lstrip("-•* ").strip()
+        if cleaned:
+            entries.append(cleaned)
+    return entries
+
+def _extract_section_by_keywords(text: str, keywords: Sequence[str]) -> str:
+    """Best-effort extraction of a section block given keyword variants."""
+    if not keywords:
+        return ""
+    heading_group = "|".join(re.escape(keyword) for keyword in keywords if keyword)
+    if not heading_group:
+        return ""
+
+    inline_pattern = rf"(?:^|\n)\s*(?:{heading_group})\b[^\n]*[:\-]\s*(?P<inline>[^\n\r]+)"
+    match = re.search(inline_pattern, text, flags=re.IGNORECASE)
+    if match:
+        return match.group("inline").strip()
+
+    stop_pattern = rf"(?=\n\s*(?:{ALL_SECTION_HEADINGS_PATTERN})\b|$)" if ALL_SECTION_HEADINGS_PATTERN else r"(?=$)"
+    block_pattern = rf"(?:^|\n)\s*(?:{heading_group})\b[^\n]*\n(?P<body>.*?){stop_pattern}"
+    match = re.search(block_pattern, text, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group("body").strip()
+    return ""
+
+
+def _augment_sections_from_keywords(text: str, sections: Dict[str, str]) -> None:
+    """Populate missing sections using keyword heuristics."""
+    for key, keywords in SECTION_SYNONYMS.items():
+        if not keywords or sections.get(key):
+            continue
+        snippet = _extract_section_by_keywords(text, keywords)
+        if snippet:
+            sections[key] = (sections.get(key, "") + "\n" + snippet).strip()
+
+
+def _infer_skills_from_text(text: str) -> List[str]:
+    """Collect technical keywords within free-form text as fallback skills."""
+    found: List[str] = []
+    seen = set()
+    text_lower = text.lower()
+    for keyword in TECH_SKILL_HINTS:
+        if keyword and keyword.lower() in text_lower:
+            cleaned = keyword.strip()
+            normalized = cleaned if cleaned.isupper() else cleaned.title()
+            if normalized.lower() in seen:
+                continue
+            seen.add(normalized.lower())
+            found.append(normalized)
+    return found
 
 
 def _categorize_skills(skills: Sequence[str]) -> Dict[str, List[str]]:
@@ -539,81 +742,68 @@ def compute_ats_score(text, domain=None):
 
 
 def extract_sections(text):
-    """Split text into structured sections with improved accuracy.
-    
-    Sections: about, education, experience, projects, achievements, skills, other
-    Uses multiple regex passes to handle various formatting styles.
-    """
-    sections = {
-        "about": "",
-        "skills": "",
-        "experience": "",
-        "education": "",
-        "projects": "",
-        "achievements": "",
-        "volunteer": "",
-        "other": ""
-    }
-    
-    # Enhanced regex with word boundaries for better section detection
-    section_pattern = r"\n\s*(?:^|\s)(" \
-        r"about|summary|profile|professional\s+summary|" \
-        r"skills|key\s+skills|technical\s+skills|" \
-        r"experience|work\s+experience|career|employment|" \
-        r"education|academic|qualifications|" \
-        r"projects?|" \
-        r"achievements?|certifications?|volunteer|extracurricular|activities|awards|" \
-        r"languages?|interests?|references?" \
-        r")\s*[\n:]"
-    
-    parts = re.split(section_pattern, text, flags=re.IGNORECASE | re.MULTILINE)
-    
-    if len(parts) <= 1:
-        # No sections found - try to split first entry as name/contact
-        lines = text.strip().split('\n')
-        if lines:
-            sections["about"] = '\n'.join(lines)
+    """Split text into structured sections using heading-aware heuristics."""
+    sections: Dict[str, str] = {key: "" for key in SECTION_KEYS}
+
+    if not text:
         return sections
-    
-    # parts: [before_heading1, heading1, content1, heading2, content2, ...]
-    prefix = parts[0].strip()
-    if prefix and len(prefix) > 5:  # Only treat as "about" if meaningful
-        sections["about"] = prefix
-    
-    # Process heading-content pairs
-    for i in range(1, len(parts), 2):
-        if i + 1 >= len(parts):
-            break
-            
-        heading = parts[i].lower().strip()
-        content = parts[i + 1].strip() if i + 1 < len(parts) else ""
-        
-        if not content:
+
+    lines = text.split('\n')
+    current_key = "about"
+    buffer: List[str] = []
+
+    def _commit_buffer():
+        if not buffer:
+            return
+        block = "\n".join(buffer).strip()
+        if not block:
+            buffer.clear()
+            return
+        existing = sections.get(current_key, "")
+        sections[current_key] = (existing + "\n" + block).strip() if existing else block
+        buffer.clear()
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            if buffer and buffer[-1] != "":
+                buffer.append("")
             continue
-        
-        # Classify heading and append to appropriate section
-        if any(k in heading for k in ("about", "summary", "profile", "professional")):
-            sections["about"] = (sections["about"] + "\n" + content).strip()
-        elif "skill" in heading:
-            sections["skills"] = (sections["skills"] + "\n" + content).strip()
-        elif any(k in heading for k in ("experience", "work", "career", "employment")):
-            sections["experience"] = (sections["experience"] + "\n" + content).strip()
-        elif "education" in heading or "academic" in heading or "qualification" in heading:
-            sections["education"] = (sections["education"] + "\n" + content).strip()
-        elif "project" in heading:
-            sections["projects"] = (sections["projects"] + "\n" + content).strip()
-        elif "volunteer" in heading:
-            sections["volunteer"] = (sections["volunteer"] + "\n" + content).strip()
-        elif any(k in heading for k in ("achiev", "certif", "extracurr", "activity", "award", "language", "interest", "reference")):
-            sections["achievements"] = (sections["achievements"] + "\n" + content).strip()
-        else:
-            sections["other"] = (sections["other"] + "\n" + content).strip()
-    
-    # Final cleanup and whitespace normalization
-    for k in sections:
-        # Remove leading/trailing whitespace and collapse multiple newlines
-        sections[k] = re.sub(r'\n{2,}', '\n', sections[k].strip())
-    
+
+        candidate = line
+        candidate_is_bullet = False
+        if candidate[0] in BULLET_PREFIXES:
+            candidate = candidate.lstrip(''.join(BULLET_PREFIXES) + ' ')
+            candidate = candidate.strip()
+            candidate_is_bullet = True
+
+        heading_key: Optional[str] = None
+        inline_body: Optional[str] = None
+        inline_match = INLINE_HEADING_PATTERN.match(candidate)
+        if inline_match:
+            heading_key = _heading_lookup(inline_match.group("label"))
+            inline_body = inline_match.group("body").strip()
+        if not heading_key:
+            heading_key = _heading_lookup(candidate)
+
+        if heading_key and (not candidate_is_bullet or len(candidate.split()) <= 5):
+            _commit_buffer()
+            current_key = heading_key
+            if inline_body:
+                buffer.append(inline_body)
+            continue
+
+        buffer.append(line)
+
+    _commit_buffer()
+
+    _augment_sections_from_keywords(text, sections)
+
+    for key in sections:
+        sections[key] = re.sub(r'\n{2,}', '\n\n', sections[key].strip())
+
+    sections["summary"] = sections.get("about", sections.get("summary", ""))
+
     return sections
 
 
@@ -645,6 +835,8 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
     raw_skills = raw_sections.get("skills", "")
     if raw_skills:
         skills_candidates = [s.strip() for s in re.split(r"[,;\n]", raw_skills) if s.strip()]
+    if not skills_candidates:
+        skills_candidates = _infer_skills_from_text(normalized_text)
     categorized_skills = _categorize_skills(skills_candidates)
     skills_formatted = _format_skills_section(categorized_skills)
 
@@ -660,28 +852,30 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
     volunteer_structured = parse_experience_section(raw_sections.get("volunteer", ""))
 
     certifications_list: List[str] = []
-    for source in (raw_sections.get("achievements", ""), raw_sections.get("other", "")):
-        if not source:
-            continue
-        for line in source.split("\n"):
-            stripped = line.strip().lstrip("-•* ")
-            if not stripped:
-                continue
-            if any(keyword in stripped.lower() for keyword in ("cert", "award", "honor", "recognition")):
-                certifications_list.append(stripped)
-
     achievements_list: List[str] = []
+
+    for line in _split_section_lines(raw_sections.get("certifications", "")):
+        certifications_list.append(line)
+
     for source in (raw_sections.get("achievements", ""), raw_sections.get("other", "")):
         if not source:
             continue
-        for line in source.split("\n"):
-            stripped = line.strip().lstrip("-•* ")
-            if not stripped:
-                continue
-            if stripped not in certifications_list:
-                achievements_list.append(stripped)
+        for line in _split_section_lines(source):
+            lowered = line.lower()
+            if any(keyword in lowered for keyword in ("cert", "license", "licence", "credential", "honor", "award")):
+                certifications_list.append(line)
+            else:
+                achievements_list.append(line)
 
-    languages = _extract_languages(raw_sections)
+    languages: List[str] = []
+    if raw_sections.get("languages"):
+        for chunk in re.split(r"[,/;\n]", raw_sections["languages"]):
+            cleaned = chunk.strip()
+            if not cleaned:
+                continue
+            languages.append(cleaned.title() if cleaned.islower() else cleaned)
+    languages.extend(_extract_languages(raw_sections))
+    languages = _dedupe_preserve_order(languages)
 
     additional_text = raw_sections.get("other", "") or ""
     additional_text = additional_text.strip()
@@ -1287,12 +1481,15 @@ def convert_to_template_format(sections):
         
         about = '\n'.join(summary_lines).strip()
     
-    # Build contact string
-    contact_str = f"{contact_info['email']}"
-    if contact_info['phone'] and contact_info['phone'] != '+1 (555) 000-0000':
-        contact_str += f" | {contact_info['phone']}"
-    if contact_info['location'] and contact_info['location'] != 'City, Country':
-        contact_str += f" | {contact_info['location']}"
+    # Build labeled contact string for readability
+    contact_parts = []
+    if contact_info.get('email'):
+        contact_parts.append(f"email: {contact_info['email']}")
+    if contact_info.get('phone') and contact_info['phone'] != '+1 (555) 000-0000':
+        contact_parts.append(f"phone: {contact_info['phone']}")
+    if contact_info.get('location') and contact_info['location'] != 'City, Country':
+        contact_parts.append(f"location: {contact_info['location']}")
+    contact_str = " | ".join(contact_parts) if contact_parts else 'Not Provided'
     
     # Parse skills into list
     skills_text = sections.get('skills', '').strip()
@@ -1310,15 +1507,21 @@ def convert_to_template_format(sections):
         'certifications': []  # Optional section
     }
 
-    # Add certifications from achievements if any
-    if sections.get('achievements'):
-        certs = []
-        for line in sections['achievements'].split('\n'):
-            line = line.strip()
-            if line:
-                certs.append(line.lstrip('-•* '))
-        if certs:
-            template_data['certifications'] = certs
+    # Add certifications from dedicated or achievements sections
+    cert_sources = (
+        sections.get('certifications', ''),
+        sections.get('achievements', ''),
+    )
+    certs: List[str] = []
+    for source in cert_sources:
+        if not source:
+            continue
+        for line in source.split('\n'):
+            entry = line.strip().lstrip('-•* ')
+            if entry:
+                certs.append(entry)
+    if certs:
+        template_data['certifications'] = _dedupe_preserve_order(certs)
 
     return template_data
 
@@ -1336,6 +1539,9 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
             "email": contact_info.get("email") or "Not Provided",
             "phone": contact_info.get("phone") or "Not Provided",
             "location": contact_info.get("location") or "Not Provided",
+            "linkedin": contact_info.get("linkedin") or "Not Provided",
+            "github": contact_info.get("github") or "Not Provided",
+            "website": contact_info.get("website") or "Not Provided",
         },
         "professional_summary": structured.get("professional_summary") or "Not Provided",
         "skills": _dedupe_preserve_order(
@@ -1357,51 +1563,116 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
 
 
 def extract_contact_info(text):
-    """Extract name, email, phone, and location from text.
-    
-    Returns dict with keys: name, email, phone, location
-    """
+    """Extract contact information including links using keyword-aware heuristics."""
     contact = {
         'name': '',
         'email': '',
         'phone': '',
-        'location': ''
+        'location': '',
+        'linkedin': '',
+        'github': '',
+        'website': ''
     }
-    
-    lines = text.split('\n')
-    
-    # First 10 lines are likely to contain name and contact info
-    for i, line in enumerate(lines[:min(10, len(lines))]):
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Extract email
-        email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', line)
-        if email_match and not contact['email']:
-            contact['email'] = email_match.group(0)
-        
-        # Extract phone
-        phone_match = re.search(r'\+?[\d\s\-()]{10,}', line)
-        if phone_match and not contact['phone']:
-            phone = phone_match.group(0).strip()
-            if re.search(r'\d{7,}', phone):  # At least 7 digits
-                contact['phone'] = phone
-        
-        # Extract location (usually contains city, state/country)
-        if any(loc_word in line.lower() for loc_word in ['city', 'state', 'country', 'address', 'location', 'based in', '•']):
-            if not (email_match or phone_match or any(keyword in line.lower() for keyword in ['email', 'phone', 'mobile'])):
+
+    lines = [line.strip() for line in (text or '').split('\n')]
+    nonempty_lines = [line for line in lines if line]
+
+    email_pattern = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
+    phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
+    linkedin_pattern = re.compile(r'(?:https?://|www\.)?linkedin\.com/[\w\-/]+', re.IGNORECASE)
+    github_pattern = re.compile(r'(?:https?://|www\.)?github\.com/[\w\-/]+', re.IGNORECASE)
+    url_pattern = re.compile(r'(?:https?://|www\.)[\w./-]+', re.IGNORECASE)
+
+    location_keywords = ('city', 'state', 'country', 'address', 'location', 'based in', 'remote', '•')
+
+    def _looks_like_name(line: str) -> bool:
+        if not line or len(line) > 80:
+            return False
+        if email_pattern.search(line) or phone_pattern.search(line):
+            return False
+        if _heading_lookup(line):
+            return False
+        tokens = [token for token in re.split(r'\s+', line) if token]
+        if not tokens or len(tokens) > 6:
+            return False
+        if any(any(char.isdigit() for char in token) for token in tokens):
+            return False
+        capitalized = sum(1 for token in tokens if token[0].isupper())
+        return capitalized >= max(1, len(tokens) - 1)
+
+    for line in nonempty_lines:
+        lower = line.lower()
+        if not contact['email']:
+            email_match = email_pattern.search(line)
+            if email_match:
+                contact['email'] = email_match.group(0)
+        if not contact['phone']:
+            phone_match = phone_pattern.search(line)
+            if phone_match:
+                contact['phone'] = phone_match.group(0).strip()
+        if not contact['linkedin']:
+            match = linkedin_pattern.search(line)
+            if match:
+                contact['linkedin'] = _normalize_url(match.group(0))
+        if not contact['github']:
+            match = github_pattern.search(line)
+            if match:
+                contact['github'] = _normalize_url(match.group(0))
+        if not contact['website']:
+            match = url_pattern.search(line)
+            if match:
+                url = match.group(0)
+                if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
+                    contact['website'] = _normalize_url(url)
+        if not contact['location'] and any(keyword in lower for keyword in location_keywords):
+            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
                 contact['location'] = line
-            continue
-        
-        # First non-contact line is likely the name
-        if not contact['name'] and not email_match and not phone_match:
-            # Skip if it looks like a title or section header
-            if not any(keyword in line.lower() for keyword in ['summary', 'profile', 'experience', 'education', 'skills', 'projects', 'certification']):
-                # Skip very short lines or lines that look like descriptors
-                if len(line) > 3 and not line.isupper():
-                    contact['name'] = line
-    
+        if not contact['name']:
+            name_label = re.match(r'^(?:name|full name)\s*[:\-–]\s*(.+)', line, re.IGNORECASE)
+            if name_label:
+                contact['name'] = name_label.group(1).strip()
+                continue
+            if email_pattern.search(line):
+                before_email = line.split(email_pattern.search(line).group(0))[0].strip(' ,|-')
+                if _looks_like_name(before_email):
+                    contact['name'] = before_email
+                    continue
+            phone_in_line = phone_pattern.search(line)
+            if phone_in_line:
+                before_phone = line.split(phone_in_line.group(0))[0].strip(' ,|-')
+                if _looks_like_name(before_phone):
+                    contact['name'] = before_phone
+                    continue
+            if _looks_like_name(line):
+                contact['name'] = line
+
+    if not contact['email']:
+        match = email_pattern.search(text)
+        if match:
+            contact['email'] = match.group(0)
+    if not contact['phone']:
+        match = phone_pattern.search(text)
+        if match:
+            contact['phone'] = match.group(0).strip()
+    if not contact['location']:
+        for line in nonempty_lines:
+            lower = line.lower()
+            if any(keyword in lower for keyword in location_keywords) and 'email' not in lower and 'phone' not in lower:
+                contact['location'] = line
+                break
+
+    if not contact['website']:
+        match = url_pattern.search(text)
+        if match:
+            url = match.group(0)
+            if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
+                contact['website'] = _normalize_url(url)
+
+    if not contact['name'] and nonempty_lines:
+        candidate = nonempty_lines[0]
+        if _looks_like_name(candidate):
+            contact['name'] = candidate
+
     return contact
     
 
@@ -1422,6 +1693,15 @@ def _clean_list(values: Optional[Sequence[str]]) -> List[str]:
         text = _clean_text(str(value))
         if text:
             cleaned.append(text)
+    return cleaned
+
+
+def _normalize_url(url: Optional[str]) -> str:
+    if not url:
+        return ""
+    cleaned = url.strip().strip('.,);')
+    if cleaned and not cleaned.lower().startswith(("http://", "https://")):
+        cleaned = "https://" + cleaned.lstrip('/')
     return cleaned
 
 

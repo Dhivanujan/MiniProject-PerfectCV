@@ -70,3 +70,20 @@ def test_build_structured_cv_payload_sections_present():
     assert payload["Contact Information"]["email"] == "john@example.com"
     # Missing sections should not fabricate content
     assert payload["Projects"] == []
+
+
+def test_extract_sections_inline_keywords():
+    text = """Summary: Passionate engineer who loves data and cloud technologies.\nSkills: Python, SQL, AWS\nWork Experience\nData Engineer at DataCorp (2022-Present)\n- Built ETL pipelines\n"""
+    sections = cv_utils.extract_sections(text)
+    assert "summary" in sections and "Passionate engineer" in sections["summary"]
+    assert "skills" in sections and "Python" in sections["skills"]
+    assert "experience" in sections and "Data Engineer" in sections["experience"]
+
+
+def test_extract_contact_info_labels():
+    resume_text = """Name: Jane Appleseed\nEmail: jane@example.com\nPhone: +1 555 1234 567\nBased in: San Francisco, CA\nSummary: Technical Program Manager with 10+ years of experience.\n"""
+    contact = cv_utils.extract_contact_info(resume_text)
+    assert contact["name"] == "Jane Appleseed"
+    assert contact["email"] == "jane@example.com"
+    assert "555" in contact["phone"]
+    assert "San Francisco" in contact["location"]
