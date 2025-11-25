@@ -472,3 +472,82 @@ def analyze_cv_comprehensively(cv_text):
     except Exception as e:
         logger.exception("Error in comprehensive CV analysis: %s", e)
         return None
+
+
+def suggest_courses(cv_text, career_goal=None):
+    """Suggest courses and certifications to strengthen the CV."""
+    try:
+        model = get_generative_model()
+        if not model:
+            logger.warning("No Gemini model available for suggest_courses")
+            return None
+        prompt = f"""Analyze this CV and suggest relevant courses and certifications to strengthen it.
+        Focus on:
+        - Filling skill gaps
+        - Industry-recognized certifications
+        - Advanced topics relevant to the candidate's experience
+        - Emerging technologies in their field
+        
+        {f"Career Goal: {career_goal}" if career_goal else ""}
+        
+        Return as JSON with these keys:
+        - recommended_courses: array of objects with "title", "provider" (e.g., Coursera, edX, AWS), and "reason"
+        - certifications: array of objects with "name", "issuer", and "impact"
+        - learning_path: string describing a recommended learning path
+        
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Course suggestions returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error suggesting courses: %s", e)
+        return None
+
+
+def suggest_qualifications(cv_text, career_goal=None):
+    """Suggest ways to improve qualifications."""
+    try:
+        model = get_generative_model()
+        if not model:
+            logger.warning("No Gemini model available for suggest_qualifications")
+            return None
+        prompt = f"""Analyze this CV and suggest how to improve the candidate's qualifications.
+        Focus on:
+        - Formal education (degrees, diplomas)
+        - Professional designations
+        - Specialized training
+        - Portfolio development
+        
+        {f"Career Goal: {career_goal}" if career_goal else ""}
+        
+        Return as JSON with these keys:
+        - education_recommendations: array of suggestions for formal education
+        - professional_development: array of suggestions for professional growth
+        - portfolio_ideas: array of project ideas to demonstrate skills
+        - strategic_advice: string with overall advice on qualification improvement
+        
+        Return ONLY valid JSON, no additional text.
+        
+        CV TEXT:
+        {cv_text}
+        """
+        
+        response = model.generate_content(prompt)
+        try:
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            logger.warning("Qualification suggestions returned invalid JSON")
+            return None
+            
+    except Exception as e:
+        logger.exception("Error suggesting qualifications: %s", e)
+        return None
