@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from bson import ObjectId
 import gridfs
+from gridfs.errors import NoFile
 import io
 from app.utils.cv_utils import extract_text_from_any, generate_pdf, optimize_cv
 
@@ -13,6 +14,22 @@ ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _serialize_grid_file(grid_file):
+    """Return a serializable snapshot of a GridFS file."""
+    uploaded_at = getattr(grid_file, 'upload_date', None)
+    display_name = getattr(grid_file, 'original_filename', None) or grid_file.filename
+    return {
+        "_id": str(grid_file._id),
+        "filename": display_name,
+        "storageFilename": grid_file.filename,
+        "contentType": getattr(grid_file, 'content_type', None),
+        "uploadedAt": uploaded_at.isoformat() if uploaded_at else None,
+        "size": getattr(grid_file, 'length', None),
+        "jobDomain": getattr(grid_file, 'job_domain', None),
+        "atsScore": getattr(grid_file, 'ats_score', None),
+    }
 
 
 @files_bp.route('/upload-cv', methods=['POST'])
@@ -81,7 +98,23 @@ def upload_cv():
 
         fs = gridfs.GridFS(current_app.mongo.db)
         filename = secure_filename(f"ATS_{current_user.get_id()}_{file.filename.rsplit('.',1)[0]}.pdf")
-        file_id = fs.put(pdf_bytes.read(), filename=filename, content_type='application/pdf', user_id=str(current_user.get_id()))
+        pdf_bytes.seek(0)
+        file_id = fs.put(
+            pdf_bytes.read(),
+            filename=filename,
+            content_type='application/pdf',
+            user_id=str(current_user.get_id()),
+            original_filename=file.filename,
+            job_domain=job_domain,
+            ats_score=ats_score,
+        )
+
+        try:
+            stored_file = fs.get(file_id)
+            file_payload = _serialize_grid_file(stored_file)
+        except Exception:
+            current_app.logger.warning("Unable to reload stored file metadata", exc_info=True)
+            file_payload = {"_id": str(file_id), "filename": file.filename, "uploadedAt": None}
 
         return jsonify({
             "success": True,
@@ -102,6 +135,7 @@ def upload_cv():
             "ats_score": ats_score,
             "recommended_keywords": recommended_keywords,
             "found_keywords": found_keywords,
+            "file": file_payload,
         })
     except Exception as e:
         current_app.logger.exception("Error saving/processing file to GridFS")
@@ -114,10 +148,21 @@ def download(file_id):
     try:
         fs = gridfs.GridFS(current_app.mongo.db)
         file_obj = fs.get(ObjectId(file_id))
-        return send_file(io.BytesIO(file_obj.read()), download_name=file_obj.filename, mimetype=file_obj.content_type, as_attachment=True)
-    except Exception as e:
-        current_app.logger.exception("Download error")
+        if str(getattr(file_obj, 'user_id', '')) != str(current_user.get_id()):
+            return jsonify({"success": False, "message": "Not authorized"}), 403
+        download_name = getattr(file_obj, 'original_filename', None) or file_obj.filename
+        return send_file(
+            io.BytesIO(file_obj.read()),
+            download_name=download_name,
+            mimetype=file_obj.content_type,
+            as_attachment=True,
+        )
+    except NoFile:
+        current_app.logger.exception("Download error - file missing")
         return jsonify({"success": False, "message": "File not found"}), 404
+    except Exception:
+        current_app.logger.exception("Download error")
+        return jsonify({"success": False, "message": "Unable to download file"}), 500
 
 
 @files_bp.route('/delete-cv/<file_id>', methods=['DELETE'])
@@ -126,7 +171,7 @@ def delete_cv(file_id):
     try:
         fs = gridfs.GridFS(current_app.mongo.db)
         file_obj = fs.get(ObjectId(file_id))
-        if str(file_obj.user_id) != str(current_user.get_id()):
+        if str(getattr(file_obj, 'user_id', '')) != str(current_user.get_id()):
             return jsonify({"success": False, "message": "Not authorized"}), 403
         fs.delete(ObjectId(file_id))
         return jsonify({"success": True, "message": "Deleted"})
@@ -140,8 +185,8 @@ def delete_cv(file_id):
 def user_files():
     try:
         fs = gridfs.GridFS(current_app.mongo.db)
-        cursor = fs.find({"user_id": str(current_user.get_id())})
-        files = [{"_id": str(f._id), "filename": f.filename} for f in cursor]
+        cursor = fs.find({"user_id": str(current_user.get_id())}).sort("uploadDate", -1)
+        files = [_serialize_grid_file(f) for f in cursor]
         return jsonify({"files": files})
     except Exception as e:
         current_app.logger.exception("List files error")
