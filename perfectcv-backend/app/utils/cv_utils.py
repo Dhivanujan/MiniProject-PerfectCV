@@ -1937,14 +1937,40 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
         raise RuntimeError("AI not configured")
 
     prompt = f"""
-You are an assistant that converts a raw CV into a professional, ATS-friendly resume tailored to a target job domain.
-Return a JSON object with the following top-level keys: "optimized_text" (string), "sections" (object with summary, skills, experience, education),
-"suggestions" (array of objects with category and message), "ats_score" (number 0-100), "recommended_keywords" (array), "found_keywords" (array).
+You are an expert CV optimizer and career coach. Your task is to rewrite the provided CV to be highly professional, ATS-friendly, and tailored to the target job domain.
+
+Target Domain: {job_domain or 'General'}
+
+Instructions:
+1. Analyze the input CV.
+2. Rewrite the content to use strong action verbs, quantify achievements where possible, and improve clarity and flow.
+3. Ensure the structure is standard: Contact Info, Summary, Skills, Experience, Projects, Education, etc.
+4. Extract and include relevant keywords for the target domain.
+5. Calculate an estimated ATS score (0-100) based on keyword matching, formatting, and content quality.
+6. Provide specific, actionable suggestions for improvement.
+
+Return a JSON object with the following structure:
+{{
+  "optimized_text": "The full text of the optimized CV, formatted clearly with section headers.",
+  "sections": {{
+    "summary": "...",
+    "skills": ["..."],
+    "experience": ["..."],
+    "education": ["..."],
+    "projects": ["..."]
+  }},
+  "suggestions": [
+    {{ "category": "Content", "message": "..." }},
+    {{ "category": "Formatting", "message": "..." }},
+    {{ "category": "Keywords", "message": "..." }}
+  ],
+  "ats_score": 85,
+  "recommended_keywords": ["...", "..."],
+  "found_keywords": ["...", "..."]
+}}
 
 Input CV:
 {cv_text}
-
-Target domain: {job_domain or 'general'}
 
 Return ONLY the JSON object and ensure it is parseable.
 """
@@ -1986,11 +2012,68 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
 
     rule_based = optimize_cv_rule_based(cv_text, job_domain)
 
-    # Merge AI insights (if any) without overwriting deterministic preview content
+    # Merge AI insights (if any)
     merged = {**rule_based}
     if ai_data:
+        # Prefer AI-generated content for optimization if available
+        if ai_data.get("optimized_text"):
+            merged["optimized_text"] = ai_data["optimized_text"]
+            merged["optimized_cv"] = ai_data["optimized_text"]
+            merged["optimized_ats_cv"] = ai_data["optimized_text"]
+
+        # Update sections if AI provided structured content
+        if ai_data.get("sections") and isinstance(ai_data["sections"], dict):
+            merged["sections"] = ai_data["sections"]
+            
+            # Rebuild ordered_sections based on AI sections to ensure UI consistency
+            ai_ordered = []
+            
+            # Map standard keys to potential AI keys
+            key_mapping = {
+                "contact_information": ["contact_information", "personal_info", "contact"],
+                "professional_summary": ["professional_summary", "summary", "objective", "profile"],
+                "work_experience": ["work_experience", "experience", "employment_history"],
+                "education": ["education", "academics"],
+                "skills": ["skills", "core_competencies", "technical_skills"],
+                "projects": ["projects", "key_projects"],
+                "certifications": ["certifications", "credentials"],
+                "achievements": ["achievements", "awards", "accomplishments"],
+                "languages": ["languages"],
+                "volunteer_experience": ["volunteer_experience", "volunteering"],
+                "additional_information": ["additional_information", "other"]
+            }
+
+            # Use standard order for known sections
+            for key, label in STANDARD_SECTION_ORDER:
+                content = None
+                possible_keys = key_mapping.get(key, [key])
+                for ai_key in possible_keys:
+                    if ai_data["sections"].get(ai_key):
+                        content = ai_data["sections"][ai_key]
+                        break
+                
+                if content:
+                    if isinstance(content, list):
+                        content = "\n".join(str(x) for x in content)
+                    ai_ordered.append({"key": key, "label": label, "content": str(content)})
+            
+            # Add any other sections found in AI response that weren't in standard order
+            used_ai_keys = set()
+            for v in key_mapping.values():
+                used_ai_keys.update(v)
+            
+            for key, content in ai_data["sections"].items():
+                if key not in used_ai_keys:
+                    if isinstance(content, list):
+                        content = "\n".join(str(x) for x in content)
+                    ai_ordered.append({"key": key, "label": key.replace("_", " ").title(), "content": str(content)})
+            
+            if ai_ordered:
+                merged["ordered_sections"] = ai_ordered
+
+        # Update scores and keywords
         for key in ("ats_score", "recommended_keywords", "found_keywords"):
-            if key in ai_data and not merged.get(key):
+            if key in ai_data:
                 merged[key] = ai_data[key]
         if ai_data.get("suggestions"):
             current = [s for s in merged.get("suggestions", []) if isinstance(s, dict)]
