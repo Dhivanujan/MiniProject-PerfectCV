@@ -89,10 +89,19 @@ def forgot_password():
     try:
         inserted = current_app.mongo.db.password_resets.insert_one(reset_doc)
         sent = send_reset_code_email(email, code)
+        
         if not sent:
-            # cleanup the reset doc on failure to send
+            # If email fails, check if we are in debug mode to help developer
+            if current_app.config.get('DEBUG') or current_app.config.get('ENV') == 'development':
+                current_app.logger.info(f"DEBUG MODE: Password reset code for {email} is {code}")
+                # We still return error to frontend, but developer can see code in terminal
+                # Alternatively, we could return it in response for dev convenience:
+                # return jsonify({'success': True, 'message': 'Reset code sent (DEBUG: check console)', 'debug_code': code}), 200
+            
+            # cleanup the reset doc on failure to send (unless we want to allow manual code entry from logs)
+            # For now, let's keep it strict: if email fails, process fails.
             current_app.mongo.db.password_resets.delete_one({'_id': inserted.inserted_id})
-            return jsonify({'success': False, 'error': 'Error sending reset code email'}), 500
+            return jsonify({'success': False, 'error': 'Failed to send reset email. Please check system configuration.'}), 500
 
         return jsonify({'success': True, 'message': 'Reset code sent to email'}), 200
     except Exception:

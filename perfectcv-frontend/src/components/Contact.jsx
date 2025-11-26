@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { FaEnvelope, FaPhoneAlt, FaMapMarkerAlt } from "react-icons/fa";
+import api from "../api";
 
 export default function Contact() {
   const [formData, setFormData] = useState({ name: "", email: "", message: "" });
@@ -14,17 +15,20 @@ export default function Contact() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setAlert(null);
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
-      setAlert({ type: "success", message: data.status || "✅ Message sent successfully!" });
-      setFormData({ name: "", email: "", message: "" });
+      const response = await api.post("/api/contact", formData);
+      
+      if (response.data.status === 'ok' || response.data.saved) {
+        setAlert({ type: "success", message: "✅ Message sent successfully!" });
+        setFormData({ name: "", email: "", message: "" });
+      } else {
+        setAlert({ type: "danger", message: response.data.message || "❌ Error sending message." });
+      }
     } catch (error) {
-      setAlert({ type: "danger", message: "❌ Error sending message. Please try again." });
+      console.error("Contact form error:", error);
+      const msg = error.response?.data?.message || "❌ Error sending message. Please try again.";
+      setAlert({ type: "danger", message: msg });
     }
   };
 
