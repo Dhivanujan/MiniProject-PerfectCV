@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const faqs = [
   { q: "Is PerfectCV free to use?", a: "Yes! You can create and download basic resumes for free. Premium features are optional." },
@@ -10,26 +11,51 @@ export default function FAQ() {
   const [openIndex, setOpenIndex] = useState(null);
 
   return (
-    <section id="faq" className="fade-in mt-20 px-6 sm:px-10 max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 text-center mb-10">
+    <section id="faq" className="mt-20 px-6 sm:px-10 max-w-4xl mx-auto">
+      <motion.h2 
+        initial={{ opacity: 0, y: -20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+        className="text-3xl font-bold text-gray-900 dark:text-gray-100 text-center mb-10"
+      >
         Frequently Asked <span className="text-indigo-600">Questions</span>
-      </h2>
+      </motion.h2>
 
       <div className="space-y-4">
         {faqs.map((faq, i) => (
-          <div
+          <motion.div
             key={i}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.1, duration: 0.4 }}
             onClick={() => setOpenIndex(openIndex === i ? null : i)}
-            className="cursor-pointer bg-white dark:bg-gray-800 rounded-lg shadow p-4"
+            className="cursor-pointer bg-white dark:bg-gray-800 rounded-lg shadow p-4 overflow-hidden"
           >
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 flex justify-between items-center">
               {faq.q}
-              <span className="text-indigo-600">{openIndex === i ? "−" : "+"}</span>
+              <motion.span 
+                animate={{ rotate: openIndex === i ? 180 : 0 }}
+                transition={{ duration: 0.3 }}
+                className="text-indigo-600"
+              >
+                {openIndex === i ? "−" : "+"}
+              </motion.span>
             </h3>
-            {openIndex === i && (
-              <p className="text-gray-600 dark:text-gray-300 mt-2">{faq.a}</p>
-            )}
-          </div>
+            <AnimatePresence>
+              {openIndex === i && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <p className="text-gray-600 dark:text-gray-300 mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">{faq.a}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         ))}
       </div>
     </section>

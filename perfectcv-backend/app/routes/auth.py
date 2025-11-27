@@ -13,24 +13,34 @@ auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    
-    user = current_app.mongo.db.users.find_one({'email': email})
-    if user and check_password_hash(user['password'], password):
-        user_obj = User(user)
-        login_user(user_obj)
-        # Return a minimal user representation to the frontend
-        user_public = {
-            'id': str(user.get('_id')),
-            'email': user.get('email'),
-            'full_name': user.get('full_name'),
-            'username': user.get('username')
-        }
-        return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
-    
-    return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
+            
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+        
+        user = current_app.mongo.db.users.find_one({'email': email})
+        if user and check_password_hash(user['password'], password):
+            user_obj = User(user)
+            login_user(user_obj)
+            # Return a minimal user representation to the frontend
+            user_public = {
+                'id': str(user.get('_id')),
+                'email': user.get('email'),
+                'full_name': user.get('full_name'),
+                'username': user.get('username')
+            }
+            return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
+        
+        return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+    except Exception as e:
+        current_app.logger.exception('Error during user login')
+        return jsonify({'success': False, 'error': 'Server error during login', 'details': str(e)}), 500
 
 @auth.route('/register', methods=['POST'])
 def register():
@@ -89,10 +99,19 @@ def forgot_password():
     try:
         inserted = current_app.mongo.db.password_resets.insert_one(reset_doc)
         sent = send_reset_code_email(email, code)
+        
         if not sent:
-            # cleanup the reset doc on failure to send
+            # If email fails, check if we are in debug mode to help developer
+            if current_app.config.get('DEBUG') or current_app.config.get('ENV') == 'development':
+                current_app.logger.info(f"DEBUG MODE: Password reset code for {email} is {code}")
+                # We still return error to frontend, but developer can see code in terminal
+                # Alternatively, we could return it in response for dev convenience:
+                # return jsonify({'success': True, 'message': 'Reset code sent (DEBUG: check console)', 'debug_code': code}), 200
+            
+            # cleanup the reset doc on failure to send (unless we want to allow manual code entry from logs)
+            # For now, let's keep it strict: if email fails, process fails.
             current_app.mongo.db.password_resets.delete_one({'_id': inserted.inserted_id})
-            return jsonify({'success': False, 'error': 'Error sending reset code email'}), 500
+            return jsonify({'success': False, 'error': 'Failed to send reset email. Please check system configuration.'}), 500
 
         return jsonify({'success': True, 'message': 'Reset code sent to email'}), 200
     except Exception:
