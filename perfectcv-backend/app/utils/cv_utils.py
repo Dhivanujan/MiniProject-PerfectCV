@@ -22,11 +22,6 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def allowed_file(filename):
-    """Check if a file has an allowed extension."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
 DOMAIN_KEYWORDS = {
     "software": [
         "python", "java", "c++", "c#", "javascript", "react", "node", "docker", "kubernetes",

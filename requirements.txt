@@ -11,8 +11,10 @@ itsdangerous==2.1.2
 werkzeug==2.3.7
 wtforms==3.0.1
 pymongo==4.5.0
-gridfs==0.0.1
-bson==0.5.10
+# gridfs is included in pymongo
+# bson is included in pymongo, do not install 'bson' package
+python-dotenv
+flask-cors
 bcrypt==4.0.1
 google-generativeai==0.3.2
 langchain==0.1.0

@@ -13,24 +13,34 @@ auth = Blueprint('auth', __name__)
 
 @auth.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    
-    user = current_app.mongo.db.users.find_one({'email': email})
-    if user and check_password_hash(user['password'], password):
-        user_obj = User(user)
-        login_user(user_obj)
-        # Return a minimal user representation to the frontend
-        user_public = {
-            'id': str(user.get('_id')),
-            'email': user.get('email'),
-            'full_name': user.get('full_name'),
-            'username': user.get('username')
-        }
-        return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
-    
-    return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
+            
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+        
+        user = current_app.mongo.db.users.find_one({'email': email})
+        if user and check_password_hash(user['password'], password):
+            user_obj = User(user)
+            login_user(user_obj)
+            # Return a minimal user representation to the frontend
+            user_public = {
+                'id': str(user.get('_id')),
+                'email': user.get('email'),
+                'full_name': user.get('full_name'),
+                'username': user.get('username')
+            }
+            return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
+        
+        return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+    except Exception as e:
+        current_app.logger.exception('Error during user login')
+        return jsonify({'success': False, 'error': 'Server error during login', 'details': str(e)}), 500
 
 @auth.route('/register', methods=['POST'])
 def register():
