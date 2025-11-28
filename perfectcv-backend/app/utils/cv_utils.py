@@ -6,10 +6,13 @@ import logging
 import zipfile
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
-from PyPDF2 import PdfReader
+from pdfminer.high_level import extract_text as pdf_extract_text
+from docx import Document
+import phonenumbers
 from fpdf import FPDF
 import google.generativeai as genai
 from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence
+from app.utils.nlp_utils import load_spacy_model, extract_entities, classify_header_nlp
 
 logger = logging.getLogger(__name__)
 
@@ -290,33 +293,24 @@ def _safe_decode_bytes(data: bytes, encoding: str = "utf-8") -> str:
 
 
 def extract_text_from_docx_bytes(file_bytes: bytes) -> str:
-    """Extract plain text from a DOCX file without external dependencies."""
+    """Extract plain text from a DOCX file using python-docx."""
     try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
-            xml_content = archive.read("word/document.xml")
-    except (KeyError, zipfile.BadZipFile, RuntimeError) as exc:
-        logger.warning("DOCX extraction failed: %s", exc)
+        doc = Document(io.BytesIO(file_bytes))
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    row_text.append(cell.text)
+                full_text.append(" | ".join(row_text))
+        
+        return normalize_text('\n'.join(full_text))
+    except Exception as exc:
+        logger.warning("DOCX extraction failed with python-docx: %s", exc)
         return normalize_text(_safe_decode_bytes(file_bytes))
-
-    try:
-        tree = ET.fromstring(xml_content)
-    except ET.ParseError as exc:
-        logger.warning("DOCX XML parsing failed: %s", exc)
-        return normalize_text(_safe_decode_bytes(file_bytes))
-
-    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    paragraphs: List[str] = []
-
-    for paragraph in tree.iter(f"{namespace}p"):
-        texts: List[str] = []
-        for node in paragraph.iter(f"{namespace}t"):
-            if node.text:
-                texts.append(node.text)
-        if texts:
-            paragraphs.append("".join(texts))
-
-    raw_text = "\n".join(paragraphs)
-    return normalize_text(raw_text)
 
 
 def extract_text_from_doc_bytes(file_bytes: bytes) -> str:
@@ -569,57 +563,14 @@ def _extract_languages(sections: Dict[str, str]) -> List[str]:
     return _dedupe_preserve_order(candidates)
 
 def extract_text_from_pdf(file_stream):
-    """Extract text from PDF while preserving structure and formatting."""
+    """Extract text from PDF using pdfminer.six for better accuracy."""
     try:
-        reader = PdfReader(file_stream)
-        sections = []
-        
-        for page in reader.pages:
-            try:
-                page_text = page.extract_text()
-                if not page_text:
-                    continue
-                    
-                # Try to extract font information for better section detection
-                sections_in_page = []
-                current_section = []
-                
-                for line in page_text.splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    # Likely section header if all caps or ends with colon
-                    if line.isupper() or line.endswith(':'):
-                        if current_section:
-                            sections_in_page.append('\n'.join(current_section))
-                            current_section = []
-                        current_section.append(line)
-                    else:
-                        current_section.append(line)
-                
-                if current_section:
-                    sections_in_page.append('\n'.join(current_section))
-                
-                # Join sections with double newline for clear separation
-                sections.extend(sections_in_page)
-                
-            except Exception as page_error:
-                logger.warning(f"Error extracting text from page: {page_error}")
-                # Continue to next page on error
-                continue
-        
-        # Join all sections and normalize the text
-        text = '\n\n'.join(sections)
+        # pdfminer extract_text expects a file path or file-like object
+        # It handles layout analysis better than PyPDF2
+        text = pdf_extract_text(file_stream)
         return normalize_text(text)
-        
     except Exception as e:
-        logger.exception("Failed to extract text from PDF: %s", e)
-        # Attempt to rewind the stream
-        try:
-            file_stream.seek(0)
-        except Exception:
-            pass
+        logger.exception("Failed to extract text from PDF with pdfminer: %s", e)
         return ""
 
 
@@ -780,7 +731,7 @@ def compute_ats_score(text, domain=None):
 
 
 def extract_sections(text):
-    """Split text into structured sections using heading-aware heuristics."""
+    """Split text into structured sections using heading-aware heuristics and NLP."""
     sections: Dict[str, str] = {key: "" for key in SECTION_KEYS}
 
     if not text:
@@ -817,12 +768,18 @@ def extract_sections(text):
 
         heading_key: Optional[str] = None
         inline_body: Optional[str] = None
+        
+        # 1. Try Regex/Exact Match
         inline_match = INLINE_HEADING_PATTERN.match(candidate)
         if inline_match:
             heading_key = _heading_lookup(inline_match.group("label"))
             inline_body = inline_match.group("body").strip()
         if not heading_key:
             heading_key = _heading_lookup(candidate)
+            
+        # 2. Try NLP Classification if regex failed and line is short enough to be a header
+        if not heading_key and len(candidate.split()) <= 6 and not candidate_is_bullet:
+             heading_key = classify_header_nlp(candidate, SECTION_SYNONYMS)
 
         if heading_key and (not candidate_is_bullet or len(candidate.split()) <= 5):
             _commit_buffer()
@@ -1620,7 +1577,7 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
 
 
 def extract_contact_info(text):
-    """Extract contact information including links using keyword-aware heuristics."""
+    """Extract contact information using NLP and specialized libraries."""
     contact = {
         'name': '',
         'email': '',
@@ -1632,144 +1589,62 @@ def extract_contact_info(text):
         'github': '',
         'website': ''
     }
+    
+    if not text:
+        return contact
 
-    lines = [line.strip() for line in (text or '').split('\n')]
-    nonempty_lines = [line for line in lines if line]
-
+    # 1. Extract Email (Regex is best)
     email_pattern = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
-    phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
+    email_match = email_pattern.search(text)
+    if email_match:
+        contact['email'] = email_match.group(0)
+
+    # 2. Extract Phone (phonenumbers lib)
+    try:
+        for match in phonenumbers.PhoneNumberMatcher(text, "US"): # Default region US, but finds international too
+            contact['phone'] = phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+            break # Take first valid phone
+    except Exception:
+        # Fallback to regex
+        phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
+        match = phone_pattern.search(text)
+        if match:
+            contact['phone'] = match.group(0).strip()
+
+    # 3. Extract Links (Regex)
     linkedin_pattern = re.compile(r'(?:https?://|www\.)?linkedin\.com/[\w\-/]+', re.IGNORECASE)
     github_pattern = re.compile(r'(?:https?://|www\.)?github\.com/[\w\-/]+', re.IGNORECASE)
     url_pattern = re.compile(r'(?:https?://|www\.)[\w./-]+', re.IGNORECASE)
-
-    location_keywords = ('city', 'state', 'country', 'address', 'location', 'based in', 'remote', '•')
-    location_label_keywords = ('location', 'city', 'based in', 'residing in', 'located in')
-
-    def _strip_label(value: str, keywords: Sequence[str]) -> str:
-        if not value:
-            return ""
-        words = [re.escape(keyword) for keyword in keywords if keyword]
-        if not words:
-            return value.strip()
-        pattern = r"^(?:" + "|".join(words) + r")\s*[:\-–]?\s*"
-        return re.sub(pattern, "", value, flags=re.IGNORECASE).strip()
-
-    def _looks_like_name(line: str) -> bool:
-        if not line or len(line) > 80:
-            return False
-        if email_pattern.search(line) or phone_pattern.search(line):
-            return False
-        if _heading_lookup(line):
-            return False
-        tokens = [token for token in re.split(r'\s+', line) if token]
-        if not tokens or len(tokens) > 6:
-            return False
-        if any(any(char.isdigit() for char in token) for token in tokens):
-            return False
-        capitalized = sum(1 for token in tokens if token[0].isupper())
-        return capitalized >= max(1, len(tokens) - 1)
-
-    for line in nonempty_lines:
-        lower = line.lower()
-        if not contact['email']:
-            email_match = email_pattern.search(line)
-            if email_match:
-                contact['email'] = email_match.group(0)
-        if not contact['phone']:
-            phone_match = phone_pattern.search(line)
-            if phone_match and not DOB_LABEL_PATTERN.search(lower):
-                contact['phone'] = phone_match.group(0).strip()
-        if not contact['date_of_birth']:
-            dob_match = DOB_LABEL_PATTERN.search(lower)
-            if dob_match:
-                candidate = _extract_dob_from_text(line[dob_match.end():], allow_year_only=True)
-                if not candidate:
-                    candidate = _extract_dob_from_text(line, allow_year_only=True)
-                if candidate:
-                    contact['date_of_birth'] = candidate
-        if not contact['linkedin']:
-            match = linkedin_pattern.search(line)
-            if match:
-                contact['linkedin'] = _normalize_url(match.group(0))
-        if not contact['github']:
-            match = github_pattern.search(line)
-            if match:
-                contact['github'] = _normalize_url(match.group(0))
-        if not contact['website']:
-            match = url_pattern.search(line)
-            if match:
-                url = match.group(0)
-                if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
-                    contact['website'] = _normalize_url(url)
-        if not contact['address'] and any(keyword in lower for keyword in ADDRESS_KEYWORDS):
-            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
-                contact['address'] = _strip_label(line, ADDRESS_KEYWORDS) or line
-                if not contact['location']:
-                    contact['location'] = _strip_label(line, location_label_keywords) or line
-        if not contact['location'] and any(keyword in lower for keyword in location_keywords):
-            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
-                contact['location'] = _strip_label(line, location_label_keywords) or line
-        if not contact['name']:
-            name_label = re.match(r'^(?:name|full name)\s*[:\-–]\s*(.+)', line, re.IGNORECASE)
-            if name_label:
-                contact['name'] = name_label.group(1).strip()
-                continue
-            if email_pattern.search(line):
-                before_email = line.split(email_pattern.search(line).group(0))[0].strip(' ,|-')
-                if _looks_like_name(before_email):
-                    contact['name'] = before_email
-                    continue
-            phone_in_line = phone_pattern.search(line)
-            if phone_in_line:
-                before_phone = line.split(phone_in_line.group(0))[0].strip(' ,|-')
-                if _looks_like_name(before_phone):
-                    contact['name'] = before_phone
-                    continue
-            if _looks_like_name(line):
-                contact['name'] = line
-
-    if not contact['email']:
-        match = email_pattern.search(text)
-        if match:
-            contact['email'] = match.group(0)
-    if not contact['phone']:
-        for line in nonempty_lines:
-            lower = line.lower()
-            if DOB_LABEL_PATTERN.search(lower):
-                continue
-            match = phone_pattern.search(line)
-            if match:
-                contact['phone'] = match.group(0).strip()
+    
+    li_match = linkedin_pattern.search(text)
+    if li_match: contact['linkedin'] = _normalize_url(li_match.group(0))
+    
+    gh_match = github_pattern.search(text)
+    if gh_match: contact['github'] = _normalize_url(gh_match.group(0))
+    
+    # 4. Extract Name (NLP)
+    # Use Spacy to find PERSON entities in the first few lines
+    first_lines = "\n".join(text.split('\n')[:10])
+    entities = extract_entities(first_lines)
+    if entities.get("PERSON"):
+        # Heuristic: Name is usually at the top and not a common word
+        for name in entities["PERSON"]:
+            if len(name.split()) >= 2 and "@" not in name and not any(char.isdigit() for char in name):
+                contact['name'] = name
                 break
-    if not contact['date_of_birth']:
-        dob_label = DOB_LABEL_PATTERN.search(text.lower()) if text else None
-        if dob_label and text:
-            start = dob_label.end()
-            candidate = _extract_dob_from_text(text[start:], allow_year_only=True)
-            if not candidate:
-                candidate = _extract_dob_from_text(text, allow_year_only=True)
-            if candidate:
-                contact['date_of_birth'] = candidate
-    if not contact['location']:
-        for line in nonempty_lines:
-            lower = line.lower()
-            if any(keyword in lower for keyword in location_keywords) and 'email' not in lower and 'phone' not in lower:
-                contact['location'] = _strip_label(line, location_label_keywords) or line
-                break
-    if not contact['address'] and contact['location']:
+    
+    # Fallback for name if NLP fails (use existing heuristic)
+    if not contact['name']:
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        if lines:
+            candidate = lines[0]
+            if len(candidate.split()) <= 4 and not any(char.isdigit() for char in candidate):
+                contact['name'] = candidate
+
+    # 5. Extract Location (NLP GPE)
+    if entities.get("GPE"):
+        contact['location'] = entities["GPE"][0]
         contact['address'] = contact['location']
-
-    if not contact['website']:
-        match = url_pattern.search(text)
-        if match:
-            url = match.group(0)
-            if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
-                contact['website'] = _normalize_url(url)
-
-    if not contact['name'] and nonempty_lines:
-        candidate = nonempty_lines[0]
-        if _looks_like_name(candidate):
-            contact['name'] = candidate
 
     return contact
     
