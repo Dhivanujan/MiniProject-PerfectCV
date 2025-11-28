@@ -611,6 +611,7 @@ IMPORTANT INSTRUCTIONS:
 - If the CV is missing information relevant to the question, point that out
 - Be professional but conversational
 - Use bullet points for clarity when listing multiple items{context_note}
+- If the user asks a question unrelated to the CV or career advice, politely steer them back to the topic.
 
 CV CONTENT:
 {context}
@@ -623,25 +624,7 @@ DETAILED ANSWER:"""
             return {"answer": answer}
         except Exception:
             logger.warning("Gemini generation unavailable, falling back to local QA")
-            # Simple local fallback: score sentences by keyword overlap
-            try:
-                # simple sentence matcher
-                qwords = [w.lower() for w in re.findall(r"\w{3,}", question)]
-                sentences = re.split(r'(?<=[.!?])\s+', cv_text)
-                scored = []
-                for s in sentences:
-                    sl = s.lower()
-                    score = sum(1 for w in qwords if w in sl)
-                    if score:
-                        scored.append((score, s.strip()))
-                if not scored:
-                    return {"answer": "I don't have enough information in your CV to answer that."}
-                scored.sort(key=lambda x: x[0], reverse=True)
-                top = ' '.join([s for _, s in scored[:3]])
-                return {"answer": top}
-            except Exception:
-                logger.exception("Local fallback QA failed")
-                return {"answer": "I couldn't generate an answer right now. Please try again later."}
+            return {"answer": "I'm currently having trouble connecting to the AI service. Please try again in a moment."}
     except Exception:
         current_app.logger.exception("General handling failed")
         return {"answer": "I encountered an error processing your question. Please try rephrasing or ask something more specific about your CV."}

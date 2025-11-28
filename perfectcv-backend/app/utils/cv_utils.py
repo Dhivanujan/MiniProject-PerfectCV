@@ -7,6 +7,7 @@ import zipfile
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from pdfminer.high_level import extract_text as pdf_extract_text
+from pdfminer.layout import LAParams
 from docx import Document
 import phonenumbers
 from fpdf import FPDF
@@ -255,8 +256,15 @@ def _extract_dob_from_text(text: str, allow_year_only: bool = False) -> str:
 
 def normalize_text(text):
     """Clean and normalize text while preserving meaningful spacing and structure."""
+    if not text:
+        return ""
+        
     # Replace multiple spaces with single space
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    
+    # Fix common PDF extraction artifacts
+    text = text.replace('\x00', '') # Null bytes
+    text = text.replace('\f', '\n') # Form feeds
     
     # Preserve newlines that likely indicate sections or list items
     text = re.sub(r'([.!?])\s*\n\s*([A-Z])', r'\1\n\n\2', text)
@@ -567,7 +575,15 @@ def extract_text_from_pdf(file_stream):
     try:
         # pdfminer extract_text expects a file path or file-like object
         # It handles layout analysis better than PyPDF2
-        text = pdf_extract_text(file_stream)
+        # Use LAParams for layout analysis (essential for multi-column CVs)
+        laparams = LAParams(
+            line_margin=0.5,      # If two lines are close, they are part of the same paragraph
+            word_margin=0.1,      # If two words are close, they are part of the same line
+            char_margin=2.0,      # If two characters are close, they are part of the same word
+            all_texts=True,       # Include all text, even if it looks like a figure
+            detect_vertical=False # Vertical text is rare in CVs and can cause issues
+        )
+        text = pdf_extract_text(file_stream, laparams=laparams)
         return normalize_text(text)
     except Exception as e:
         logger.exception("Failed to extract text from PDF with pdfminer: %s", e)

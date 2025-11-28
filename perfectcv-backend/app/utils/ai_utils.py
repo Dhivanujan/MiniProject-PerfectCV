@@ -101,6 +101,41 @@ def get_generative_model(preferred: Optional[Iterable[str]] = None):
     return None
 
 
+import re
+
+def clean_json_response(text):
+    """Clean JSON response from LLM by removing markdown code blocks."""
+    if not text:
+        return text
+    
+    # Remove markdown code blocks
+    text = re.sub(r'```json\s*', '', text)
+    text = re.sub(r'```\s*', '', text)
+    
+    # Find the first '{' or '[' and the last '}' or ']'
+    start_brace = text.find('{')
+    start_bracket = text.find('[')
+    
+    start = -1
+    if start_brace != -1 and start_bracket != -1:
+        start = min(start_brace, start_bracket)
+    elif start_brace != -1:
+        start = start_brace
+    elif start_bracket != -1:
+        start = start_bracket
+        
+    if start != -1:
+        # Find the corresponding end
+        end_brace = text.rfind('}')
+        end_bracket = text.rfind(']')
+        end = max(end_brace, end_bracket)
+        
+        if end != -1 and end >= start:
+            return text[start:end+1]
+            
+    return text.strip()
+
+
 def structure_cv_sections(cv_text):
     """Extract and structure key sections from CV text."""
     try:
@@ -128,8 +163,9 @@ def structure_cv_sections(cv_text):
         response = model.generate_content(prompt)
         # Ensure response is valid JSON
         try:
-            json.loads(response.text)
-            return response.text
+            cleaned_text = clean_json_response(response.text)
+            json.loads(cleaned_text)
+            return cleaned_text
         except json.JSONDecodeError:
             logger.warning("Generated CV structure is not valid JSON")
             return None
@@ -161,8 +197,9 @@ def extract_ats_keywords(cv_text):
         response = model.generate_content(prompt)
         # Ensure response is valid JSON
         try:
-            json.loads(response.text)
-            return response.text
+            cleaned_text = clean_json_response(response.text)
+            json.loads(cleaned_text)
+            return cleaned_text
         except json.JSONDecodeError:
             logger.warning("Generated ATS keywords are not valid JSON")
             return None
@@ -229,7 +266,7 @@ def extract_personal_info(cv_text):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Personal info extraction returned invalid JSON")
             return None
@@ -261,7 +298,7 @@ def detect_missing_sections(cv_text):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Missing sections detection returned invalid JSON")
             return None
@@ -322,10 +359,10 @@ def suggest_achievements(cv_text, role_context=""):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             # Try to extract array from text
-            text = response.text.strip()
+            text = clean_json_response(response.text)
             if text.startswith('[') and text.endswith(']'):
                 return json.loads(text)
             logger.warning("Achievement suggestions returned invalid JSON")
@@ -361,7 +398,7 @@ def check_ats_compatibility(cv_text, job_description=""):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("ATS check returned invalid JSON")
             return None
@@ -395,7 +432,7 @@ def suggest_keywords_for_role(role, cv_text):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Keyword suggestions returned invalid JSON")
             return None
@@ -464,7 +501,7 @@ def analyze_cv_comprehensively(cv_text):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Comprehensive analysis returned invalid JSON")
             return None
@@ -503,7 +540,7 @@ def suggest_courses(cv_text, career_goal=None):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Course suggestions returned invalid JSON")
             return None
@@ -543,7 +580,7 @@ def suggest_qualifications(cv_text, career_goal=None):
         
         response = model.generate_content(prompt)
         try:
-            return json.loads(response.text)
+            return json.loads(clean_json_response(response.text))
         except json.JSONDecodeError:
             logger.warning("Qualification suggestions returned invalid JSON")
             return None
