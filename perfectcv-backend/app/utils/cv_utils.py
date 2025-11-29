@@ -7,6 +7,8 @@ import zipfile
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from pdfminer.high_level import extract_text as pdf_extract_text
+from app.utils import extractor as _extractor
+from app.utils import cleaner as _cleaner
 from pdfminer.layout import LAParams
 from docx import Document
 import phonenumbers
@@ -571,22 +573,18 @@ def _extract_languages(sections: Dict[str, str]) -> List[str]:
     return _dedupe_preserve_order(candidates)
 
 def extract_text_from_pdf(file_stream):
-    """Extract text from PDF using pdfminer.six for better accuracy."""
+    """Wrapper that delegates to a robust extractor and then cleans output."""
     try:
-        # pdfminer extract_text expects a file path or file-like object
-        # It handles layout analysis better than PyPDF2
-        # Use LAParams for layout analysis (essential for multi-column CVs)
-        laparams = LAParams(
-            line_margin=0.5,      # If two lines are close, they are part of the same paragraph
-            word_margin=0.1,      # If two words are close, they are part of the same line
-            char_margin=2.0,      # If two characters are close, they are part of the same word
-            all_texts=True,       # Include all text, even if it looks like a figure
-            detect_vertical=False # Vertical text is rare in CVs and can cause issues
-        )
-        text = pdf_extract_text(file_stream, laparams=laparams)
-        return normalize_text(text)
+        raw = _extractor.extract_text_from_pdf(file_stream)
+        if not raw:
+            return ""
+        # First apply existing normalization
+        norm = normalize_text(raw)
+        # Further cleaning: remove control chars, weird symbols, normalize bullets/dates
+        cleaned = _cleaner.clean_full_text(norm)
+        return cleaned
     except Exception as e:
-        logger.exception("Failed to extract text from PDF with pdfminer: %s", e)
+        logger.exception("PDF extraction wrapper failed: %s", e)
         return ""
 
 
@@ -911,6 +909,34 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
         "volunteer_experience": volunteer_structured,
         "additional_information": additional_text,
     }
+
+    # Augment findings with NLP if available (noun chunks -> skills, entities -> names/orgs)
+    try:
+        from app.utils import nlp_utils
+        nlp = nlp_utils.load_spacy_model()
+        if nlp:
+            try:
+                ents = nlp_utils.extract_entities(cv_text)
+                noun_chunks = nlp_utils.extract_noun_chunks(cv_text)
+                # Add named entities to contact info when missing
+                if not structured['contact_information'].get('name') and ents.get('PERSON'):
+                    structured['contact_information']['name'] = ents['PERSON'][0]
+                if not structured['contact_information'].get('location') and ents.get('GPE'):
+                    structured['contact_information']['location'] = ents['GPE'][0]
+                # Augment skill candidates with noun chunks heuristically
+                inferred_skills = [nc for nc in noun_chunks if 2 <= len(nc.split()) <= 4]
+                # merge into skills 'technical' if not already present
+                existing_all = []
+                if isinstance(structured.get('skills'), dict):
+                    existing_all = structured['skills'].get('all') or []
+                merged = _dedupe_preserve_order(list(existing_all) + inferred_skills)
+                if isinstance(structured.get('skills'), dict):
+                    structured['skills']['all'] = merged
+            except Exception:
+                logger.debug("NLP augmentation failed, continuing without it")
+    except Exception:
+        # nlp_utils may not be present or spaCy not installed - that's fine
+        pass
 
     return structured
 
@@ -1615,17 +1641,37 @@ def extract_contact_info(text):
     if email_match:
         contact['email'] = email_match.group(0)
 
-    # 2. Extract Phone (phonenumbers lib)
+    # 2. Extract Phone (phonenumbers lib) with multiple fallbacks
     try:
-        for match in phonenumbers.PhoneNumberMatcher(text, "US"): # Default region US, but finds international too
+        for match in phonenumbers.PhoneNumberMatcher(text, "US"):  # Default region US, but finds international too
             contact['phone'] = phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-            break # Take first valid phone
+            break  # Take first valid phone
     except Exception:
-        # Fallback to regex
+        # ignore and fall through to regex-based fallbacks
+        pass
+
+    # If phonenumbers didn't find anything, try label-based extraction (e.g., 'Phone: ...')
+    if not contact['phone']:
+        labeled = re.search(r'(?m)^(?:phone|mobile|tel|telephone)\s*[:\-]\s*(?P<num>.+)$', text, flags=re.IGNORECASE)
+        if labeled:
+            candidate = labeled.group('num').strip()
+            # Keep only common phone characters
+            phone_clean = re.sub(r"[^0-9+()\- ]+", "", candidate)
+            if phone_clean:
+                contact['phone'] = phone_clean
+
+    # Generic regex fallback: look for groups with at least 7 digits (allow spaces/()-)
+    if not contact['phone']:
         phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
         match = phone_pattern.search(text)
         if match:
             contact['phone'] = match.group(0).strip()
+
+    # Last-resort: extract any contiguous digit groups of length >=7
+    if not contact['phone']:
+        digit_group = re.search(r'(\+?\d[\d\-() ]{6,}\d)', text)
+        if digit_group:
+            contact['phone'] = digit_group.group(0).strip()
 
     # 3. Extract Links (Regex)
     linkedin_pattern = re.compile(r'(?:https?://|www\.)?linkedin\.com/[\w\-/]+', re.IGNORECASE)
@@ -1654,13 +1700,30 @@ def extract_contact_info(text):
         lines = [l.strip() for l in text.split('\n') if l.strip()]
         if lines:
             candidate = lines[0]
-            if len(candidate.split()) <= 4 and not any(char.isdigit() for char in candidate):
+            # Remove common leading labels like 'Name:' or 'Full Name -'
+            candidate = re.sub(r'^(name\s*[:\-]\s*)', '', candidate, flags=re.IGNORECASE).strip()
+            if len(candidate.split()) <= 6 and not any(char.isdigit() for char in candidate):
                 contact['name'] = candidate
 
     # 5. Extract Location (NLP GPE)
     if entities.get("GPE"):
         contact['location'] = entities["GPE"][0]
         contact['address'] = contact['location']
+    # Fallback: look for Address: label to capture location/address
+    if not contact.get('location'):
+        addr_match = re.search(r'(?m)^address\s*[:\-]\s*(?P<addr>.+)$', text, flags=re.IGNORECASE)
+        if addr_match:
+            addr = addr_match.group('addr').strip()
+            contact['address'] = addr
+            # try to extract city part (first two comma-separated parts)
+            parts = [p.strip() for p in addr.split(',') if p.strip()]
+            if parts:
+                contact['location'] = parts[0] if len(parts) == 1 else parts[-2] if len(parts) >= 2 else parts[0]
+
+    # 6. Extract DOB if present
+    dob = _extract_dob_from_text(text)
+    if dob:
+        contact['date_of_birth'] = dob
 
     return contact
     
