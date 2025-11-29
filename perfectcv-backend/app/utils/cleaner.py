@@ -20,6 +20,8 @@ def remove_unwanted_symbols(text: str) -> str:
     # remove emojis and many rare unicode symbols (keep basic punctuation)
     # allow letters, numbers, common punctuation, bullet chars
     text = re.sub(r'[\u2600-\u26FF\u2700-\u27BF\U0001F300-\U0001F6FF\U0001F900-\U0001F9FF]', '', text)
+    # remove specific broken symbols mentioned by user and other common artifacts
+    text = re.sub(r'[§¶†‡]', '', text)
     # remove sequences of weird punctuation
     text = re.sub(r'[◦•▪·▲■◆▶►]+', '-', text)
     return text

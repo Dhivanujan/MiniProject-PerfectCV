@@ -448,31 +448,32 @@ def _format_skills_section(skills: Dict[str, List[str]]) -> str:
 def _format_contact_section(contact: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
     """Return formatted contact block string and sanitized contact dict."""
     sanitized = {
-        "name": (contact.get("name") or "").strip() or "Not Provided",
-        "email": (contact.get("email") or "").strip() or "Not Provided",
-        "phone": (contact.get("phone") or "").strip() or "Not Provided",
-        "location": (contact.get("location") or "").strip() or "Not Provided",
+        "name": (contact.get("name") or "").strip(),
+        "email": (contact.get("email") or "").strip(),
+        "phone": (contact.get("phone") or "").strip(),
+        "location": (contact.get("location") or "").strip(),
         "address": (contact.get("address") or contact.get("location") or "").strip(),
         "dob": (contact.get("date_of_birth") or contact.get("dob") or "").strip(),
         "linkedin": (contact.get("linkedin") or "").strip(),
         "github": (contact.get("github") or "").strip(),
         "website": (contact.get("website") or "").strip(),
     }
-    if not sanitized["address"] and sanitized["location"] != "Not Provided":
+    if not sanitized["address"] and sanitized["location"]:
         sanitized["address"] = sanitized["location"]
     sanitized["date_of_birth"] = sanitized["dob"]
 
-    lines = [
-        f"Name: {sanitized['name']}",
-        f"Email: {sanitized['email']}",
-    ]
-    if sanitized["phone"] != "Not Provided":
+    lines = []
+    if sanitized['name']:
+        lines.append(f"Name: {sanitized['name']}")
+    if sanitized['email']:
+        lines.append(f"Email: {sanitized['email']}")
+    if sanitized["phone"]:
         lines.append(f"Phone: {sanitized['phone']}")
     if sanitized.get("dob"):
         lines.append(f"DOB: {sanitized['dob']}")
     if sanitized.get("address"):
         lines.append(f"Address: {sanitized['address']}")
-    elif sanitized["location"] != "Not Provided":
+    elif sanitized["location"]:
         lines.append(f"Location: {sanitized['location']}")
     for field in ("linkedin", "github", "website"):
         value = sanitized.get(field)
@@ -946,37 +947,62 @@ def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str
     ordered_sections: List[Dict[str, str]] = []
     sections_map: Dict[str, str] = {}
 
+    # Helper to format contact info for the top block
+    contact = structured.get("contact_information", {}) if isinstance(structured.get("contact_information"), dict) else {}
+    name = contact.get("name") or ""
+    # We don't add contact to ordered_sections loop in the same way for the text output
+    # but we keep it in ordered_sections for the frontend UI if it needs it.
+    
+    # We will build the optimized_text separately to strictly follow the user's format
+    text_lines = []
+    
+    # 1. Header
+    if name:
+        text_lines.append(f"**{name}**")
+    # Job title is hard to guess from rule-based, skip or try to find latest role
+    
+    if contact.get("phone"): text_lines.append(f"Phone: {contact['phone']}")
+    if contact.get("email"): text_lines.append(f"Email: {contact['email']}")
+    if contact.get("linkedin"): text_lines.append(f"LinkedIn: {contact['linkedin']}")
+    if contact.get("github"): text_lines.append(f"GitHub: {contact['github']}")
+    if contact.get("website"): text_lines.append(f"Portfolio: {contact['website']}")
+    
+    text_lines.append("")
+    text_lines.append("---")
+    text_lines.append("")
+
     for key, label in STANDARD_SECTION_ORDER:
         content = ""
         if key == "contact_information":
+            # Already handled in header for text, but we add to ordered_sections for UI
             block = structured.get(key, {}).get("block") if isinstance(structured.get(key), dict) else ""
-            content = block or "Not Provided"
+            content = block
         elif key == "professional_summary":
             summary = structured.get(key) or ""
-            content = summary if summary else "Not Provided"
+            content = summary
         elif key == "skills":
             skills_block = ""
             if isinstance(structured.get(key), dict):
                 skills_block = structured[key].get("formatted") or ""
-            content = skills_block or "Not Provided"
+            content = skills_block
         elif key == "work_experience":
-            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "projects":
-            content = _format_projects_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_projects_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "education":
-            content = _format_education_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_education_section(structured.get(key, [])) if structured.get(key) else ""
         elif key in ("certifications", "achievements", "languages"):
             items = structured.get(key) or []
-            content = _format_list_section(items) if items else "Not Provided"
+            content = _format_list_section(items) if items else ""
         elif key == "volunteer_experience":
-            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "additional_information":
             addl = structured.get(key) or ""
-            content = addl if addl else "Not Provided"
+            content = addl
 
         clean_content = content.strip()
         if not clean_content:
-            clean_content = "Not Provided"
+            continue
 
         sections_map[key] = clean_content
         ordered_sections.append({
@@ -984,14 +1010,14 @@ def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str
             "label": label,
             "content": clean_content,
         })
+        
+        # Add to text output (skip contact info as it's already at top)
+        if key != "contact_information":
+            text_lines.append(f"## {label.upper()}")
+            text_lines.append(clean_content)
+            text_lines.append("")
 
-    optimized_lines: List[str] = []
-    for section in ordered_sections:
-        optimized_lines.append(section["label"].upper())
-        optimized_lines.append(section["content"])
-        optimized_lines.append("")
-
-    optimized_text = "\n".join(optimized_lines).strip()
+    optimized_text = "\n".join(text_lines).strip()
     return ordered_sections, sections_map, optimized_text
 
 
@@ -1543,7 +1569,7 @@ def convert_to_template_format(sections):
         contact_parts.append(f"location: {contact_info['location']}")
     if contact_info.get('address') and contact_info['address'] not in (contact_info.get('location'), ''):
         contact_parts.append(f"address: {contact_info['address']}")
-    contact_str = " | ".join(contact_parts) if contact_parts else 'Not Provided'
+    contact_str = " | ".join(contact_parts)
     
     # Parse skills into list
     skills_text = sections.get('skills', '').strip()
@@ -1551,9 +1577,9 @@ def convert_to_template_format(sections):
     
     # Parse structured sections
     template_data = {
-        'name': contact_info['name'] or 'Not Provided',
-        'contact': contact_str or 'Not Provided',
-        'summary': about or 'Not Provided',
+        'name': contact_info['name'] or '',
+        'contact': contact_str or '',
+        'summary': about or '',
         'skills': skills or [],
         'experience': parse_experience_section(sections.get('experience', '')),
         'projects': parse_projects_section(sections.get('projects', '')),
@@ -1589,17 +1615,17 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
 
     extracted = {
         "header": {
-            "name": contact_info.get("name") or "Not Provided",
-            "email": contact_info.get("email") or "Not Provided",
-            "phone": contact_info.get("phone") or "Not Provided",
-            "location": contact_info.get("location") or "Not Provided",
-            "address": contact_info.get("address") or contact_info.get("location") or "Not Provided",
-            "date_of_birth": contact_info.get("dob") or contact_info.get("date_of_birth") or "Not Provided",
-            "linkedin": contact_info.get("linkedin") or "Not Provided",
-            "github": contact_info.get("github") or "Not Provided",
-            "website": contact_info.get("website") or "Not Provided",
+            "name": contact_info.get("name") or "",
+            "email": contact_info.get("email") or "",
+            "phone": contact_info.get("phone") or "",
+            "location": contact_info.get("location") or "",
+            "address": contact_info.get("address") or contact_info.get("location") or "",
+            "date_of_birth": contact_info.get("dob") or contact_info.get("date_of_birth") or "",
+            "linkedin": contact_info.get("linkedin") or "",
+            "github": contact_info.get("github") or "",
+            "website": contact_info.get("website") or "",
         },
-        "professional_summary": structured.get("professional_summary") or "Not Provided",
+        "professional_summary": structured.get("professional_summary") or "",
         "skills": _dedupe_preserve_order(
             (skills_dict.get("technical") or []) + (skills_dict.get("soft") or []) + (skills_dict.get("other") or [])
         ),
@@ -1611,7 +1637,7 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
         "languages": structured.get("languages") or [],
         "volunteer": structured.get("volunteer_experience") or [],
         "additional": {
-            "other": structured.get("additional_information") or "Not Provided",
+            "other": structured.get("additional_information") or "",
         },
     }
 
@@ -1886,27 +1912,105 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
         raise RuntimeError("AI not configured")
 
     prompt = f"""
-You are an expert CV optimizer and career coach. Your task is to rewrite the provided CV to be highly professional, ATS-friendly, and tailored to the target job domain.
+You are an expert CV optimizer. Your goal is to rewrite the provided CV to be highly professional, ATS-friendly, and tailored to the target job domain.
 
 Target Domain: {job_domain or 'General'}
 
-Instructions:
-1. Analyze the input CV.
-2. Rewrite the content to use strong action verbs, quantify achievements where possible, and improve clarity and flow.
-3. Ensure the structure is standard: Contact Info, Summary, Skills, Experience, Projects, Education, etc.
-4. Extract and include relevant keywords for the target domain.
-5. Calculate an estimated ATS score (0-100) based on keyword matching, formatting, and content quality.
-6. Provide specific, actionable suggestions for improvement.
+STRICT RULES FOR CV EXTRACTION AND CREATION:
+
+1. DO NOT:
+- Do NOT generate broken sentences or symbols (like ? or §).
+- Do NOT merge wrong fields together (Skills, Languages, Activities, etc.).
+- Do NOT repeat any content.
+- Do NOT output messy or unstructured text.
+- Do NOT include “Not Provided” anywhere. Leave the section empty or remove it.
+- Do NOT create a PDF-like layout. Output a clean text-based ATS CV only.
+- Do NOT add incorrect data (years, institutions, extra languages, etc.).
+- Do NOT output disorganized paragraphs.
+- Do NOT hallucinate experience or fake companies.
+
+2. YOU MUST:
+- Extract all information from the user-uploaded CV accurately.
+- Clean and correct all extracted values.
+- Fix phone format, spacing, punctuation, and grammar.
+- Normalize skills and group them properly (no mixing tools, hobbies, languages).
+- Organize projects in proper bullet points.
+- Remove duplicates and inconsistencies.
+- Add missing but **relevant** resume sections only when appropriate.
+- Output a fully structured, job-ready ATS-friendly CV.
+
+3. ADDITIONAL REQUIREMENT (IMPORTANT):
+**You must add additional information that strengthens the user’s CV:**
+- Add professional strengths based on the user's skills and projects.
+- Add a more impactful summary based on their profile.
+- Expand bullet points with achievements, metrics, and action verbs.
+- Improve weak or incomplete sections using industry standards.
+- Add soft skills, technical strengths, and domain-specific abilities.
+- Add optional sections like “Technical Strengths”, “Tools & Platforms”, “Key Achievements”, or “Professional Competencies” ONLY if they make the CV stronger.
+- Add clarity and depth to project descriptions and responsibilities.
+- Make the candidate look more professional WITHOUT inventing fake jobs.
+
+4. STRICT OUTPUT FORMAT (NO EXCEPTIONS) for the "optimized_text" field:
+
+**NAME**  
+**Job Title (Optional)**  
+Phone:  
+Email:  
+LinkedIn:  
+GitHub:  
+Portfolio:  
+
+---
+
+## PROFESSIONAL SUMMARY
+A strong 3–4 line tailored summary.
+
+## TECHNICAL STRENGTHS (Added to improve CV)
+- Key strengths relevant to software engineering, AI/ML, or the user’s experience.
+
+## SKILLS
+**Programming Languages:**  
+**Tools & Technologies:**  
+**Frameworks:**  
+**AI/ML:**  
+**Soft Skills:**  
+
+## EXPERIENCE
+**Role | Company | Dates | Location**  
+- Bullet point achievements  
+- Measurable, action-driven contributions  
+
+## PROJECTS
+**Project Name | Tools Used**  
+- Bullet point achievements  
+- Clear, structured description  
+
+## EDUCATION
+**Degree | University | Years**  
+- Additional notable coursework or achievements  
+
+## CERTIFICATIONS
+- Clean, correctly formatted list
+
+## ACHIEVEMENTS
+- List of key recognitions
+
+## VOLUNTEER EXPERIENCE (Optional)
+
+## LANGUAGES
+- List clearly
+
+---
 
 Return a JSON object with the following structure:
 {{
-  "optimized_text": "The full text of the optimized CV, formatted clearly with section headers.",
+  "optimized_text": "The full text of the optimized CV following the STRICT OUTPUT FORMAT above.",
   "sections": {{
-    "summary": "...",
-    "skills": ["..."],
-    "experience": ["..."],
-    "education": ["..."],
-    "projects": ["..."]
+    "summary": "The professional summary text",
+    "skills": ["List of skills"],
+    "experience": ["List of experience entries"],
+    "education": ["List of education entries"],
+    "projects": ["List of projects"]
   }},
   "suggestions": [
     {{ "category": "Content", "message": "..." }},
