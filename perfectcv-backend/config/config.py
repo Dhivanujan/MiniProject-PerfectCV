@@ -21,6 +21,8 @@ class Config:
     MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
     API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('API_KEY')
     GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+    # OpenAI API Key for advanced CV parsing with GPT-4
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
     # Frontend base URL used to construct password reset links sent to users.
     # Set this to your frontend origin in production, e.g. https://app.example.com
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://127.0.0.1:5173')
