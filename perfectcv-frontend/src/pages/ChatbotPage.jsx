@@ -17,6 +17,7 @@ import {
   FaMagic,
   FaTags
 } from "react-icons/fa";
+import api from "../api";
 
 // Simple component to render formatted text
 const FormattedText = ({ text }) => {
@@ -59,14 +60,8 @@ const FormattedText = ({ text }) => {
   return <div className="whitespace-pre-wrap">{formatText(text)}</div>;
 };
 
-// API config
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const API_ENDPOINTS = {
-  upload: `${API_BASE}/api/chatbot/upload`,
-  ask: `${API_BASE}/api/chatbot/ask`,
-  download: `${API_BASE}/api/chatbot/download-cv`,
-  analysis: `${API_BASE}/api/chatbot/analysis`,
-};
+// API config removed, using api instance from ../api
+
 
 // Quick action buttons for common queries
 const QUICK_ACTIONS = [
@@ -318,12 +313,10 @@ export default function ChatbotPage() {
     formData.append("files", cvFiles[0]); // Upload first file only for now
 
     try {
-      const res = await fetch(API_ENDPOINTS.upload, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      const res = await api.post('/api/chatbot/upload', formData, {
+        headers: { "Content-Type": "multipart/form-data" }
       });
-      const data = await res.json();
+      const data = res.data;
       
       if (data.success) {
         setChatHistory([createMessage("bot", data.message)]);
@@ -340,8 +333,9 @@ export default function ChatbotPage() {
         ]);
       }
     } catch (err) {
-      setError("Network error. Please check your connection and try again.");
       console.error("Upload error:", err);
+      const errorMsg = err.response?.data?.message || err.message || "Network error. Please check your connection and try again.";
+      setError(errorMsg);
     } finally {
       setIsUploading(false);
     }
@@ -364,15 +358,8 @@ export default function ChatbotPage() {
     setIsQuickActionsOpen(false);
 
     try {
-      const res = await fetch(API_ENDPOINTS.ask, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: queryText }),
-        credentials: "include",
-      });
-      
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
+      const res = await api.post('/api/chatbot/ask', { question: queryText });
+      const data = res.data;
       
       if (data.success) {
         const botMessage = createMessage("bot", data.answer, {
@@ -402,7 +389,8 @@ export default function ChatbotPage() {
       }
     } catch (err) {
       console.error("Chat error:", err);
-      setError(err.message || "Failed to get response. Please try again.");
+      const errorMsg = err.response?.data?.message || err.message || "Failed to get response. Please try again.";
+      setError(errorMsg);
       setChatHistory(prev => [
         ...prev,
         createMessage(
@@ -427,15 +415,11 @@ export default function ChatbotPage() {
 
   const handleDownloadCV = async () => {
     try {
-      const res = await fetch(API_ENDPOINTS.download, {
-        method: "GET",
-        credentials: "include",
+      const res = await api.get('/api/chatbot/download-cv', {
+        responseType: 'blob'
       });
       
-      if (!res.ok) throw new Error("Download failed");
-      
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
       a.download = 'improved_cv.pdf';

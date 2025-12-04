@@ -6,10 +6,16 @@ import logging
 import zipfile
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
-from PyPDF2 import PdfReader
+from pdfminer.high_level import extract_text as pdf_extract_text
+from app.utils import extractor as _extractor
+from app.utils import cleaner as _cleaner
+from pdfminer.layout import LAParams
+from docx import Document
+import phonenumbers
 from fpdf import FPDF
 import google.generativeai as genai
 from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence
+from app.utils.nlp_utils import load_spacy_model, extract_entities, classify_header_nlp
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +25,6 @@ ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
 
 def allowed_file(filename):
     """Return True if filename has an allowed extension."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-def allowed_file(filename):
-    """Check if a file has an allowed extension."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
@@ -257,8 +258,15 @@ def _extract_dob_from_text(text: str, allow_year_only: bool = False) -> str:
 
 def normalize_text(text):
     """Clean and normalize text while preserving meaningful spacing and structure."""
+    if not text:
+        return ""
+        
     # Replace multiple spaces with single space
-    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    
+    # Fix common PDF extraction artifacts
+    text = text.replace('\x00', '') # Null bytes
+    text = text.replace('\f', '\n') # Form feeds
     
     # Preserve newlines that likely indicate sections or list items
     text = re.sub(r'([.!?])\s*\n\s*([A-Z])', r'\1\n\n\2', text)
@@ -295,33 +303,24 @@ def _safe_decode_bytes(data: bytes, encoding: str = "utf-8") -> str:
 
 
 def extract_text_from_docx_bytes(file_bytes: bytes) -> str:
-    """Extract plain text from a DOCX file without external dependencies."""
+    """Extract plain text from a DOCX file using python-docx."""
     try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
-            xml_content = archive.read("word/document.xml")
-    except (KeyError, zipfile.BadZipFile, RuntimeError) as exc:
-        logger.warning("DOCX extraction failed: %s", exc)
+        doc = Document(io.BytesIO(file_bytes))
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    row_text.append(cell.text)
+                full_text.append(" | ".join(row_text))
+        
+        return normalize_text('\n'.join(full_text))
+    except Exception as exc:
+        logger.warning("DOCX extraction failed with python-docx: %s", exc)
         return normalize_text(_safe_decode_bytes(file_bytes))
-
-    try:
-        tree = ET.fromstring(xml_content)
-    except ET.ParseError as exc:
-        logger.warning("DOCX XML parsing failed: %s", exc)
-        return normalize_text(_safe_decode_bytes(file_bytes))
-
-    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    paragraphs: List[str] = []
-
-    for paragraph in tree.iter(f"{namespace}p"):
-        texts: List[str] = []
-        for node in paragraph.iter(f"{namespace}t"):
-            if node.text:
-                texts.append(node.text)
-        if texts:
-            paragraphs.append("".join(texts))
-
-    raw_text = "\n".join(paragraphs)
-    return normalize_text(raw_text)
 
 
 def extract_text_from_doc_bytes(file_bytes: bytes) -> str:
@@ -449,31 +448,32 @@ def _format_skills_section(skills: Dict[str, List[str]]) -> str:
 def _format_contact_section(contact: Dict[str, str]) -> Tuple[str, Dict[str, str]]:
     """Return formatted contact block string and sanitized contact dict."""
     sanitized = {
-        "name": (contact.get("name") or "").strip() or "Not Provided",
-        "email": (contact.get("email") or "").strip() or "Not Provided",
-        "phone": (contact.get("phone") or "").strip() or "Not Provided",
-        "location": (contact.get("location") or "").strip() or "Not Provided",
+        "name": (contact.get("name") or "").strip(),
+        "email": (contact.get("email") or "").strip(),
+        "phone": (contact.get("phone") or "").strip(),
+        "location": (contact.get("location") or "").strip(),
         "address": (contact.get("address") or contact.get("location") or "").strip(),
         "dob": (contact.get("date_of_birth") or contact.get("dob") or "").strip(),
         "linkedin": (contact.get("linkedin") or "").strip(),
         "github": (contact.get("github") or "").strip(),
         "website": (contact.get("website") or "").strip(),
     }
-    if not sanitized["address"] and sanitized["location"] != "Not Provided":
+    if not sanitized["address"] and sanitized["location"]:
         sanitized["address"] = sanitized["location"]
     sanitized["date_of_birth"] = sanitized["dob"]
 
-    lines = [
-        f"Name: {sanitized['name']}",
-        f"Email: {sanitized['email']}",
-    ]
-    if sanitized["phone"] != "Not Provided":
+    lines = []
+    if sanitized['name']:
+        lines.append(f"Name: {sanitized['name']}")
+    if sanitized['email']:
+        lines.append(f"Email: {sanitized['email']}")
+    if sanitized["phone"]:
         lines.append(f"Phone: {sanitized['phone']}")
     if sanitized.get("dob"):
         lines.append(f"DOB: {sanitized['dob']}")
     if sanitized.get("address"):
         lines.append(f"Address: {sanitized['address']}")
-    elif sanitized["location"] != "Not Provided":
+    elif sanitized["location"]:
         lines.append(f"Location: {sanitized['location']}")
     for field in ("linkedin", "github", "website"):
         value = sanitized.get(field)
@@ -574,57 +574,18 @@ def _extract_languages(sections: Dict[str, str]) -> List[str]:
     return _dedupe_preserve_order(candidates)
 
 def extract_text_from_pdf(file_stream):
-    """Extract text from PDF while preserving structure and formatting."""
+    """Wrapper that delegates to a robust extractor and then cleans output."""
     try:
-        reader = PdfReader(file_stream)
-        sections = []
-        
-        for page in reader.pages:
-            try:
-                page_text = page.extract_text()
-                if not page_text:
-                    continue
-                    
-                # Try to extract font information for better section detection
-                sections_in_page = []
-                current_section = []
-                
-                for line in page_text.splitlines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    # Likely section header if all caps or ends with colon
-                    if line.isupper() or line.endswith(':'):
-                        if current_section:
-                            sections_in_page.append('\n'.join(current_section))
-                            current_section = []
-                        current_section.append(line)
-                    else:
-                        current_section.append(line)
-                
-                if current_section:
-                    sections_in_page.append('\n'.join(current_section))
-                
-                # Join sections with double newline for clear separation
-                sections.extend(sections_in_page)
-                
-            except Exception as page_error:
-                logger.warning(f"Error extracting text from page: {page_error}")
-                # Continue to next page on error
-                continue
-        
-        # Join all sections and normalize the text
-        text = '\n\n'.join(sections)
-        return normalize_text(text)
-        
+        raw = _extractor.extract_text_from_pdf(file_stream)
+        if not raw:
+            return ""
+        # First apply existing normalization
+        norm = normalize_text(raw)
+        # Further cleaning: remove control chars, weird symbols, normalize bullets/dates
+        cleaned = _cleaner.clean_full_text(norm)
+        return cleaned
     except Exception as e:
-        logger.exception("Failed to extract text from PDF: %s", e)
-        # Attempt to rewind the stream
-        try:
-            file_stream.seek(0)
-        except Exception:
-            pass
+        logger.exception("PDF extraction wrapper failed: %s", e)
         return ""
 
 
@@ -785,7 +746,7 @@ def compute_ats_score(text, domain=None):
 
 
 def extract_sections(text):
-    """Split text into structured sections using heading-aware heuristics."""
+    """Split text into structured sections using heading-aware heuristics and NLP."""
     sections: Dict[str, str] = {key: "" for key in SECTION_KEYS}
 
     if not text:
@@ -822,12 +783,18 @@ def extract_sections(text):
 
         heading_key: Optional[str] = None
         inline_body: Optional[str] = None
+        
+        # 1. Try Regex/Exact Match
         inline_match = INLINE_HEADING_PATTERN.match(candidate)
         if inline_match:
             heading_key = _heading_lookup(inline_match.group("label"))
             inline_body = inline_match.group("body").strip()
         if not heading_key:
             heading_key = _heading_lookup(candidate)
+            
+        # 2. Try NLP Classification if regex failed and line is short enough to be a header
+        if not heading_key and len(candidate.split()) <= 6 and not candidate_is_bullet:
+             heading_key = classify_header_nlp(candidate, SECTION_SYNONYMS)
 
         if heading_key and (not candidate_is_bullet or len(candidate.split()) <= 5):
             _commit_buffer()
@@ -944,6 +911,34 @@ def build_standardized_sections(cv_text: str) -> Dict[str, object]:
         "additional_information": additional_text,
     }
 
+    # Augment findings with NLP if available (noun chunks -> skills, entities -> names/orgs)
+    try:
+        from app.utils import nlp_utils
+        nlp = nlp_utils.load_spacy_model()
+        if nlp:
+            try:
+                ents = nlp_utils.extract_entities(cv_text)
+                noun_chunks = nlp_utils.extract_noun_chunks(cv_text)
+                # Add named entities to contact info when missing
+                if not structured['contact_information'].get('name') and ents.get('PERSON'):
+                    structured['contact_information']['name'] = ents['PERSON'][0]
+                if not structured['contact_information'].get('location') and ents.get('GPE'):
+                    structured['contact_information']['location'] = ents['GPE'][0]
+                # Augment skill candidates with noun chunks heuristically
+                inferred_skills = [nc for nc in noun_chunks if 2 <= len(nc.split()) <= 4]
+                # merge into skills 'technical' if not already present
+                existing_all = []
+                if isinstance(structured.get('skills'), dict):
+                    existing_all = structured['skills'].get('all') or []
+                merged = _dedupe_preserve_order(list(existing_all) + inferred_skills)
+                if isinstance(structured.get('skills'), dict):
+                    structured['skills']['all'] = merged
+            except Exception:
+                logger.debug("NLP augmentation failed, continuing without it")
+    except Exception:
+        # nlp_utils may not be present or spaCy not installed - that's fine
+        pass
+
     return structured
 
 
@@ -952,37 +947,62 @@ def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str
     ordered_sections: List[Dict[str, str]] = []
     sections_map: Dict[str, str] = {}
 
+    # Helper to format contact info for the top block
+    contact = structured.get("contact_information", {}) if isinstance(structured.get("contact_information"), dict) else {}
+    name = contact.get("name") or ""
+    # We don't add contact to ordered_sections loop in the same way for the text output
+    # but we keep it in ordered_sections for the frontend UI if it needs it.
+    
+    # We will build the optimized_text separately to strictly follow the user's format
+    text_lines = []
+    
+    # 1. Header
+    if name:
+        text_lines.append(f"**{name}**")
+    # Job title is hard to guess from rule-based, skip or try to find latest role
+    
+    if contact.get("phone"): text_lines.append(f"Phone: {contact['phone']}")
+    if contact.get("email"): text_lines.append(f"Email: {contact['email']}")
+    if contact.get("linkedin"): text_lines.append(f"LinkedIn: {contact['linkedin']}")
+    if contact.get("github"): text_lines.append(f"GitHub: {contact['github']}")
+    if contact.get("website"): text_lines.append(f"Portfolio: {contact['website']}")
+    
+    text_lines.append("")
+    text_lines.append("---")
+    text_lines.append("")
+
     for key, label in STANDARD_SECTION_ORDER:
         content = ""
         if key == "contact_information":
+            # Already handled in header for text, but we add to ordered_sections for UI
             block = structured.get(key, {}).get("block") if isinstance(structured.get(key), dict) else ""
-            content = block or "Not Provided"
+            content = block
         elif key == "professional_summary":
             summary = structured.get(key) or ""
-            content = summary if summary else "Not Provided"
+            content = summary
         elif key == "skills":
             skills_block = ""
             if isinstance(structured.get(key), dict):
                 skills_block = structured[key].get("formatted") or ""
-            content = skills_block or "Not Provided"
+            content = skills_block
         elif key == "work_experience":
-            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "projects":
-            content = _format_projects_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_projects_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "education":
-            content = _format_education_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_education_section(structured.get(key, [])) if structured.get(key) else ""
         elif key in ("certifications", "achievements", "languages"):
             items = structured.get(key) or []
-            content = _format_list_section(items) if items else "Not Provided"
+            content = _format_list_section(items) if items else ""
         elif key == "volunteer_experience":
-            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else "Not Provided"
+            content = _format_experience_section(structured.get(key, [])) if structured.get(key) else ""
         elif key == "additional_information":
             addl = structured.get(key) or ""
-            content = addl if addl else "Not Provided"
+            content = addl
 
         clean_content = content.strip()
         if not clean_content:
-            clean_content = "Not Provided"
+            continue
 
         sections_map[key] = clean_content
         ordered_sections.append({
@@ -990,14 +1010,14 @@ def _structured_to_preview(structured: Dict[str, object]) -> Tuple[List[Dict[str
             "label": label,
             "content": clean_content,
         })
+        
+        # Add to text output (skip contact info as it's already at top)
+        if key != "contact_information":
+            text_lines.append(f"## {label.upper()}")
+            text_lines.append(clean_content)
+            text_lines.append("")
 
-    optimized_lines: List[str] = []
-    for section in ordered_sections:
-        optimized_lines.append(section["label"].upper())
-        optimized_lines.append(section["content"])
-        optimized_lines.append("")
-
-    optimized_text = "\n".join(optimized_lines).strip()
+    optimized_text = "\n".join(text_lines).strip()
     return ordered_sections, sections_map, optimized_text
 
 
@@ -1549,7 +1569,7 @@ def convert_to_template_format(sections):
         contact_parts.append(f"location: {contact_info['location']}")
     if contact_info.get('address') and contact_info['address'] not in (contact_info.get('location'), ''):
         contact_parts.append(f"address: {contact_info['address']}")
-    contact_str = " | ".join(contact_parts) if contact_parts else 'Not Provided'
+    contact_str = " | ".join(contact_parts)
     
     # Parse skills into list
     skills_text = sections.get('skills', '').strip()
@@ -1557,9 +1577,9 @@ def convert_to_template_format(sections):
     
     # Parse structured sections
     template_data = {
-        'name': contact_info['name'] or 'Not Provided',
-        'contact': contact_str or 'Not Provided',
-        'summary': about or 'Not Provided',
+        'name': contact_info['name'] or '',
+        'contact': contact_str or '',
+        'summary': about or '',
         'skills': skills or [],
         'experience': parse_experience_section(sections.get('experience', '')),
         'projects': parse_projects_section(sections.get('projects', '')),
@@ -1595,17 +1615,17 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
 
     extracted = {
         "header": {
-            "name": contact_info.get("name") or "Not Provided",
-            "email": contact_info.get("email") or "Not Provided",
-            "phone": contact_info.get("phone") or "Not Provided",
-            "location": contact_info.get("location") or "Not Provided",
-            "address": contact_info.get("address") or contact_info.get("location") or "Not Provided",
-            "date_of_birth": contact_info.get("dob") or contact_info.get("date_of_birth") or "Not Provided",
-            "linkedin": contact_info.get("linkedin") or "Not Provided",
-            "github": contact_info.get("github") or "Not Provided",
-            "website": contact_info.get("website") or "Not Provided",
+            "name": contact_info.get("name") or "",
+            "email": contact_info.get("email") or "",
+            "phone": contact_info.get("phone") or "",
+            "location": contact_info.get("location") or "",
+            "address": contact_info.get("address") or contact_info.get("location") or "",
+            "date_of_birth": contact_info.get("dob") or contact_info.get("date_of_birth") or "",
+            "linkedin": contact_info.get("linkedin") or "",
+            "github": contact_info.get("github") or "",
+            "website": contact_info.get("website") or "",
         },
-        "professional_summary": structured.get("professional_summary") or "Not Provided",
+        "professional_summary": structured.get("professional_summary") or "",
         "skills": _dedupe_preserve_order(
             (skills_dict.get("technical") or []) + (skills_dict.get("soft") or []) + (skills_dict.get("other") or [])
         ),
@@ -1617,7 +1637,7 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
         "languages": structured.get("languages") or [],
         "volunteer": structured.get("volunteer_experience") or [],
         "additional": {
-            "other": structured.get("additional_information") or "Not Provided",
+            "other": structured.get("additional_information") or "",
         },
     }
 
@@ -1625,7 +1645,7 @@ def build_extracted_sections(cv_text: str, structured_sections: Optional[Dict[st
 
 
 def extract_contact_info(text):
-    """Extract contact information including links using keyword-aware heuristics."""
+    """Extract contact information using NLP and specialized libraries."""
     contact = {
         'name': '',
         'email': '',
@@ -1637,144 +1657,99 @@ def extract_contact_info(text):
         'github': '',
         'website': ''
     }
+    
+    if not text:
+        return contact
 
-    lines = [line.strip() for line in (text or '').split('\n')]
-    nonempty_lines = [line for line in lines if line]
-
+    # 1. Extract Email (Regex is best)
     email_pattern = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
-    phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
+    email_match = email_pattern.search(text)
+    if email_match:
+        contact['email'] = email_match.group(0)
+
+    # 2. Extract Phone (phonenumbers lib) with multiple fallbacks
+    try:
+        for match in phonenumbers.PhoneNumberMatcher(text, "US"):  # Default region US, but finds international too
+            contact['phone'] = phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+            break  # Take first valid phone
+    except Exception:
+        # ignore and fall through to regex-based fallbacks
+        pass
+
+    # If phonenumbers didn't find anything, try label-based extraction (e.g., 'Phone: ...')
+    if not contact['phone']:
+        labeled = re.search(r'(?m)^(?:phone|mobile|tel|telephone)\s*[:\-]\s*(?P<num>.+)$', text, flags=re.IGNORECASE)
+        if labeled:
+            candidate = labeled.group('num').strip()
+            # Keep only common phone characters
+            phone_clean = re.sub(r"[^0-9+()\- ]+", "", candidate)
+            if phone_clean:
+                contact['phone'] = phone_clean
+
+    # Generic regex fallback: look for groups with at least 7 digits (allow spaces/()-)
+    if not contact['phone']:
+        phone_pattern = re.compile(r'\+?[\d\s\-()]{7,}\d')
+        match = phone_pattern.search(text)
+        if match:
+            contact['phone'] = match.group(0).strip()
+
+    # Last-resort: extract any contiguous digit groups of length >=7
+    if not contact['phone']:
+        digit_group = re.search(r'(\+?\d[\d\-() ]{6,}\d)', text)
+        if digit_group:
+            contact['phone'] = digit_group.group(0).strip()
+
+    # 3. Extract Links (Regex)
     linkedin_pattern = re.compile(r'(?:https?://|www\.)?linkedin\.com/[\w\-/]+', re.IGNORECASE)
     github_pattern = re.compile(r'(?:https?://|www\.)?github\.com/[\w\-/]+', re.IGNORECASE)
     url_pattern = re.compile(r'(?:https?://|www\.)[\w./-]+', re.IGNORECASE)
-
-    location_keywords = ('city', 'state', 'country', 'address', 'location', 'based in', 'remote', '•')
-    location_label_keywords = ('location', 'city', 'based in', 'residing in', 'located in')
-
-    def _strip_label(value: str, keywords: Sequence[str]) -> str:
-        if not value:
-            return ""
-        words = [re.escape(keyword) for keyword in keywords if keyword]
-        if not words:
-            return value.strip()
-        pattern = r"^(?:" + "|".join(words) + r")\s*[:\-–]?\s*"
-        return re.sub(pattern, "", value, flags=re.IGNORECASE).strip()
-
-    def _looks_like_name(line: str) -> bool:
-        if not line or len(line) > 80:
-            return False
-        if email_pattern.search(line) or phone_pattern.search(line):
-            return False
-        if _heading_lookup(line):
-            return False
-        tokens = [token for token in re.split(r'\s+', line) if token]
-        if not tokens or len(tokens) > 6:
-            return False
-        if any(any(char.isdigit() for char in token) for token in tokens):
-            return False
-        capitalized = sum(1 for token in tokens if token[0].isupper())
-        return capitalized >= max(1, len(tokens) - 1)
-
-    for line in nonempty_lines:
-        lower = line.lower()
-        if not contact['email']:
-            email_match = email_pattern.search(line)
-            if email_match:
-                contact['email'] = email_match.group(0)
-        if not contact['phone']:
-            phone_match = phone_pattern.search(line)
-            if phone_match and not DOB_LABEL_PATTERN.search(lower):
-                contact['phone'] = phone_match.group(0).strip()
-        if not contact['date_of_birth']:
-            dob_match = DOB_LABEL_PATTERN.search(lower)
-            if dob_match:
-                candidate = _extract_dob_from_text(line[dob_match.end():], allow_year_only=True)
-                if not candidate:
-                    candidate = _extract_dob_from_text(line, allow_year_only=True)
-                if candidate:
-                    contact['date_of_birth'] = candidate
-        if not contact['linkedin']:
-            match = linkedin_pattern.search(line)
-            if match:
-                contact['linkedin'] = _normalize_url(match.group(0))
-        if not contact['github']:
-            match = github_pattern.search(line)
-            if match:
-                contact['github'] = _normalize_url(match.group(0))
-        if not contact['website']:
-            match = url_pattern.search(line)
-            if match:
-                url = match.group(0)
-                if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
-                    contact['website'] = _normalize_url(url)
-        if not contact['address'] and any(keyword in lower for keyword in ADDRESS_KEYWORDS):
-            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
-                contact['address'] = _strip_label(line, ADDRESS_KEYWORDS) or line
-                if not contact['location']:
-                    contact['location'] = _strip_label(line, location_label_keywords) or line
-        if not contact['location'] and any(keyword in lower for keyword in location_keywords):
-            if 'email' not in lower and 'phone' not in lower and 'mobile' not in lower:
-                contact['location'] = _strip_label(line, location_label_keywords) or line
-        if not contact['name']:
-            name_label = re.match(r'^(?:name|full name)\s*[:\-–]\s*(.+)', line, re.IGNORECASE)
-            if name_label:
-                contact['name'] = name_label.group(1).strip()
-                continue
-            if email_pattern.search(line):
-                before_email = line.split(email_pattern.search(line).group(0))[0].strip(' ,|-')
-                if _looks_like_name(before_email):
-                    contact['name'] = before_email
-                    continue
-            phone_in_line = phone_pattern.search(line)
-            if phone_in_line:
-                before_phone = line.split(phone_in_line.group(0))[0].strip(' ,|-')
-                if _looks_like_name(before_phone):
-                    contact['name'] = before_phone
-                    continue
-            if _looks_like_name(line):
-                contact['name'] = line
-
-    if not contact['email']:
-        match = email_pattern.search(text)
-        if match:
-            contact['email'] = match.group(0)
-    if not contact['phone']:
-        for line in nonempty_lines:
-            lower = line.lower()
-            if DOB_LABEL_PATTERN.search(lower):
-                continue
-            match = phone_pattern.search(line)
-            if match:
-                contact['phone'] = match.group(0).strip()
+    
+    li_match = linkedin_pattern.search(text)
+    if li_match: contact['linkedin'] = _normalize_url(li_match.group(0))
+    
+    gh_match = github_pattern.search(text)
+    if gh_match: contact['github'] = _normalize_url(gh_match.group(0))
+    
+    # 4. Extract Name (NLP)
+    # Use Spacy to find PERSON entities in the first few lines
+    first_lines = "\n".join(text.split('\n')[:10])
+    entities = extract_entities(first_lines)
+    if entities.get("PERSON"):
+        # Heuristic: Name is usually at the top and not a common word
+        for name in entities["PERSON"]:
+            if len(name.split()) >= 2 and "@" not in name and not any(char.isdigit() for char in name):
+                contact['name'] = name
                 break
-    if not contact['date_of_birth']:
-        dob_label = DOB_LABEL_PATTERN.search(text.lower()) if text else None
-        if dob_label and text:
-            start = dob_label.end()
-            candidate = _extract_dob_from_text(text[start:], allow_year_only=True)
-            if not candidate:
-                candidate = _extract_dob_from_text(text, allow_year_only=True)
-            if candidate:
-                contact['date_of_birth'] = candidate
-    if not contact['location']:
-        for line in nonempty_lines:
-            lower = line.lower()
-            if any(keyword in lower for keyword in location_keywords) and 'email' not in lower and 'phone' not in lower:
-                contact['location'] = _strip_label(line, location_label_keywords) or line
-                break
-    if not contact['address'] and contact['location']:
+    
+    # Fallback for name if NLP fails (use existing heuristic)
+    if not contact['name']:
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        if lines:
+            candidate = lines[0]
+            # Remove common leading labels like 'Name:' or 'Full Name -'
+            candidate = re.sub(r'^(name\s*[:\-]\s*)', '', candidate, flags=re.IGNORECASE).strip()
+            if len(candidate.split()) <= 6 and not any(char.isdigit() for char in candidate):
+                contact['name'] = candidate
+
+    # 5. Extract Location (NLP GPE)
+    if entities.get("GPE"):
+        contact['location'] = entities["GPE"][0]
         contact['address'] = contact['location']
+    # Fallback: look for Address: label to capture location/address
+    if not contact.get('location'):
+        addr_match = re.search(r'(?m)^address\s*[:\-]\s*(?P<addr>.+)$', text, flags=re.IGNORECASE)
+        if addr_match:
+            addr = addr_match.group('addr').strip()
+            contact['address'] = addr
+            # try to extract city part (first two comma-separated parts)
+            parts = [p.strip() for p in addr.split(',') if p.strip()]
+            if parts:
+                contact['location'] = parts[0] if len(parts) == 1 else parts[-2] if len(parts) >= 2 else parts[0]
 
-    if not contact['website']:
-        match = url_pattern.search(text)
-        if match:
-            url = match.group(0)
-            if 'linkedin.com' not in url.lower() and 'github.com' not in url.lower():
-                contact['website'] = _normalize_url(url)
-
-    if not contact['name'] and nonempty_lines:
-        candidate = nonempty_lines[0]
-        if _looks_like_name(candidate):
-            contact['name'] = candidate
+    # 6. Extract DOB if present
+    dob = _extract_dob_from_text(text)
+    if dob:
+        contact['date_of_birth'] = dob
 
     return contact
     
@@ -1937,14 +1912,118 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
         raise RuntimeError("AI not configured")
 
     prompt = f"""
-You are an assistant that converts a raw CV into a professional, ATS-friendly resume tailored to a target job domain.
-Return a JSON object with the following top-level keys: "optimized_text" (string), "sections" (object with summary, skills, experience, education),
-"suggestions" (array of objects with category and message), "ats_score" (number 0-100), "recommended_keywords" (array), "found_keywords" (array).
+You are an expert CV optimizer. Your goal is to rewrite the provided CV to be highly professional, ATS-friendly, and tailored to the target job domain.
+
+Target Domain: {job_domain or 'General'}
+
+STRICT RULES FOR CV EXTRACTION AND CREATION:
+
+1. DO NOT:
+- Do NOT generate broken sentences or symbols (like ? or §).
+- Do NOT merge wrong fields together (Skills, Languages, Activities, etc.).
+- Do NOT repeat any content.
+- Do NOT output messy or unstructured text.
+- Do NOT include “Not Provided” anywhere. Leave the section empty or remove it.
+- Do NOT create a PDF-like layout. Output a clean text-based ATS CV only.
+- Do NOT add incorrect data (years, institutions, extra languages, etc.).
+- Do NOT output disorganized paragraphs.
+- Do NOT hallucinate experience or fake companies.
+
+2. YOU MUST:
+- Extract all information from the user-uploaded CV accurately.
+- Clean and correct all extracted values.
+- Fix phone format, spacing, punctuation, and grammar.
+- Normalize skills and group them properly (no mixing tools, hobbies, languages).
+- Organize projects in proper bullet points.
+- Remove duplicates and inconsistencies.
+- Add missing but **relevant** resume sections only when appropriate.
+- Output a fully structured, job-ready ATS-friendly CV.
+
+3. ADDITIONAL REQUIREMENT (IMPORTANT):
+**You must add additional information that strengthens the user’s CV:**
+- Add professional strengths based on the user's skills and projects.
+- Add a more impactful summary based on their profile.
+- Expand bullet points with achievements, metrics, and action verbs.
+- Improve weak or incomplete sections using industry standards.
+- Add soft skills, technical strengths, and domain-specific abilities.
+- Add optional sections like “Technical Strengths”, “Tools & Platforms”, “Key Achievements”, or “Professional Competencies” ONLY if they make the CV stronger.
+- Add clarity and depth to project descriptions and responsibilities.
+- Make the candidate look more professional WITHOUT inventing fake jobs.
+
+4. STRICT OUTPUT FORMAT (NO EXCEPTIONS) for the "optimized_text" field:
+
+**NAME**  
+**Job Title (Optional)**  
+Phone:  
+Email:  
+LinkedIn:  
+GitHub:  
+Portfolio:  
+
+---
+
+## PROFESSIONAL SUMMARY
+A strong 3–4 line tailored summary.
+
+## TECHNICAL STRENGTHS (Added to improve CV)
+- Key strengths relevant to software engineering, AI/ML, or the user’s experience.
+
+## SKILLS
+**Programming Languages:**  
+**Tools & Technologies:**  
+**Frameworks:**  
+**AI/ML:**  
+**Soft Skills:**  
+
+## EXPERIENCE
+**Role | Company | Dates | Location**  
+- Bullet point achievements  
+- Measurable, action-driven contributions  
+
+## PROJECTS
+**Project Name | Tools Used**  
+- Bullet point achievements  
+- Clear, structured description  
+
+## EDUCATION
+**Degree | University | Years**  
+- Additional notable coursework or achievements  
+
+## CERTIFICATIONS
+- Clean, correctly formatted list
+
+## ACHIEVEMENTS
+- List of key recognitions
+
+## VOLUNTEER EXPERIENCE (Optional)
+
+## LANGUAGES
+- List clearly
+
+---
+
+Return a JSON object with the following structure:
+{{
+  "optimized_text": "The full text of the optimized CV following the STRICT OUTPUT FORMAT above.",
+  "sections": {{
+    "summary": "The professional summary text",
+    "skills": ["List of skills"],
+    "experience": ["List of experience entries"],
+    "education": ["List of education entries"],
+    "projects": ["List of projects"]
+  }},
+  "suggestions": [
+    {{ "category": "Content", "message": "..." }},
+    {{ "category": "Formatting", "message": "..." }},
+    {{ "category": "Keywords", "message": "..." }}
+  ],
+  "ats_score": 85,
+  "recommended_keywords": ["...", "..."],
+  "found_keywords": ["...", "..."]
+}}
 
 Input CV:
 {cv_text}
-
-Target domain: {job_domain or 'general'}
 
 Return ONLY the JSON object and ensure it is parseable.
 """
@@ -1986,11 +2065,68 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
 
     rule_based = optimize_cv_rule_based(cv_text, job_domain)
 
-    # Merge AI insights (if any) without overwriting deterministic preview content
+    # Merge AI insights (if any)
     merged = {**rule_based}
     if ai_data:
+        # Prefer AI-generated content for optimization if available
+        if ai_data.get("optimized_text"):
+            merged["optimized_text"] = ai_data["optimized_text"]
+            merged["optimized_cv"] = ai_data["optimized_text"]
+            merged["optimized_ats_cv"] = ai_data["optimized_text"]
+
+        # Update sections if AI provided structured content
+        if ai_data.get("sections") and isinstance(ai_data["sections"], dict):
+            merged["sections"] = ai_data["sections"]
+            
+            # Rebuild ordered_sections based on AI sections to ensure UI consistency
+            ai_ordered = []
+            
+            # Map standard keys to potential AI keys
+            key_mapping = {
+                "contact_information": ["contact_information", "personal_info", "contact"],
+                "professional_summary": ["professional_summary", "summary", "objective", "profile"],
+                "work_experience": ["work_experience", "experience", "employment_history"],
+                "education": ["education", "academics"],
+                "skills": ["skills", "core_competencies", "technical_skills"],
+                "projects": ["projects", "key_projects"],
+                "certifications": ["certifications", "credentials"],
+                "achievements": ["achievements", "awards", "accomplishments"],
+                "languages": ["languages"],
+                "volunteer_experience": ["volunteer_experience", "volunteering"],
+                "additional_information": ["additional_information", "other"]
+            }
+
+            # Use standard order for known sections
+            for key, label in STANDARD_SECTION_ORDER:
+                content = None
+                possible_keys = key_mapping.get(key, [key])
+                for ai_key in possible_keys:
+                    if ai_data["sections"].get(ai_key):
+                        content = ai_data["sections"][ai_key]
+                        break
+                
+                if content:
+                    if isinstance(content, list):
+                        content = "\n".join(str(x) for x in content)
+                    ai_ordered.append({"key": key, "label": label, "content": str(content)})
+            
+            # Add any other sections found in AI response that weren't in standard order
+            used_ai_keys = set()
+            for v in key_mapping.values():
+                used_ai_keys.update(v)
+            
+            for key, content in ai_data["sections"].items():
+                if key not in used_ai_keys:
+                    if isinstance(content, list):
+                        content = "\n".join(str(x) for x in content)
+                    ai_ordered.append({"key": key, "label": key.replace("_", " ").title(), "content": str(content)})
+            
+            if ai_ordered:
+                merged["ordered_sections"] = ai_ordered
+
+        # Update scores and keywords
         for key in ("ats_score", "recommended_keywords", "found_keywords"):
-            if key in ai_data and not merged.get(key):
+            if key in ai_data:
                 merged[key] = ai_data[key]
         if ai_data.get("suggestions"):
             current = [s for s in merged.get("suggestions", []) if isinstance(s, dict)]

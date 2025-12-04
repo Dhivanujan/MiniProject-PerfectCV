@@ -650,4 +650,5 @@ def api_chatbot_ask():
 
 # -------------------- Run --------------------
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Disable reloader to prevent WinError 10038 on Windows/Python 3.13
+    app.run(debug=True, use_reloader=False)

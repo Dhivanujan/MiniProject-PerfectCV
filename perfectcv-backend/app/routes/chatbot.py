@@ -29,6 +29,7 @@ from app.utils.ai_utils import (
     extract_personal_info, detect_missing_sections, improve_sentence,
     suggest_achievements, check_ats_compatibility, suggest_keywords_for_role,
     generate_improved_cv, analyze_cv_comprehensively, get_generative_model,
+    suggest_courses, suggest_qualifications,
     DEFAULT_GENERATION_MODELS
 )
 
@@ -271,6 +272,10 @@ def classify_query(question: str) -> str:
         return 'generate'
     if any(word in words for word in ['extract', 'list', 'show', 'what are my', 'what is my']):
         return 'extraction'
+    if any(word in words for word in ['course', 'courses', 'certification', 'certifications', 'certificate', 'learning', 'study', 'training', 'learn']):
+        return 'courses'
+    if any(word in words for word in ['qualification', 'qualifications', 'degree', 'education', 'master', 'bachelor', 'phd']):
+        return 'qualifications'
     return 'general'
 
 # --------- Route handlers (small modular functions) ----------
@@ -333,26 +338,62 @@ def handle_improvement(cv_text: str, question: str) -> Dict:
     section_match = re.search(r'\b(summary|experience|education|skills|projects|achievements)\b', question, re.I)
     section = section_match.group(1).lower() if section_match else None
 
+    # Check if user wants advice/suggestions vs a rewrite
+    is_advice_request = any(w in question.lower() for w in ['how to', 'suggest', 'advice', 'tips', 'recommend', 'what should i'])
+
     try:
         if section:
-            improved_section = generate_improved_cv(cv_text, focus_areas=[section])
-            if improved_section:
-                return {
-                    "answer": f"**Improved {section.title()} Section:**\n\n{improved_section}\n\nWould you like me to apply these?",
-                    "improved_text": improved_section
-                }
+            if is_advice_request:
+                # Provide advice for the section
+                prompt = f"""Analyze the {section} section of this CV and provide specific advice on how to improve it.
+                Focus on:
+                - Content quality
+                - Formatting
+                - Impact and clarity
+                
+                CV TEXT:
+                {cv_text}
+                """
+                advice = safe_generate_with_gemini(prompt)
+                return {"answer": advice}
             else:
-                return {"answer": f"I couldn't generate an improved {section} automatically. Please paste the section content and I'll rewrite it."}
+                # Rewrite the section
+                improved_section = generate_improved_cv(cv_text, focus_areas=[section])
+                if improved_section:
+                    return {
+                        "answer": f"**Improved {section.title()} Section:**\n\n{improved_section}\n\nWould you like me to apply these?",
+                        "improved_text": improved_section
+                    }
+                else:
+                    return {"answer": f"I couldn't generate an improved {section} automatically. Please paste the section content and I'll rewrite it."}
         else:
-            improved_cv = generate_improved_cv(cv_text)
-            if improved_cv:
-                preview = improved_cv if len(improved_cv) < 1200 else improved_cv[:1200] + "..."
-                # store generated in GridFS instead of session? We store in session id only (for download), but keep small text
-                session['generated_cv_preview'] = preview
-                session['generated_cv_text'] = improved_cv[:10000]  # safe partial store; avoid storing full long text if too large
-                return {"answer": f"**Improved CV (preview):**\n\n{preview}\n\nWould you like the full version?", "generated_cv": improved_cv}
+            if is_advice_request:
+                # Provide overall improvement advice based on defects
+                analysis = analyze_cv_comprehensively(cv_text)
+                if analysis:
+                    weaknesses = analysis.get('weaknesses', [])
+                    suggestions = analysis.get('improvement_suggestions', [])
+                    return {
+                        "answer": (
+                            f"**CV Improvement Plan**\n\n"
+                            f"**Identified Weaknesses:**\n" + "\n".join(f"• {w}" for w in weaknesses) + "\n\n"
+                            f"**Suggestions for Improvement:**\n" + "\n".join(f"• {s}" for s in suggestions) + "\n\n"
+                            f"Would you like me to rewrite the CV incorporating these changes?"
+                        )
+                    }
+                else:
+                    return {"answer": "I couldn't analyze the CV for improvements. Please try again."}
             else:
-                return {"answer": "I couldn't generate an improved CV automatically. Try again or provide the specific part you want improved."}
+                # Rewrite the whole CV
+                improved_cv = generate_improved_cv(cv_text)
+                if improved_cv:
+                    preview = improved_cv if len(improved_cv) < 1200 else improved_cv[:1200] + "..."
+                    # store generated in GridFS instead of session? We store in session id only (for download), but keep small text
+                    session['generated_cv_preview'] = preview
+                    session['generated_cv_text'] = improved_cv[:10000]  # safe partial store; avoid storing full long text if too large
+                    return {"answer": f"**Improved CV (preview):**\n\n{preview}\n\nWould you like the full version?", "generated_cv": improved_cv}
+                else:
+                    return {"answer": "I couldn't generate an improved CV automatically. Try again or provide the specific part you want improved."}
     except Exception:
         current_app.logger.exception("CV improvement failed")
         return {"answer": "An error occurred while generating improvements. Try again later."}
@@ -453,6 +494,63 @@ def handle_extraction(cv_text: str, question: str) -> Dict:
         current_app.logger.exception("Extraction failed")
         return {"answer": "Extraction failed. Try again or paste the section you want extracted."}
 
+def handle_courses(cv_text: str, question: str) -> Dict:
+    try:
+        # Extract potential career goal from question
+        career_goal = None
+        if "for" in question:
+            parts = question.split("for")
+            if len(parts) > 1:
+                career_goal = parts[1].strip()
+        
+        suggestions = suggest_courses(cv_text, career_goal)
+    except Exception:
+        current_app.logger.exception("Course suggestion failed")
+        suggestions = None
+
+    if suggestions:
+        courses = suggestions.get('recommended_courses', [])
+        certs = suggestions.get('certifications', [])
+        path = suggestions.get('learning_path', '')
+        
+        return {
+            "answer": (
+                f"**Recommended Courses & Certifications**\n\n"
+                f"**Learning Path:**\n{path}\n\n"
+                f"**Top Courses:**\n" + "\n".join(f"• **{c.get('title')}** ({c.get('provider')}): {c.get('reason')}" for c in courses[:5]) + "\n\n"
+                f"**Key Certifications:**\n" + "\n".join(f"• **{c.get('name')}** ({c.get('issuer')}): {c.get('impact')}" for c in certs[:3]) + "\n\n"
+                f"Would you like more details on any of these?"
+            ),
+            "courses": suggestions
+        }
+    else:
+        return {"answer": "I couldn't generate specific course recommendations. Consider looking for courses on platforms like Coursera, Udemy, or edX related to your field."}
+
+def handle_qualifications(cv_text: str, question: str) -> Dict:
+    try:
+        suggestions = suggest_qualifications(cv_text)
+    except Exception:
+        current_app.logger.exception("Qualification suggestion failed")
+        suggestions = None
+
+    if suggestions:
+        edu = suggestions.get('education_recommendations', [])
+        prof = suggestions.get('professional_development', [])
+        advice = suggestions.get('strategic_advice', '')
+        
+        return {
+            "answer": (
+                f"**Qualification Improvement Strategy**\n\n"
+                f"{advice}\n\n"
+                f"**Education:**\n" + "\n".join(f"• {e}" for e in edu) + "\n\n"
+                f"**Professional Development:**\n" + "\n".join(f"• {p}" for p in prof) + "\n\n"
+                f"Would you like to discuss how to add these to your CV?"
+            ),
+            "qualifications": suggestions
+        }
+    else:
+        return {"answer": "I couldn't generate specific qualification advice. Generally, consider advanced degrees or specialized certifications in your industry."}
+
 def handle_generate(cv_text: str) -> Dict:
     try:
         improved = generate_improved_cv(cv_text)
@@ -513,6 +611,7 @@ IMPORTANT INSTRUCTIONS:
 - If the CV is missing information relevant to the question, point that out
 - Be professional but conversational
 - Use bullet points for clarity when listing multiple items{context_note}
+- If the user asks a question unrelated to the CV or career advice, politely steer them back to the topic.
 
 CV CONTENT:
 {context}
@@ -525,25 +624,7 @@ DETAILED ANSWER:"""
             return {"answer": answer}
         except Exception:
             logger.warning("Gemini generation unavailable, falling back to local QA")
-            # Simple local fallback: score sentences by keyword overlap
-            try:
-                # simple sentence matcher
-                qwords = [w.lower() for w in re.findall(r"\w{3,}", question)]
-                sentences = re.split(r'(?<=[.!?])\s+', cv_text)
-                scored = []
-                for s in sentences:
-                    sl = s.lower()
-                    score = sum(1 for w in qwords if w in sl)
-                    if score:
-                        scored.append((score, s.strip()))
-                if not scored:
-                    return {"answer": "I don't have enough information in your CV to answer that."}
-                scored.sort(key=lambda x: x[0], reverse=True)
-                top = ' '.join([s for _, s in scored[:3]])
-                return {"answer": top}
-            except Exception:
-                logger.exception("Local fallback QA failed")
-                return {"answer": "I couldn't generate an answer right now. Please try again later."}
+            return {"answer": "I'm currently having trouble connecting to the AI service. Please try again in a moment."}
     except Exception:
         current_app.logger.exception("General handling failed")
         return {"answer": "I encountered an error processing your question. Please try rephrasing or ask something more specific about your CV."}
@@ -641,6 +722,10 @@ def ask():
             result = handle_extraction(cv_text, question)
         elif qtype == 'generate':
             result = handle_generate(cv_text)
+        elif qtype == 'courses':
+            result = handle_courses(cv_text, question)
+        elif qtype == 'qualifications':
+            result = handle_qualifications(cv_text, question)
         else:
             result = handle_general(cv_text, question)
 

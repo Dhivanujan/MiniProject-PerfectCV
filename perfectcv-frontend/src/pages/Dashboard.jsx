@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import {
@@ -13,9 +13,60 @@ import {
   FaCheckCircle,
   FaExclamationCircle,
   FaStar,
+  FaChartLine,
+  FaClock,
+  FaClipboardCheck,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
+
+const JOB_DOMAIN_OPTIONS = [
+  { value: "", label: "🌐 General", shortLabel: "General" },
+  { value: "software", label: "💻 Software / Engineering", shortLabel: "Software" },
+  { value: "data_science", label: "📊 Data Science / ML", shortLabel: "Data Science" },
+  { value: "product", label: "📈 Product Management", shortLabel: "Product" },
+  { value: "design", label: "🎨 Design / UX", shortLabel: "Design" },
+  { value: "marketing", label: "🚀 Marketing / Growth", shortLabel: "Marketing" },
+];
+
+const getJobDomainLabel = (value) => {
+  const match = JOB_DOMAIN_OPTIONS.find((option) => option.value === value);
+  return match ? match.shortLabel : "General";
+};
+
+const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
+
+const formatAbsoluteDate = (date) => {
+  if (!isValidDate(date)) return "Not available";
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
+const formatRelativeTime = (date) => {
+  if (!isValidDate(date)) return "—";
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
+const parseFilePayload = (payload) => {
+  if (!payload) return null;
+  const uploadedAtSource = payload.uploadedAt || payload.upload_date || payload.uploadDate;
+  const uploadedDate = uploadedAtSource ? new Date(uploadedAtSource) : null;
+  return {
+    ...payload,
+    uploadedAt: isValidDate(uploadedDate) ? uploadedDate : null,
+  };
+};
+
+const CARD_SURFACE =
+  "bg-white dark:bg-[#1E1E2F] border border-gray-100 dark:border-gray-800 rounded-2xl hover:shadow-md transition-all duration-300";
+const PANEL_SURFACE = `${CARD_SURFACE} shadow-lg transition-all duration-500`;
 
 export default function Dashboard({ user }) {
   const [files, setFiles] = useState([]);
@@ -39,7 +90,7 @@ export default function Dashboard({ user }) {
   const [sortOption, setSortOption] = useState("newest");
 
   // Utility: truncate long filenames
-  const truncateFilename = (filename, maxLen = 30) => {
+  const truncateFilename = (filename = "", maxLen = 30) => {
     if (filename.length > maxLen) {
       return filename.substring(0, maxLen - 3) + "...";
     }
@@ -56,11 +107,12 @@ export default function Dashboard({ user }) {
       if (res.data.user) {
         setCurrentUser(res.data.user);
         const userFilesRes = await api.get("/api/user-files");
-        const filesWithDate = userFilesRes.data.files.map((f) => ({
-          ...f,
-          uploadedAt: f.uploadedAt ? new Date(f.uploadedAt) : new Date(),
-        }));
+        const filesWithDate = (userFilesRes.data.files || [])
+          .map((file) => parseFilePayload(file))
+          .filter(Boolean);
         setFiles(filesWithDate);
+      } else {
+        setFiles([]);
       }
     } catch (err) {
       console.error(err);
@@ -143,16 +195,23 @@ export default function Dashboard({ user }) {
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
       setFoundKeywords(res.data.found_keywords || []);
-      setFiles([
-        ...files,
-        {
+      const parsedFile =
+        parseFilePayload(res.data.file) ||
+        parseFilePayload({
           _id: res.data.file_id,
-          filename: selectedFile.name,
+          filename: selectedFile?.name || "Optimized CV.pdf",
           uploadedAt: new Date(),
-        },
-      ]);
+          atsScore: res.data.ats_score ?? null,
+          jobDomain,
+        });
+      if (parsedFile) {
+        setFiles((prev) => {
+          const withoutDuplicate = prev.filter((f) => f._id !== parsedFile._id);
+          return [parsedFile, ...withoutDuplicate];
+        });
+      }
       setLastUploadedFileId(res.data.file_id);
-      setLastUploadedFilename(selectedFile.name);
+      setLastUploadedFilename(parsedFile?.filename || selectedFile?.name || "optimized_cv.pdf");
       setSelectedFile(null);
       alert("CV uploaded and optimized successfully!");
     } catch (err) {
@@ -194,7 +253,7 @@ export default function Dashboard({ user }) {
     if (!window.confirm("Are you sure you want to delete this CV?")) return;
     try {
       await api.delete(`/api/delete-cv/${fileId}`);
-      setFiles(files.filter((f) => f._id !== fileId));
+      setFiles((prev) => prev.filter((f) => f._id !== fileId));
       alert("CV deleted successfully!");
     } catch (err) {
       console.error(err);
@@ -203,14 +262,109 @@ export default function Dashboard({ user }) {
   };
 
   // Filter & Sort logic
+  const getTimestamp = (file) =>
+    file?.uploadedAt instanceof Date && !Number.isNaN(file.uploadedAt.getTime())
+      ? file.uploadedAt.getTime()
+      : 0;
+
   const filteredFiles = files
-    .filter((f) => f.filename.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((f) => (f?.filename || "").toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => {
-      if (sortOption === "newest") return b.uploadedAt - a.uploadedAt;
-      if (sortOption === "oldest") return a.uploadedAt - b.uploadedAt;
-      if (sortOption === "alpha") return a.filename.localeCompare(b.filename);
+      if (sortOption === "newest") return getTimestamp(b) - getTimestamp(a);
+      if (sortOption === "oldest") return getTimestamp(a) - getTimestamp(b);
+      if (sortOption === "alpha") return (a?.filename || "").localeCompare(b?.filename || "");
       return 0;
     });
+
+  const dashboardStats = useMemo(() => {
+    if (!files.length) {
+      return {
+        totalUploads: 0,
+        bestScore: typeof atsScore === "number" ? atsScore : null,
+        avgScore: typeof atsScore === "number" ? atsScore : null,
+        lastUpload: null,
+      };
+    }
+    const sortedByDate = [...files].sort((a, b) => getTimestamp(b) - getTimestamp(a));
+    const lastUpload = sortedByDate[0] || null;
+    const scoredFiles = files.filter((file) => typeof file.atsScore === "number");
+    const bestScore = scoredFiles.reduce(
+      (max, file) => Math.max(max, file.atsScore ?? 0),
+      typeof atsScore === "number" ? atsScore : 0
+    );
+    const avgScore = scoredFiles.length
+      ? Math.round(
+          scoredFiles.reduce((sum, file) => sum + (file.atsScore || 0), 0) / scoredFiles.length
+        )
+      : typeof atsScore === "number"
+      ? atsScore
+      : null;
+    return {
+      totalUploads: files.length,
+      bestScore: bestScore || null,
+      avgScore: avgScore || null,
+      lastUpload,
+    };
+  }, [files, atsScore]);
+
+  const recentUploads = useMemo(() => {
+    if (!files.length) return [];
+    return [...files].sort((a, b) => getTimestamp(b) - getTimestamp(a)).slice(0, 4);
+  }, [files]);
+
+  const keywordInsight = useMemo(() => {
+    const recommendedSet = new Set((recommendedKeywords || []).map((kw) => kw?.trim()).filter(Boolean));
+    const foundSet = new Set((foundKeywords || []).map((kw) => kw?.trim()).filter(Boolean));
+    if (!recommendedSet.size) {
+      return { coverage: 0, matched: 0, missing: [], total: 0 };
+    }
+    const missing = [];
+    let matched = 0;
+    recommendedSet.forEach((kw) => {
+      if (foundSet.has(kw)) {
+        matched += 1;
+      } else {
+        missing.push(kw);
+      }
+    });
+    const coverage = Math.round((matched / recommendedSet.size) * 100);
+    return { coverage, matched, missing, total: recommendedSet.size };
+  }, [recommendedKeywords, foundKeywords]);
+
+  const totalSuggestions = useMemo(() => {
+    if (groupedSuggestions && Object.keys(groupedSuggestions).length > 0) {
+      return Object.values(groupedSuggestions).reduce(
+        (sum, entries) => sum + (entries?.length || 0),
+        0
+      );
+    }
+    return suggestions?.length || 0;
+  }, [groupedSuggestions, suggestions]);
+
+  const readinessChecklist = [
+    {
+      label: "Optimized CV",
+      done: Boolean(optimizedCV),
+      detail: Boolean(optimizedCV) ? "Ready" : "Generate",
+    },
+    {
+      label: "ATS score visibility",
+      done: typeof atsScore === "number",
+      detail: typeof atsScore === "number" ? `${atsScore}/100` : "Awaiting",
+    },
+    {
+      label: "Keyword alignment",
+      done: keywordInsight.total ? keywordInsight.coverage >= 70 : false,
+      detail: keywordInsight.total
+        ? `${keywordInsight.coverage}% match`
+        : "Add target domain",
+    },
+    {
+      label: "Suggestions addressed",
+      done: totalSuggestions === 0,
+      detail: totalSuggestions ? `${totalSuggestions} open` : "All set",
+    },
+  ];
 
   return (
     <div
@@ -255,111 +409,237 @@ export default function Dashboard({ user }) {
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 md:px-6 py-8 relative z-10">
-        {/* Upload Section */}
-        <section
-          className="bg-white dark:bg-[#1E1E2F] shadow-lg rounded-2xl p-8 mb-8
-          transition-all duration-500 border border-gray-100 dark:border-gray-800"
-        >
-          <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
-            <FaUpload className="text-xl" /> Upload & Optimize CV
-          </h2>
-          <form
-            onSubmit={handleUpload}
-            className="flex flex-col md:flex-row gap-4 items-center justify-center"
-          >
-            <label
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`flex-1 border-dashed border-2 
-              ${
-                dragActive
-                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
-                  : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
-              } p-8 rounded-xl text-center 
-              cursor-pointer transition-all duration-200`}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  fileInputRef.current?.click();
-                }
-              }}
-            >
-              <div className="text-gray-600 dark:text-gray-300">
-                <FaUpload className="mx-auto mb-2 text-2xl text-indigo-500" />
-                <div className="font-semibold text-sm mb-1">
-                  {selectedFile
-                    ? truncateFilename(selectedFile.name, 40)
-                    : dragActive
-                    ? "Drop your CV here"
-                    : "Drag & drop your CV here"}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  or click to select (.pdf, .doc, .docx)
-                </div>
+        {/* KPI Cards */}
+        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 mb-10">
+          <div className={`${CARD_SURFACE} p-6 shadow-sm h-full flex flex-col justify-between`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl">
+                <FaFileAlt className="text-indigo-500 text-xl" />
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={accessibleFileChange}
-                className="hidden"
-                accept=".pdf,.doc,.docx"
-                aria-label="Select CV file"
-              />
-            </label>
-            <div className="w-full md:w-72">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-                <FaBriefcase className="w-4 h-4 text-indigo-500" />
-                Target Job Domain
-              </label>
-
-              <div className="relative">
-                <select
-                  value={jobDomain}
-                  onChange={(e) => setJobDomain(e.target.value)}
-                  className="w-full appearance-none p-3 rounded-xl 
-        border border-gray-300 dark:border-gray-600
-        bg-white dark:bg-[#1f2937]
-        text-gray-800 dark:text-gray-200
-        focus:outline-none focus:ring-2 focus:ring-indigo-500 
-        focus:border-transparent transition-all duration-200
-        hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer"
-                >
-                  <option value="">🌐 General</option>
-                  <option value="software">💻 Software / Engineering</option>
-                  <option value="data_science">📊 Data Science / ML</option>
-                  <option value="product">📈 Product Management</option>
-                  <option value="design">🎨 Design / UX</option>
-                  <option value="marketing">🚀 Marketing / Growth</option>
-                </select>
-
-                {/* Custom dropdown arrow */}
-                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
-                  <FaChevronDown className="w-4 h-4" />
-                </div>
-              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Total Uploads</span>
             </div>
+            <div>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{dashboardStats.totalUploads}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Your personal resume library</p>
+            </div>
+          </div>
+          <div className={`${CARD_SURFACE} p-6 shadow-sm h-full flex flex-col justify-between`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl">
+                <FaStar className="text-yellow-500 text-xl" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Best Score</span>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {dashboardStats.bestScore ?? "—"}
+                {dashboardStats.bestScore != null && <span className="text-lg text-gray-400 font-normal">/100</span>}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Highest performing optimized CV</p>
+            </div>
+          </div>
+          <div className={`${CARD_SURFACE} p-6 shadow-sm h-full flex flex-col justify-between`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl">
+                <FaChartLine className="text-emerald-500 text-xl" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Avg Score</span>
+            </div>
+            <div>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+                {dashboardStats.avgScore ?? "—"}
+                {dashboardStats.avgScore != null && <span className="text-lg text-gray-400 font-normal">/100</span>}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Across all uploaded resumes</p>
+            </div>
+          </div>
+          <div className={`${CARD_SURFACE} p-6 shadow-sm h-full flex flex-col justify-between`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-sky-50 dark:bg-sky-900/30 rounded-xl">
+                <FaClock className="text-sky-500 text-xl" />
+              </div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Last Activity</span>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1" title={formatAbsoluteDate(dashboardStats.lastUpload?.uploadedAt)}>
+                {dashboardStats.lastUpload?.uploadedAt ? formatRelativeTime(dashboardStats.lastUpload.uploadedAt) : "Pending"}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {dashboardStats.lastUpload?.filename
+                  ? truncateFilename(dashboardStats.lastUpload.filename, 20)
+                  : "Upload a CV to get started"}
+              </p>
+            </div>
+          </div>
+        </section>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 text-white px-8 py-3 rounded-xl 
-              hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900
-              transition-all duration-200 flex items-center gap-2 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <FaSpinner className="animate-spin" /> Uploading...
-                </>
+        {/* Upload & Activity */}
+        <section className="grid gap-6 lg:grid-cols-3 mb-8">
+          <div className={`${PANEL_SURFACE} p-8 lg:col-span-2`}>
+            <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
+              <FaUpload className="text-xl" /> Upload & Optimize CV
+            </h2>
+            <form onSubmit={handleUpload} className="space-y-6">
+              <div className="grid gap-6 w-full lg:grid-cols-12 items-stretch">
+                <label
+                  onDragEnter={handleDragEnter}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`lg:col-span-7 border-dashed border-2 
+                  ${
+                    dragActive
+                      ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
+                      : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
+                  } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                >
+                  <div className="text-gray-600 dark:text-gray-300">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/50 rounded-full flex items-center justify-center">
+                      <FaUpload className="text-2xl text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div className="font-semibold text-lg mb-2">
+                      {selectedFile
+                        ? truncateFilename(selectedFile.name, 40)
+                        : dragActive
+                        ? "Drop your CV here"
+                        : "Drag & drop your CV here"}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      or click to select (.pdf, .doc, .docx)
+                    </div>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={accessibleFileChange}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx"
+                    aria-label="Select CV file"
+                  />
+                </label>
+
+                <div className="lg:col-span-5 w-full flex flex-col gap-4 justify-center">
+                  <div className="bg-gray-50 dark:bg-gray-800/50 p-5 rounded-xl border border-gray-100 dark:border-gray-700">
+                    <label className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">
+                      <FaBriefcase className="w-4 h-4 text-indigo-500" />
+                      Target Job Domain
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={jobDomain}
+                        onChange={(e) => setJobDomain(e.target.value)}
+                        className="w-full appearance-none p-3 pl-4 pr-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1f2937]
+          text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 
+          focus:border-transparent transition-all duration-200 hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer font-medium"
+                      >
+                        {JOB_DOMAIN_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400 dark:text-gray-500">
+                        <FaChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                      Selecting a focus helps our AI tailor your ATS score and keyword suggestions specifically for your industry.
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 text-white px-6 py-4 rounded-xl 
+                    hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900
+                    transition-all duration-200 flex items-center justify-center gap-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:-translate-y-0.5"
+                  >
+                    {loading ? (
+                      <>
+                        <FaSpinner className="animate-spin" /> Processing...
+                      </>
+                    ) : (
+                      <>
+                        <FaUpload /> Upload & Optimize
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div className={`${PANEL_SURFACE} p-6 flex flex-col h-full`}>
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">Recent Activity</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Track your last uploads and their ATS health.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  typeof window !== "undefined" &&
+                  document.getElementById("user-cv-library")?.scrollIntoView({ behavior: "smooth" })
+                }
+                className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline shrink-0 transition-colors"
+              >
+                View library
+              </button>
+            </div>
+            <div className="space-y-4 flex-1 overflow-y-auto max-h-[400px] pr-2 custom-scrollbar">
+              {recentUploads.length > 0 ? (
+                recentUploads.map((file) => (
+                  <div
+                    key={file._id}
+                    className="flex items-start justify-between gap-4 rounded-xl border border-gray-100 dark:border-gray-800 p-4 bg-white/50 dark:bg-gray-900/30 hover:bg-white dark:hover:bg-gray-900/50 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FaFileAlt className="text-indigo-400 text-sm shrink-0" />
+                        <p className="font-semibold text-gray-800 dark:text-gray-100 text-sm truncate" title={file.filename}>
+                          {truncateFilename(file.filename, 28)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                          {getJobDomainLabel(file.jobDomain)}
+                        </span>
+                        {typeof file.atsScore === "number" && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            file.atsScore >= 70 
+                              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
+                              : file.atsScore >= 50
+                              ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                              : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                          }`}>
+                            {file.atsScore}/100
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap pt-0.5">
+                      {formatRelativeTime(file.uploadedAt)}
+                    </div>
+                  </div>
+                ))
               ) : (
-                <>
-                  <FaUpload /> Upload & Optimize
-                </>
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                  <div className="w-12 h-12 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
+                    <FaFileAlt className="text-gray-300 dark:text-gray-600 text-xl" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No uploads yet</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Your recent files will appear here</p>
+                </div>
               )}
-            </button>
-          </form>
+            </div>
+          </div>
         </section>
 
         {/* Optimized CV & Suggestions */}
@@ -538,6 +818,82 @@ export default function Dashboard({ user }) {
           </section>
         )}
 
+        {(keywordInsight.total > 0 || optimizedCV || typeof atsScore === "number" || totalSuggestions > 0) && (
+          <section className="grid gap-6 lg:grid-cols-2 mb-10">
+            {keywordInsight.total > 0 && (
+              <div className={`${CARD_SURFACE} p-6 shadow-md h-full flex flex-col`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
+                    <FaChartLine className="text-indigo-500" />
+                    <h3 className="text-lg font-bold">Keyword Coverage</h3>
+                  </div>
+                  <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+                    {keywordInsight.coverage}% match
+                  </span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-3">
+                      <div
+                        className="bg-gradient-to-r from-indigo-500 to-purple-500 h-3 rounded-full"
+                        style={{ width: `${keywordInsight.coverage}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      {keywordInsight.matched} of {keywordInsight.total} target keywords detected.
+                    </p>
+                  </div>
+                  {keywordInsight.missing.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">
+                        Suggested additions
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {keywordInsight.missing.slice(0, 6).map((kw) => (
+                          <span
+                            key={kw}
+                            className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className={`${CARD_SURFACE} p-6 shadow-md h-full flex flex-col`}>
+              <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100 mb-4">
+                <FaClipboardCheck className="text-emerald-500" />
+                <h3 className="text-lg font-bold">Readiness Checklist</h3>
+              </div>
+              <ul className="space-y-3">
+                {readinessChecklist.map((item) => (
+                  <li
+                    key={item.label}
+                    className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-800 px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${item.done ? "bg-emerald-400" : "bg-amber-400"}`}
+                      ></span>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                        {item.label}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-xs font-semibold ${item.done ? "text-emerald-500" : "text-amber-500"}`}
+                    >
+                      {item.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
+
         {/* Search & Sort */}
         <section className="mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div
@@ -568,7 +924,7 @@ export default function Dashboard({ user }) {
         </section>
 
         {/* Uploaded CV Cards */}
-        <section className="mb-16">
+        <section id="user-cv-library" className="mb-16">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
               <FaFileAlt className="text-2xl" /> Your Uploaded CVs
@@ -588,44 +944,57 @@ export default function Dashboard({ user }) {
               {filteredFiles.map((file) => (
                 <div
                   key={file._id}
-                  className="bg-white dark:bg-[#1E1E2F] p-6 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 
-                  flex flex-col justify-between text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-800 group"
+                  className="bg-white dark:bg-[#1E1E2F] p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 
+                  flex flex-col justify-between text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-800 group h-full"
                 >
-                  <div className="mb-4">
-                    <div className="flex items-start gap-3 mb-2">
-                      <FaFileAlt className="text-indigo-500 text-xl flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-lg truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition" title={file.filename}>
-                          {truncateFilename(file.filename, 28)}
+                  <div className="mb-5">
+                    <div className="flex items-start gap-4 mb-3">
+                      <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl shrink-0 group-hover:scale-105 transition-transform">
+                        <FaFileAlt className="text-indigo-500 text-xl" />
+                      </div>
+                      <div className="flex-1 min-w-0 pt-1">
+                        <h3 className="font-bold text-lg truncate text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={file.filename}>
+                          {truncateFilename(file.filename, 24)}
                         </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {file.filename.split(".").pop()?.toUpperCase() || "FILE"} • {file.filename.length} chars
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
+                          <span>{formatAbsoluteDate(file.uploadedAt)}</span>
+                          <span>•</span>
+                          <span>{(file.size / 1024).toFixed(0)} KB</span>
                         </p>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                      Uploaded by <span className="font-medium">{currentUser?.full_name ||
-                        user?.full_name ||
-                        currentUser?.username ||
-                        user?.username ||
-                        user?.email ||
-                        "You"}</span>
-                    </p>
+                    
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                        {getJobDomainLabel(file.jobDomain)}
+                      </span>
+                      {typeof file.atsScore === "number" && (
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${
+                          file.atsScore >= 70 
+                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
+                            : file.atsScore >= 50
+                            ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                            : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                        }`}>
+                          ATS: {file.atsScore}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
+
+                  <div className="flex gap-3 pt-5 border-t border-gray-100 dark:border-gray-800 mt-auto">
                     <button
                       onClick={() => handleDownload(file._id, file.filename)}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 dark:from-green-700 dark:to-emerald-700 dark:hover:from-green-800 dark:hover:to-emerald-800
-                      text-white px-4 py-2 rounded-lg transition-all duration-200 flex-1 flex items-center justify-center gap-2 font-medium"
+                      className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
                     >
-                      <FaDownload className="text-sm" /> Download
+                      <FaDownload className="text-gray-400 group-hover/btn:text-indigo-500 transition-colors" /> Download
                     </button>
                     <button
                       onClick={() => handleDelete(file._id)}
-                      className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 dark:from-red-700 dark:to-pink-700 dark:hover:from-red-800 dark:hover:to-pink-800
-                      text-white px-4 py-2 rounded-lg transition-all duration-200 flex-1 flex items-center justify-center gap-2 font-medium"
+                      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
+                      aria-label="Delete file"
                     >
-                      <FaTrash className="text-sm" /> Delete
+                      <FaTrash className="text-gray-400 group-hover/btn:text-red-500 transition-colors" />
                     </button>
                   </div>
                 </div>

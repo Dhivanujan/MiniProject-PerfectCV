@@ -1,12 +1,40 @@
 import React from "react";
+import { motion } from "framer-motion";
 
 function About() {
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.2
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.5
+      }
+    }
+  };
+
   return (
     <section
       id="about"
       className="mt-20 px-6 sm:px-10 max-w-6xl mx-auto transition-colors duration-500"
     >
-      <div className="text-center">
+      <motion.div 
+        initial={{ opacity: 0, y: 30 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.6 }}
+        className="text-center"
+      >
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">
           About <span className="text-indigo-600 dark:text-indigo-400">PerfectCV</span>
         </h2>
@@ -28,33 +56,44 @@ function About() {
           feature offers real-time feedback, tips, and guidance, making the
           resume-building process simple, interactive, and effective.
         </p>
-      </div>
+      </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mt-12">
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true }}
+        className="grid grid-cols-1 md:grid-cols-4 gap-8 mt-12"
+      >
         <AboutCard
+          variants={itemVariants}
           title="🎯 Tailored for You"
           desc="Receive personalized content suggestions based on your skills and goals."
         />
         <AboutCard
+          variants={itemVariants}
           title="⚡ Easy & Fast"
           desc="Create a professional CV within minutes — no design experience required."
         />
         <AboutCard
+          variants={itemVariants}
           title="🌍 Career-Ready"
           desc="Download and share your CV in recruiter-friendly PDF format instantly."
         />
         <AboutCard
+          variants={itemVariants}
           title="🤖 AI Chatbot Support"
           desc="Get real-time insights and advice from our integrated AI assistant."
         />
-      </div>
+      </motion.div>
     </section>
   );
 }
 
-function AboutCard({ title, desc }) {
+function AboutCard({ title, desc, variants }) {
   return (
-    <div
+    <motion.div
+      variants={variants}
       className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-transparent 
       shadow-sm hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-200/40 
       transition-all duration-300"
@@ -63,7 +102,7 @@ function AboutCard({ title, desc }) {
         {title}
       </h3>
       <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">{desc}</p>
-    </div>
+    </motion.div>
   );
 }
 
