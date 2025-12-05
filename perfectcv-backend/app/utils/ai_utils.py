@@ -7,13 +7,11 @@ from typing import Iterable, List, Optional
 logger = logging.getLogger(__name__)
 
 # Prefer fast, affordable models first; fall back to any model that supports generateContent
+# Updated to use Gemini 1.5 Flash/Pro which support JSON mode natively
 DEFAULT_GENERATION_MODELS: List[str] = [
-    "models/gemini-2.5-flash",
-    "models/gemini-2.0-flash",
-    "models/gemini-flash-latest",
-    "models/gemini-2.5-flash-lite",
-    "models/gemini-2.5-pro",
-    "models/gemini-pro-latest",
+    "models/gemini-1.5-flash",
+    "models/gemini-1.5-pro",
+    "models/gemini-pro",
 ]
 
 
@@ -160,12 +158,10 @@ def structure_cv_sections(cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         # Ensure response is valid JSON
         try:
-            cleaned_text = clean_json_response(response.text)
-            json.loads(cleaned_text)
-            return cleaned_text
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Generated CV structure is not valid JSON")
             return None
@@ -194,12 +190,10 @@ def extract_ats_keywords(cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         # Ensure response is valid JSON
         try:
-            cleaned_text = clean_json_response(response.text)
-            json.loads(cleaned_text)
-            return cleaned_text
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Generated ATS keywords are not valid JSON")
             return None
@@ -264,9 +258,9 @@ def extract_personal_info(cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Personal info extraction returned invalid JSON")
             return None
@@ -296,9 +290,9 @@ def detect_missing_sections(cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Missing sections detection returned invalid JSON")
             return None
@@ -357,9 +351,9 @@ def suggest_achievements(cv_text, role_context=""):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             # Try to extract array from text
             text = clean_json_response(response.text)
@@ -396,9 +390,9 @@ def check_ats_compatibility(cv_text, job_description=""):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("ATS check returned invalid JSON")
             return None
@@ -430,9 +424,9 @@ def suggest_keywords_for_role(role, cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Keyword suggestions returned invalid JSON")
             return None
@@ -499,9 +493,9 @@ def analyze_cv_comprehensively(cv_text):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Comprehensive analysis returned invalid JSON")
             return None
@@ -538,9 +532,9 @@ def suggest_courses(cv_text, career_goal=None):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Course suggestions returned invalid JSON")
             return None
@@ -578,9 +572,9 @@ def suggest_qualifications(cv_text, career_goal=None):
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
         try:
-            return json.loads(clean_json_response(response.text))
+            return json.loads(response.text)
         except json.JSONDecodeError:
             logger.warning("Qualification suggestions returned invalid JSON")
             return None

@@ -24,7 +24,7 @@ import gridfs
 from bson import ObjectId
 
 # utils (assumed present in your project)
-from app.utils.cv_utils import extract_text_from_pdf, allowed_file
+from app.utils.cv_utils import extract_text_from_pdf, allowed_file, extract_text_from_any
 from app.utils.ai_utils import (
     extract_personal_info, detect_missing_sections, improve_sentence,
     suggest_achievements, check_ats_compatibility, suggest_keywords_for_role,
@@ -49,7 +49,7 @@ chatbot = Blueprint("chatbot", __name__)
 
 # --------- Constants ----------
 CHAT_HISTORY_LIMIT = 10    # store last 10 messages
-CONTEXT_CHARS = 2000       # how many chars of CV to include in prompts as fallback
+CONTEXT_CHARS = 50000      # Increased context limit for Gemini 1.5 Flash
 EMBEDDING_MODEL = "models/embedding-001"  # change if needed
 def _unique_model_candidates():
     seen = set()
@@ -646,11 +646,9 @@ def upload_cv():
         return jsonify({"success": False, "message": "Invalid file type"}), 400
 
     try:
-        # Extract CV text (PDF or text)
-        if file.filename.lower().endswith('.pdf'):
-            cv_text = extract_text_from_pdf(file)
-        else:
-            cv_text = file.read().decode('utf-8', errors='ignore')
+        # Extract CV text (PDF, DOCX, or text)
+        file_bytes = file.read()
+        cv_text = extract_text_from_any(file_bytes, file.filename)
 
         # store cv_text in GridFS (NOT session) to avoid session cookie limits
         fs = gridfs_instance()

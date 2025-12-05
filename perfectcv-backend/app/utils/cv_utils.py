@@ -14,7 +14,7 @@ from docx import Document
 import phonenumbers
 from fpdf import FPDF
 import google.generativeai as genai
-from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence
+from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence, get_generative_model
 from app.utils.nlp_utils import load_spacy_model, extract_entities, classify_header_nlp
 
 logger = logging.getLogger(__name__)
@@ -1906,9 +1906,8 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
 
     If AI is not available or JSON parsing fails, raise an exception so callers can fallback.
     """
-    configured = setup_gemini()
-    model_name = get_valid_model() if configured else None
-    if not model_name:
+    model = get_generative_model()
+    if not model:
         raise RuntimeError("AI not configured")
 
     prompt = f"""
@@ -2024,20 +2023,20 @@ Return a JSON object with the following structure:
 
 Input CV:
 {cv_text}
-
-Return ONLY the JSON object and ensure it is parseable.
 """
 
-    model = genai.GenerativeModel(model_name)
-    response = model.generate_content([prompt])
-    content = response.text.strip() if hasattr(response, "text") and response.text else ""
-    # attempt to find JSON in the response
+    response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
     try:
-        # naive find first '{' and last '}' to extract JSON substring
+        return json.loads(response.text)
+    except Exception as e:
+        logger.error("Failed to parse Gemini JSON response: %s", e)
+        # Fallback to manual extraction if JSON mode failed (unlikely but safe)
+        content = response.text
         start = content.find('{')
         end = content.rfind('}')
         if start != -1 and end != -1 and end > start:
-            json_str = content[start:end+1]
+            return json.loads(content[start:end+1])
+        raise
             data = json.loads(json_str)
             return data
     except Exception:
