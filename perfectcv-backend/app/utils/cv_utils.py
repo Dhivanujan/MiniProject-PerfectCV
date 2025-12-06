@@ -2037,12 +2037,6 @@ Input CV:
         if start != -1 and end != -1 and end > start:
             return json.loads(content[start:end+1])
         raise
-            data = json.loads(json_str)
-            return data
-    except Exception:
-        logger.exception("Failed to parse AI response as JSON")
-    # if parsing failed, raise so caller falls back
-    raise RuntimeError("AI returned unparsable content")
 
 
 def optimize_cv(cv_text, job_domain=None, use_ai=True):
