@@ -75,7 +75,7 @@ function Footer() {
 
       {/* Bottom */}
       <div className="text-center py-4 text-xs md:text-sm text-gray-500 dark:text-gray-400">
-        © 2024 <a href="/" className="text-indigo-600 dark:text-indigo-400 font-medium">PerfectCV</a>. All rights reserved.
+        © 2025 <a href="/" className="text-indigo-600 dark:text-indigo-400 font-medium">PerfectCV</a>. All rights reserved.
       </div>
     </footer>
   );
