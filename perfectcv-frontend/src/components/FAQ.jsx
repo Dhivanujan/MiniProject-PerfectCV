@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 const faqs = [
   { q: "Is PerfectCV free to use?", a: "Yes! You can create and download basic resumes for free. Premium features are optional." },
   { q: "Can I edit my CV after generating it?", a: "Absolutely. You can modify, re-upload, and improve your resume anytime." },
-  { q: "Is my data safe?", a: "Your data is securely stored and never shared with third parties." },
+  { q: "Is my privacy protected?", a: "Your data is securely stored and never shared with third parties." },
+  { q: "How long does it take to optimize my CV?", a: "Usually just a few minutes! Our AI helps you to process your resume instantly and provides you with an optimized version ready to download." },
 ];
 
 export default function FAQ() {
