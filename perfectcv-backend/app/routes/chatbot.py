@@ -28,7 +28,7 @@ from app.utils.cv_utils import extract_text_from_pdf, allowed_file, extract_text
 from app.utils.ai_utils import (
     extract_personal_info, detect_missing_sections, improve_sentence,
     suggest_achievements, check_ats_compatibility, suggest_keywords_for_role,
-    generate_improved_cv, analyze_cv_comprehensively, get_generative_model,
+    generate_improved_cv, analyze_cv, get_generative_model,
     suggest_courses, suggest_qualifications,
     DEFAULT_GENERATION_MODELS
 )
@@ -154,6 +154,28 @@ def fetch_cv_text_from_gridfs() -> Optional[str]:
     except Exception:
         current_app.logger.exception("Failed to fetch CV from GridFS")
         return None
+
+def get_cached_analysis_data() -> Optional[Dict]:
+    """Get cached analysis from GridFS if available."""
+    analysis_file_id = session.get('cv_analysis_file_id')
+    if analysis_file_id:
+        try:
+            fs = gridfs_instance()
+            f = fs.get(ObjectId(analysis_file_id))
+            raw = f.read()
+            return json.loads(raw.decode('utf-8'))
+        except Exception:
+            current_app.logger.warning("Failed to load cached analysis")
+    return None
+
+def cache_analysis_data(analysis: Dict):
+    """Cache analysis data to GridFS."""
+    try:
+        fs = gridfs_instance()
+        fid = fs.put(json.dumps(analysis).encode('utf-8'), filename=f"analysis_{current_user.get_id()}.json", content_type='application/json', user_id=str(current_user.get_id()))
+        session['cv_analysis_file_id'] = str(fid)
+    except Exception:
+        current_app.logger.exception("Failed to cache analysis")
 
 def _extract_genai_text(resp: Any) -> str:
     """Safely extract text from Google Generative AI responses (robust to shape changes)."""
@@ -369,10 +391,15 @@ def handle_improvement(cv_text: str, question: str) -> Dict:
         else:
             if is_advice_request:
                 # Provide overall improvement advice based on defects
-                analysis = analyze_cv_comprehensively(cv_text)
-                if analysis:
-                    weaknesses = analysis.get('weaknesses', [])
-                    suggestions = analysis.get('improvement_suggestions', [])
+                analysis = get_cached_analysis_data()
+                if not analysis:
+                    analysis = analyze_cv(cv_text)
+                    if analysis:
+                        cache_analysis_data(analysis)
+                
+                if analysis and 'analysis' in analysis:
+                    weaknesses = analysis['analysis'].get('weaknesses', [])
+                    suggestions = analysis['analysis'].get('improvement_suggestions', [])
                     return {
                         "answer": (
                             f"**CV Improvement Plan**\n\n"
@@ -659,6 +686,7 @@ def upload_cv():
         session['cv_file_id'] = str(file_id)
         # clear previous generated content ids if any
         session.pop('generated_cv_file_id', None)
+        session.pop('cv_analysis_file_id', None)
         session['chat_history'] = []
         session['conversation_context'] = {}
 
@@ -774,33 +802,21 @@ def get_analysis():
     """Return a stored or freshly computed comprehensive analysis (store analysis in GridFS if large)."""
     try:
         # If we previously stored analysis in session as file id, try to fetch it
-        analysis_file_id = session.get('cv_analysis_file_id')
-        if analysis_file_id:
-            try:
-                fs = gridfs_instance()
-                f = fs.get(ObjectId(analysis_file_id))
-                raw = f.read()
-                analysis = json.loads(raw.decode('utf-8'))
-                return jsonify({"success": True, "analysis": analysis})
-            except Exception:
-                current_app.logger.exception("Failed to load analysis from GridFS - will re-run analysis")
+        analysis = get_cached_analysis_data()
+        if analysis:
+            return jsonify({"success": True, "analysis": analysis})
 
         # Otherwise run analysis now (and store result in GridFS)
         cv_text = fetch_cv_text_from_gridfs()
         if not cv_text:
             return jsonify({"success": False, "message": "Could not read CV text."}), 500
 
-        analysis = analyze_cv_comprehensively(cv_text)
+        analysis = analyze_cv(cv_text)
         if not analysis:
             return jsonify({"success": False, "message": "Analysis returned empty result."}), 500
 
         # store analysis in GridFS to avoid session bloat
-        try:
-            fs = gridfs_instance()
-            fid = fs.put(json.dumps(analysis).encode('utf-8'), filename=f"analysis_{current_user.get_id()}.json", content_type='application/json', user_id=str(current_user.get_id()))
-            session['cv_analysis_file_id'] = str(fid)
-        except Exception:
-            current_app.logger.exception("Failed to store analysis in GridFS")
+        cache_analysis_data(analysis)
 
         return jsonify({"success": True, "analysis": analysis})
     except Exception:

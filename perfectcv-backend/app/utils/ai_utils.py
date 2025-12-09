@@ -1,8 +1,11 @@
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from config.config import Config
 import logging
 import json
-from typing import Iterable, List, Optional
+import time
+import random
+from typing import Iterable, List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +16,42 @@ DEFAULT_GENERATION_MODELS: List[str] = [
     "models/gemini-1.5-pro",
     "models/gemini-pro",
 ]
+
+
+def generate_with_retry(model, prompt, **kwargs):
+    """Generate content with exponential backoff retry logic."""
+    retries = 3
+    backoff = 1
+    last_exception = None
+    
+    for i in range(retries + 1):
+        try:
+            return model.generate_content(prompt, **kwargs)
+        except Exception as e:
+            last_exception = e
+            # Check if it's a retryable error (network, rate limit, server error)
+            is_retryable = isinstance(e, (google_exceptions.ServiceUnavailable, 
+                                        google_exceptions.ResourceExhausted,
+                                        google_exceptions.Aborted,
+                                        google_exceptions.DeadlineExceeded,
+                                        google_exceptions.InternalServerError))
+            
+            if not is_retryable and i < retries:
+                # If it's not obviously retryable, we might still want to retry for generic connection issues
+                # but maybe log it differently. For now, let's retry most exceptions as API can be flaky.
+                pass
+                
+            if i == retries:
+                logger.error(f"AI generation failed after {retries} retries: {e}")
+                break
+            
+            sleep_time = backoff * (2 ** i) + random.uniform(0, 1)
+            logger.warning(f"AI generation failed (attempt {i+1}/{retries+1}), retrying in {sleep_time:.2f}s... Error: {e}")
+            time.sleep(sleep_time)
+            
+    if last_exception:
+        raise last_exception
+    return None
 
 
 def setup_gemini():
@@ -469,39 +508,56 @@ def generate_improved_cv(cv_text, focus_areas=None):
         return None
 
 
-def analyze_cv_comprehensively(cv_text):
-    """Perform comprehensive CV analysis including all aspects."""
+def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
+    """
+    Perform comprehensive CV analysis in a single optimized call.
+    Returns structured JSON containing parsed data and analysis.
+    """
     try:
         model = get_generative_model()
         if not model:
-            logger.warning("No Gemini model available for analyze_cv_comprehensively")
+            logger.warning("No Gemini model available for analyze_cv")
             return None
-        prompt = f"""Perform a comprehensive analysis of this CV. Return as JSON with these keys:
-        - personal_info: object with extracted personal details
-        - sections_present: array of sections found in CV
-        - missing_sections: array of important missing sections
-        - strengths: array of CV strengths
-        - weaknesses: array of CV weaknesses
-        - improvement_suggestions: array of specific improvement suggestions
-        - ats_score: number 0-100
-        - overall_rating: number 0-10
-        - summary: brief overall assessment
-        
-        Return ONLY valid JSON, no additional text.
+            
+        prompt = f"""
+        You are an expert CV analyzer and parser. Your task is to extract structured data AND analyze the CV quality.
         
         CV TEXT:
         {cv_text}
+        
+        Return a SINGLE JSON object with the following structure:
+        {{
+            "language": "Detected language (e.g., English, French)",
+            "parsed_data": {{
+                "personal_info": {{ "name": "", "email": "", "phone": "", "linkedin": "", "location": "" }},
+                "summary": "Professional summary text found in CV",
+                "education": [ {{ "degree": "", "institution": "", "year": "", "details": "" }} ],
+                "experience": [ {{ "role": "", "company": "", "duration": "", "details": [] }} ],
+                "skills": {{ "technical": [], "soft": [], "tools": [], "languages": [] }},
+                "projects": [ {{ "name": "", "description": "", "technologies": [] }} ],
+                "certifications": [],
+                "achievements": []
+            }},
+            "analysis": {{
+                "ats_score": 0-100,
+                "strengths": [],
+                "weaknesses": [],
+                "missing_sections": [],
+                "improvement_suggestions": [],
+                "summary": "Brief assessment of the CV"
+            }}
+        }}
         """
         
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Comprehensive analysis returned invalid JSON")
+        response = generate_with_retry(model, prompt, generation_config={"response_mime_type": "application/json"})
+        if not response:
             return None
             
+        text = clean_json_response(response.text)
+        return json.loads(text)
+            
     except Exception as e:
-        logger.exception("Error in comprehensive CV analysis: %s", e)
+        logger.exception("Error in analyze_cv: %s", e)
         return None
 
 

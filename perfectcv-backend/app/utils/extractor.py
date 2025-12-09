@@ -1,79 +1,83 @@
 import io
 import logging
-try:
-    import pdfplumber
-except Exception:
-    pdfplumber = None
-
-try:
-    import fitz  # PyMuPDF
-except Exception:
-    fitz = None
-
-from pdfminer.high_level import extract_text as pdfminer_extract_text
+import time
 
 logger = logging.getLogger(__name__)
 
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+    logger.warning("PyMuPDF (fitz) not installed. Install it for faster PDF extraction.")
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+from pdfminer.high_level import extract_text as pdfminer_extract_text
 
 def _pdfminer_from_stream(file_stream):
     try:
-        # pdfminer accepts file-like objects
         file_stream.seek(0)
         return pdfminer_extract_text(file_stream)
     except Exception as e:
         logger.exception("pdfminer extraction failed: %s", e)
         return ""
 
-
 def extract_text_from_pdf(file_stream) -> str:
-    """Try multiple backends to extract text from PDF. Returns normalized plain text.
-
-    Order:
-    1. pdfplumber (if installed)
-    2. PyMuPDF (fitz)
-    3. pdfminer.six fallback
     """
-    try:
-        # Ensure we have a fresh stream start
-        file_stream.seek(0)
-    except Exception:
-        try:
-            file_stream = io.BytesIO(file_stream.read())
-            file_stream.seek(0)
-        except Exception:
-            pass
-
-    # 1) pdfplumber - often gives best layout-preserving text
-    if pdfplumber:
-        try:
-            file_stream.seek(0)
-            with pdfplumber.open(file_stream) as pdf:
-                texts = []
-                for page in pdf.pages:
-                    try:
-                        t = page.extract_text() or ""
-                    except Exception:
-                        t = page.extract_text(x_tolerance=1) or ""
-                    texts.append(t)
-                return "\n\n".join(p for p in texts if p)
-        except Exception as e:
-            logger.debug("pdfplumber failed: %s", e)
-
-    # 2) PyMuPDF (fitz)
-    if fitz:
-        try:
-            file_stream.seek(0)
-            doc = fitz.open(stream=file_stream.read(), filetype="pdf")
-            texts = []
-            for page in doc:
-                texts.append(page.get_text("text"))
-            return "\n\n".join(p for p in texts if p)
-        except Exception as e:
-            logger.debug("PyMuPDF extraction failed: %s", e)
-
-    # 3) pdfminer fallback
+    Extract text from PDF using the fastest available method.
+    Priority: PyMuPDF (fitz) -> pdfplumber -> pdfminer
+    """
+    start_time = time.time()
+    
+    # Ensure stream is at start
     try:
         file_stream.seek(0)
     except Exception:
         pass
+        
+    # Read stream content once if needed for libraries that require bytes
+    file_bytes = None
+    try:
+        file_bytes = file_stream.read()
+        file_stream.seek(0)
+    except Exception:
+        pass
+
+    # 1. PyMuPDF (fitz) - Fastest
+    if fitz and file_bytes:
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            text_parts = []
+            for page in doc:
+                # Get text blocks to avoid headers/footers if needed, but simple text is fastest
+                text_parts.append(page.get_text())
+            
+            full_text = "\n".join(text_parts)
+            logger.info(f"Extracted PDF with PyMuPDF in {time.time() - start_time:.2f}s")
+            return full_text
+        except Exception as e:
+            logger.warning(f"PyMuPDF extraction failed: {e}")
+
+    # 2. pdfplumber - Good accuracy, slower
+    if pdfplumber:
+        try:
+            file_stream.seek(0)
+            with pdfplumber.open(file_stream) as pdf:
+                text_parts = []
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            
+            full_text = "\n".join(text_parts)
+            logger.info(f"Extracted PDF with pdfplumber in {time.time() - start_time:.2f}s")
+            return full_text
+        except Exception as e:
+            logger.warning(f"pdfplumber extraction failed: {e}")
+
+    # 3. pdfminer - Fallback, slowest
+    logger.info("Falling back to pdfminer")
     return _pdfminer_from_stream(file_stream)
