@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 const testimonials = [
   {
-    name: "Ayesha Fernando",
+    name: "Supuni Perera",
     role: "Software Engineer",
     text: "PerfectCV helped me create a professional resume that landed me interviews at top companies!",
   },
