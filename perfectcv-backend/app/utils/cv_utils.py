@@ -1922,83 +1922,67 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
     1. DO NOT generate broken sentences, symbols (like ? or ·), or incomplete lines.
     2. DO NOT repeat any content in any section.
     3. DO NOT merge unrelated categories. 
-    4. DO NOT add fields like “Not Provided”.
-    5. DO NOT hallucinate dates, skills, job titles, or achievements.
+    4. DO NOT add fields like “Not Provided”. If info is missing, omit the line.
+    5. DO NOT hallucinate dates, job titles, or fake companies.
     6. Fix all spelling, grammar, punctuation, and spacing.
     7. Ensure clean, professional formatting with bullet points and consistent spacing.
-    8. Preserve ONLY real info from the uploaded CV. Never invent extra details.
+    8. Preserve ONLY real info from the uploaded CV, but IMPROVE the wording.
+    9. DO NOT use tables, text boxes, or columns. Use plain text only.
 
     ===============================
-    ### EXTRACTION RULES
+    ### KEYWORD OPTIMIZATION
     ===============================
-    When analyzing an uploaded CV:
-    - Extract each section cleanly: Summary, Skills, Experience, Projects, Education, Certifications, Achievements, Languages, Additional Information.
-    - Remove duplicated content.
-    - Remove unwanted characters (like ?, •, -, random line breaks).
-    - Normalize programming languages vs spoken languages.
-    - Normalize skills into groups: Programming, Tools, Frameworks, Databases, Cloud, Other.
+    - Identify the target job role based on the CV and Target Domain.
+    - Analyze required skills for this role from industry standards.
+    - Inject missing but RELEVANT skills naturally into the Skills or Summary sections.
+    - Ensure the CV is 100% ATS-friendly by using standard keywords.
 
     ===============================
-    ### REWRITING RULES
-    ===============================
-    When generating the optimized CV:
-    - Rewrite in strong, hiring-ready, industry-standard language.
-    - Keep every section clear, clean, and ATS-friendly.
-    - Improve weak summaries into strong 3–4 line professional summaries.
-    - For projects: write a 1-line overview + 2–3 bullet points describing features and impact.
-    - For skills: always list categories in this order:
-      1. Programming Languages
-      2. Frameworks & Libraries
-      3. AI/ML Tools
-      4. Databases
-      5. Cloud & DevOps
-      6. Other Skills
-    - Ensure perfect grammar and formatting throughout.
-
-    ===============================
-    ### OUTPUT FORMAT (STRICT) for "optimized_text"
+    ### OUTPUT FORMAT (STRICT ORDER)
     ===============================
     # Full Name
-    Phone | Email | Location (if provided) | LinkedIn | GitHub
+    Phone | Email | LinkedIn (if provided) | GitHub (if provided) | Location (if provided)
 
     ## PROFESSIONAL SUMMARY
-    (3–4 strong lines summarizing background, tech stack, achievements, and interests)
+    (3–4 strong lines summarizing background, tech stack, achievements, and interests. tailored to the target domain.)
 
     ## SKILLS
+    (List skills as comma-separated values under these categories. Omit category if empty.)
     **Programming Languages:** ...
     **Frameworks & Libraries:** ...
     **AI/ML Tools:** ...
     **Databases:** ...
     **Cloud & DevOps:** ...
-    **Other Skills:** ...
+    **Tools & Platforms:** ...
+    **Soft Skills:** ...
+
+    ## WORK EXPERIENCE
+    (Repeat for each role)
+    ### Role | Company | Dates | Location
+    - (Responsibility) ...
+    - (Achievement with metrics) ...
+    - (Tech stack used) ...
 
     ## PROJECTS
+    (Repeat for each project)
     ### Project Name | Tech Stack
     - 1–2 lines overview
     - 2–3 impact-focused bullet points
 
-    (Repeat for all projects)
-
     ## EDUCATION
     Degree | Institution | Years
-    - Relevant Coursework: ...
+    - Relevant Coursework: ... (if available)
 
     ## CERTIFICATIONS
-    - Certification Name – Provider (Year if available)
-
-    ## ACHIEVEMENTS / ACTIVITIES
-    - Achievement or activity 1
-    - Achievement or activity 2
+    - Certification Name – Provider (Year)
 
     ## LANGUAGES
-    - English
-    - Tamil
-    - Sinhala
-    (Only list spoken languages here)
+    - Language 1
+    - Language 2
 
     ## ADDITIONAL INFORMATION
-    - Hobbies / Interests (if relevant)
-    - Memberships (e.g., IEEE)
+    - Hobbies / Interests
+    - Memberships
 
     ===============================
     ### JSON RESPONSE STRUCTURE
