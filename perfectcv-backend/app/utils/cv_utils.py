@@ -14,7 +14,7 @@ from docx import Document
 import phonenumbers
 from fpdf import FPDF
 import google.generativeai as genai
-from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence, get_generative_model
+from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence, get_generative_model, generate_with_retry
 from app.utils.nlp_utils import load_spacy_model, extract_entities, classify_header_nlp
 
 logger = logging.getLogger(__name__)
@@ -1911,121 +1911,126 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
         raise RuntimeError("AI not configured")
 
     prompt = f"""
-You are an expert CV optimizer. Your goal is to rewrite the provided CV to be highly professional, ATS-friendly, and tailored to the target job domain.
+    Act as a world-class CV parser + CV writer. 
+    You MUST follow these rules STRICTLY when extracting and generating a rewritten optimized CV.
 
-Target Domain: {job_domain or 'General'}
+    Target Domain: {job_domain or 'General'}
 
-STRICT RULES FOR CV EXTRACTION AND CREATION:
+    ===============================
+    ### GLOBAL RULES (APPLY TO EVERYTHING)
+    ===============================
+    1. DO NOT generate broken sentences, symbols (like ? or ·), or incomplete lines.
+    2. DO NOT repeat any content in any section.
+    3. DO NOT merge unrelated categories. 
+    4. DO NOT add fields like “Not Provided”.
+    5. DO NOT hallucinate dates, skills, job titles, or achievements.
+    6. Fix all spelling, grammar, punctuation, and spacing.
+    7. Ensure clean, professional formatting with bullet points and consistent spacing.
+    8. Preserve ONLY real info from the uploaded CV. Never invent extra details.
 
-1. DO NOT:
-- Do NOT generate broken sentences or symbols (like ? or §).
-- Do NOT merge wrong fields together (Skills, Languages, Activities, etc.).
-- Do NOT repeat any content.
-- Do NOT output messy or unstructured text.
-- Do NOT include “Not Provided” anywhere. Leave the section empty or remove it.
-- Do NOT create a PDF-like layout. Output a clean text-based ATS CV only.
-- Do NOT add incorrect data (years, institutions, extra languages, etc.).
-- Do NOT output disorganized paragraphs.
-- Do NOT hallucinate experience or fake companies.
+    ===============================
+    ### EXTRACTION RULES
+    ===============================
+    When analyzing an uploaded CV:
+    - Extract each section cleanly: Summary, Skills, Experience, Projects, Education, Certifications, Achievements, Languages, Additional Information.
+    - Remove duplicated content.
+    - Remove unwanted characters (like ?, •, -, random line breaks).
+    - Normalize programming languages vs spoken languages.
+    - Normalize skills into groups: Programming, Tools, Frameworks, Databases, Cloud, Other.
 
-2. YOU MUST:
-- Extract all information from the user-uploaded CV accurately.
-- Clean and correct all extracted values.
-- Fix phone format, spacing, punctuation, and grammar.
-- Normalize skills and group them properly (no mixing tools, hobbies, languages).
-- Organize projects in proper bullet points.
-- Remove duplicates and inconsistencies.
-- Add missing but **relevant** resume sections only when appropriate.
-- Output a fully structured, job-ready ATS-friendly CV.
+    ===============================
+    ### REWRITING RULES
+    ===============================
+    When generating the optimized CV:
+    - Rewrite in strong, hiring-ready, industry-standard language.
+    - Keep every section clear, clean, and ATS-friendly.
+    - Improve weak summaries into strong 3–4 line professional summaries.
+    - For projects: write a 1-line overview + 2–3 bullet points describing features and impact.
+    - For skills: always list categories in this order:
+      1. Programming Languages
+      2. Frameworks & Libraries
+      3. AI/ML Tools
+      4. Databases
+      5. Cloud & DevOps
+      6. Other Skills
+    - Ensure perfect grammar and formatting throughout.
 
-3. ADDITIONAL REQUIREMENT (IMPORTANT):
-**You must add additional information that strengthens the user’s CV:**
-- Add professional strengths based on the user's skills and projects.
-- Add a more impactful summary based on their profile.
-- Expand bullet points with achievements, metrics, and action verbs.
-- Improve weak or incomplete sections using industry standards.
-- Add soft skills, technical strengths, and domain-specific abilities.
-- Add optional sections like “Technical Strengths”, “Tools & Platforms”, “Key Achievements”, or “Professional Competencies” ONLY if they make the CV stronger.
-- Add clarity and depth to project descriptions and responsibilities.
-- Make the candidate look more professional WITHOUT inventing fake jobs.
+    ===============================
+    ### OUTPUT FORMAT (STRICT) for "optimized_text"
+    ===============================
+    # Full Name
+    Phone | Email | Location (if provided) | LinkedIn | GitHub
 
-4. STRICT OUTPUT FORMAT (NO EXCEPTIONS) for the "optimized_text" field:
+    ## PROFESSIONAL SUMMARY
+    (3–4 strong lines summarizing background, tech stack, achievements, and interests)
 
-**NAME**  
-**Job Title (Optional)**  
-Phone:  
-Email:  
-LinkedIn:  
-GitHub:  
-Portfolio:  
+    ## SKILLS
+    **Programming Languages:** ...
+    **Frameworks & Libraries:** ...
+    **AI/ML Tools:** ...
+    **Databases:** ...
+    **Cloud & DevOps:** ...
+    **Other Skills:** ...
 
----
+    ## PROJECTS
+    ### Project Name | Tech Stack
+    - 1–2 lines overview
+    - 2–3 impact-focused bullet points
 
-## PROFESSIONAL SUMMARY
-A strong 3–4 line tailored summary.
+    (Repeat for all projects)
 
-## TECHNICAL STRENGTHS (Added to improve CV)
-- Key strengths relevant to software engineering, AI/ML, or the user’s experience.
+    ## EDUCATION
+    Degree | Institution | Years
+    - Relevant Coursework: ...
 
-## SKILLS
-**Programming Languages:**  
-**Tools & Technologies:**  
-**Frameworks:**  
-**AI/ML:**  
-**Soft Skills:**  
+    ## CERTIFICATIONS
+    - Certification Name – Provider (Year if available)
 
-## EXPERIENCE
-**Role | Company | Dates | Location**  
-- Bullet point achievements  
-- Measurable, action-driven contributions  
+    ## ACHIEVEMENTS / ACTIVITIES
+    - Achievement or activity 1
+    - Achievement or activity 2
 
-## PROJECTS
-**Project Name | Tools Used**  
-- Bullet point achievements  
-- Clear, structured description  
+    ## LANGUAGES
+    - English
+    - Tamil
+    - Sinhala
+    (Only list spoken languages here)
 
-## EDUCATION
-**Degree | University | Years**  
-- Additional notable coursework or achievements  
+    ## ADDITIONAL INFORMATION
+    - Hobbies / Interests (if relevant)
+    - Memberships (e.g., IEEE)
 
-## CERTIFICATIONS
-- Clean, correctly formatted list
+    ===============================
+    ### JSON RESPONSE STRUCTURE
+    ===============================
+    Return a SINGLE JSON object with the following structure:
+    {{
+      "optimized_text": "The full text of the optimized CV following the STRICT OUTPUT FORMAT above.",
+      "sections": {{
+        "summary": "The professional summary text",
+        "skills": ["List of skills"],
+        "experience": ["List of experience entries"],
+        "education": ["List of education entries"],
+        "projects": ["List of projects"]
+      }},
+      "suggestions": [
+        {{ "category": "Content", "message": "..." }},
+        {{ "category": "Formatting", "message": "..." }},
+        {{ "category": "Keywords", "message": "..." }}
+      ],
+      "ats_score": 85,
+      "recommended_keywords": ["...", "..."],
+      "found_keywords": ["...", "..."]
+    }}
 
-## ACHIEVEMENTS
-- List of key recognitions
+    Input CV:
+    {cv_text}
+    """
 
-## VOLUNTEER EXPERIENCE (Optional)
+    response = generate_with_retry(model, prompt, generation_config={"response_mime_type": "application/json"})
+    if not response:
+        raise RuntimeError("AI generation failed after retries")
 
-## LANGUAGES
-- List clearly
-
----
-
-Return a JSON object with the following structure:
-{{
-  "optimized_text": "The full text of the optimized CV following the STRICT OUTPUT FORMAT above.",
-  "sections": {{
-    "summary": "The professional summary text",
-    "skills": ["List of skills"],
-    "experience": ["List of experience entries"],
-    "education": ["List of education entries"],
-    "projects": ["List of projects"]
-  }},
-  "suggestions": [
-    {{ "category": "Content", "message": "..." }},
-    {{ "category": "Formatting", "message": "..." }},
-    {{ "category": "Keywords", "message": "..." }}
-  ],
-  "ats_score": 85,
-  "recommended_keywords": ["...", "..."],
-  "found_keywords": ["...", "..."]
-}}
-
-Input CV:
-{cv_text}
-"""
-
-    response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
     try:
         return json.loads(response.text)
     except Exception as e:

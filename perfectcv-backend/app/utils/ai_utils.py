@@ -476,31 +476,121 @@ def suggest_keywords_for_role(role, cv_text):
 
 
 def generate_improved_cv(cv_text, focus_areas=None):
-    """Generate an improved version of the entire CV."""
+    """Generate an improved version of the entire CV following strict professional guidelines."""
     try:
         model = get_generative_model()
         if not model:
             logger.warning("No Gemini model available for generate_improved_cv")
             return None
-        focus = ", ".join(focus_areas) if focus_areas else "overall improvement"
         
-        prompt = f"""Rewrite this CV to be more professional and ATS-friendly.
-        Focus on: {focus}
-        
-        Improvements should include:
-        - Strong action verbs
-        - Quantifiable achievements
-        - Clear section headers
-        - Proper formatting
-        - Relevant keywords
-        
-        Return the improved CV text in a professional format with clear sections.
+        prompt = f"""
+        Act as a world-class CV parser + CV writer. 
+        You MUST follow these rules STRICTLY when extracting and generating a rewritten optimized CV.
+
+        ===============================
+        ### GLOBAL RULES (APPLY TO EVERYTHING)
+        ===============================
+        1. DO NOT generate broken sentences, symbols (like ? or ·), or incomplete lines.
+        2. DO NOT repeat any content in any section.
+        3. DO NOT merge unrelated categories. 
+        4. DO NOT add fields like “Not Provided”.
+        5. DO NOT hallucinate dates, skills, job titles, or achievements.
+        6. Fix all spelling, grammar, punctuation, and spacing.
+        7. Ensure clean, professional formatting with bullet points and consistent spacing.
+        8. Preserve ONLY real info from the uploaded CV. Never invent extra details.
+
+        ===============================
+        ### EXTRACTION RULES
+        ===============================
+        When analyzing the uploaded CV:
+        - Extract each section cleanly: Summary, Skills, Experience, Projects, Education, Certifications, Achievements, Languages, Additional Information.
+        - Remove duplicated content.
+        - Remove unwanted characters (like ?, •, -, random line breaks).
+        - Normalize programming languages vs spoken languages.
+        - Normalize skills into groups: Programming, Tools, Frameworks, Databases, Cloud, Other.
+
+        ===============================
+        ### REWRITING RULES
+        ===============================
+        When generating the optimized CV:
+        - Rewrite in strong, hiring-ready, industry-standard language.
+        - Keep every section clear, clean, and ATS-friendly.
+        - Improve weak summaries into strong 3–4 line professional summaries.
+        - For projects: write a 1-line overview + 2–3 bullet points describing features and impact.
+        - For skills: always list categories in this order:
+          1. Programming Languages
+          2. Frameworks & Libraries
+          3. AI/ML Tools
+          4. Databases
+          5. Cloud & DevOps
+          6. Other Skills
+        - Ensure perfect grammar and formatting throughout.
+
+        ===============================
+        ### OUTPUT FORMAT (STRICT)
+        ===============================
+        Return the optimized CV in this EXACT structure:
+
+        # Full Name
+        Phone | Email | Location (if provided) | LinkedIn | GitHub
+
+        ## PROFESSIONAL SUMMARY
+        (3–4 strong lines summarizing background, tech stack, achievements, and interests)
+
+        ## SKILLS
+        **Programming Languages:** ...
+        **Frameworks & Libraries:** ...
+        **AI/ML Tools:** ...
+        **Databases:** ...
+        **Cloud & DevOps:** ...
+        **Other Skills:** ...
+
+        ## PROJECTS
+        ### Project Name | Tech Stack
+        - 1–2 lines overview
+        - 2–3 impact-focused bullet points
+
+        (Repeat for all projects)
+
+        ## EDUCATION
+        Degree | Institution | Years
+        - Relevant Coursework: ...
+
+        ## CERTIFICATIONS
+        - Certification Name – Provider (Year if available)
+
+        ## ACHIEVEMENTS / ACTIVITIES
+        - Achievement or activity 1
+        - Achievement or activity 2
+
+        ## LANGUAGES
+        - English
+        - Tamil
+        - Sinhala
+        (Only list spoken languages here)
+
+        ## ADDITIONAL INFORMATION
+        - Hobbies / Interests (if relevant)
+        - Memberships (e.g., IEEE)
+
+        ===============================
+        ### VALIDATION BEFORE OUTPUT
+        ===============================
+        Before sending the final response:
+        - Ensure no duplicates.
+        - Ensure no question marks (?) in wrong places.
+        - Ensure no broken formatting or one-word lines.
+        - Ensure all sections are clean and meaningful.
+        - Ensure every heading is present even if empty fields are removed.
         
         ORIGINAL CV:
         {cv_text}
         """
         
-        response = model.generate_content(prompt)
+        response = generate_with_retry(model, prompt)
+        if not response:
+            return None
+            
         return response.text.strip()
             
     except Exception as e:
@@ -520,7 +610,16 @@ def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
             return None
             
         prompt = f"""
-        You are an expert CV analyzer and parser. Your task is to extract structured data AND analyze the CV quality.
+        Act as a world-class CV parser. Your task is to extract structured data AND analyze the CV quality with extreme precision.
+        
+        ===============================
+        ### EXTRACTION RULES
+        ===============================
+        - Extract each section cleanly.
+        - Remove duplicated content and unwanted characters.
+        - Normalize programming languages vs spoken languages.
+        - Normalize skills into groups: Programming, Tools, Frameworks, Databases, Cloud, Other.
+        - Do NOT hallucinate information. Only use what is in the CV.
         
         CV TEXT:
         {cv_text}
@@ -529,14 +628,22 @@ def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
         {{
             "language": "Detected language (e.g., English, French)",
             "parsed_data": {{
-                "personal_info": {{ "name": "", "email": "", "phone": "", "linkedin": "", "location": "" }},
+                "personal_info": {{ "name": "", "email": "", "phone": "", "linkedin": "", "location": "", "github": "", "website": "" }},
                 "summary": "Professional summary text found in CV",
                 "education": [ {{ "degree": "", "institution": "", "year": "", "details": "" }} ],
                 "experience": [ {{ "role": "", "company": "", "duration": "", "details": [] }} ],
-                "skills": {{ "technical": [], "soft": [], "tools": [], "languages": [] }},
+                "skills": {{ 
+                    "programming_languages": [], 
+                    "frameworks_libraries": [], 
+                    "ai_ml_tools": [], 
+                    "databases": [], 
+                    "cloud_devops": [], 
+                    "other_skills": [] 
+                }},
                 "projects": [ {{ "name": "", "description": "", "technologies": [] }} ],
-                "certifications": [],
-                "achievements": []
+                "certifications": [ {{ "name": "", "provider": "", "year": "" }} ],
+                "achievements": [],
+                "languages": []
             }},
             "analysis": {{
                 "ats_score": 0-100,
