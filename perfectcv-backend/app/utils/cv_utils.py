@@ -1912,77 +1912,53 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
 
     prompt = f"""
     Act as a world-class CV parser + CV writer. 
-    You MUST follow these rules STRICTLY when extracting and generating a rewritten optimized CV.
+    The CV generated above is not suitable for job applications. I want you to fully fix, clean, and professionally reformat it into a standard ATS-friendly CV. Follow these strict rules:
 
     Target Domain: {job_domain or 'General'}
 
-    ===============================
-    ### GLOBAL RULES (APPLY TO EVERYTHING)
-    ===============================
-    1. DO NOT generate broken sentences, symbols (like ? or ·), or incomplete lines.
-    2. DO NOT repeat any content in any section.
-    3. DO NOT merge unrelated categories. 
-    4. DO NOT add fields like “Not Provided”. If info is missing, omit the line.
-    5. DO NOT hallucinate dates, job titles, or fake companies.
-    6. Fix all spelling, grammar, punctuation, and spacing.
-    7. Ensure clean, professional formatting with bullet points and consistent spacing.
-    8. Preserve ONLY real info from the uploaded CV, but IMPROVE the wording.
-    9. DO NOT use tables, text boxes, or columns. Use plain text only.
+    1. Clean & Correct Content
+    - Remove all duplicated sections (Skills, Languages, Hobbies repeated multiple times).
+    - Remove symbols like ?, broken formatting, unclear spacing, or repeated words.
+    - Correct grammar, structure, and clarity in every section.
+    - Ensure all technical skills are grouped properly (Languages, Frameworks, Tools, Databases, Cloud, ML, etc.).
+    - Add missing punctuation and remove incomplete sentences.
 
-    ===============================
-    ### KEYWORD OPTIMIZATION
-    ===============================
-    - Identify the target job role based on the CV and Target Domain.
-    - Analyze required skills for this role from industry standards.
-    - Inject missing but RELEVANT skills naturally into the Skills or Summary sections.
-    - Ensure the CV is 100% ATS-friendly by using standard keywords.
+    2. Structure the CV Properly
+    Create the CV in this exact order:
+    - Full Name
+    - Contact Details (phone, email, GitHub/LinkedIn if provided)
+    - Professional Summary — 3–4 lines only
+    - Skills — formatted in clean categories
+    - Projects — each with:
+      - Name
+      - Tech Stack
+      - Description (2–3 bullet points)
+      - IMPACT (What did you solve/improve?)
+    - Education
+    - Certifications
+    - Achievements
+    - Languages
+    - Additional Information (Optional)
 
-    ===============================
-    ### OUTPUT FORMAT (STRICT ORDER)
-    ===============================
-    # Full Name
-    Phone | Email | LinkedIn (if provided) | GitHub (if provided) | Location (if provided)
+    3. Make It ATS-Friendly
+    - Use clean bullet points.
+    - Avoid tables, emojis, images, or fancy symbols.
+    - Maintain consistent formatting, spacing, and capitalization.
+    - Ensure each section header is clear and standardized.
 
-    ## PROFESSIONAL SUMMARY
-    (3–4 strong lines summarizing background, tech stack, achievements, and interests. tailored to the target domain.)
+    4. Improve the Overall Quality
+    - Rewrite the Professional Summary to sound strong, clear, and industry-ready.
+    - Improve project descriptions to highlight:
+      - Impact
+      - Metrics (if possible)
+      - Technologies
+      - Problem solved
+    - Convert the entire CV into a crisp, polished, employer-ready resume.
 
-    ## SKILLS
-    (List skills as comma-separated values under these categories. Omit category if empty.)
-    **Programming Languages:** ...
-    **Frameworks & Libraries:** ...
-    **AI/ML Tools:** ...
-    **Databases:** ...
-    **Cloud & DevOps:** ...
-    **Tools & Platforms:** ...
-    **Soft Skills:** ...
-
-    ## WORK EXPERIENCE
-    (Repeat for each role)
-    ### Role | Company | Dates | Location
-    - (Responsibility) ...
-    - (Achievement with metrics) ...
-    - (Tech stack used) ...
-
-    ## PROJECTS
-    (Repeat for each project)
-    ### Project Name | Tech Stack
-    - 1–2 lines overview
-    - 2–3 impact-focused bullet points
-
-    ## EDUCATION
-    Degree | Institution | Years
-    - Relevant Coursework: ... (if available)
-
-    ## CERTIFICATIONS
-    - Certification Name – Provider (Year)
-
-    ## LANGUAGES
-    - Language 1
-    - Language 2
-
-    ## ADDITIONAL INFORMATION
-    - Hobbies / Interests
-    - Memberships
+    5. Output Requirements
+    - Provide the final CV in clean formatted text (no markdown unless asked).
+    - Ensure it is ready to copy-paste into a resume template.
+    - Make sure the final CV is 100% professional, error-free, and job-ready.
 
     ===============================
     ### JSON RESPONSE STRUCTURE
