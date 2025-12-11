@@ -248,11 +248,12 @@ def update_chat_history(user_msg: str, bot_msg: str):
 def safe_generate_with_groq(prompt: str) -> Optional[str]:
     """Call Groq API safely and return text. Returns None if unavailable or fails."""
     if not GROQ_AVAILABLE:
+        logger.debug("Groq library not available")
         return None
     
     groq_api_key = os.getenv("GROQ_API_KEY")
     if not groq_api_key:
-        current_app.logger.debug("GROQ_API_KEY not set in environment")
+        logger.debug("GROQ_API_KEY not set in environment")
         return None
     
     try:
@@ -264,27 +265,32 @@ def safe_generate_with_groq(prompt: str) -> Optional[str]:
                     "content": prompt,
                 }
             ],
-            model="llama-3.1-70b-versatile",  # Fast, high-quality model
+            model="llama-3.3-70b-versatile",  # Updated to current supported model
             temperature=0.7,
             max_tokens=2048,
         )
-        return chat_completion.choices[0].message.content.strip()
+        response_text = chat_completion.choices[0].message.content.strip()
+        logger.info("Groq API call successful")
+        return response_text
     except Exception as e:
-        current_app.logger.warning(f"Groq API call failed: {e}")
+        logger.error(f"Groq API call failed: {type(e).__name__}: {str(e)}")
         return None
 
 
 def safe_generate_with_gemini(prompt: str) -> str:
     """Call Gemini safely and return text; raises on missing API key."""
     # Try Groq first if available
+    logger.info("Attempting to generate response with AI...")
     groq_response = safe_generate_with_groq(prompt)
     if groq_response:
+        logger.info("Using Groq response")
         return groq_response
     
     # Fallback to Gemini
+    logger.info("Groq unavailable, falling back to Gemini")
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY")
     if not api_key:
-        current_app.logger.error("GOOGLE_API_KEY/API_KEY not set in environment")
+        logger.error("GOOGLE_API_KEY/API_KEY not set in environment")
         raise RuntimeError("Server is missing GOOGLE_API_KEY")
 
     genai.configure(api_key=api_key)
@@ -292,29 +298,36 @@ def safe_generate_with_gemini(prompt: str) -> str:
 
     for model_name in _unique_model_candidates():
         try:
+            logger.info(f"Trying Gemini model: {model_name}")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             text = _extract_genai_text(response).strip()
             if text:
+                logger.info(f"Gemini model {model_name} succeeded")
                 return text
         except google_exceptions.ResourceExhausted as exc:
-            current_app.logger.warning("Gemini quota exceeded for %s: %s", model_name, exc)
+            logger.warning("Gemini quota exceeded for %s: %s", model_name, exc)
             raise
         except google_exceptions.NotFound as exc:
-            current_app.logger.warning("Gemini model %s not available: %s", model_name, exc)
+            logger.warning("Gemini model %s not available: %s", model_name, exc)
             last_error = exc
         except Exception as exc:
-            current_app.logger.warning("Gemini model %s failed: %s", model_name, exc)
+            logger.warning("Gemini model %s failed: %s", model_name, exc)
             last_error = exc
 
     # Final fallback using ai_utils helper (may discover newly added models)
+    logger.info("Trying final fallback model from ai_utils")
     fallback_model = get_generative_model([])
     if fallback_model:
         response = fallback_model.generate_content(prompt)
-        return _extract_genai_text(response).strip()
+        text = _extract_genai_text(response).strip()
+        logger.info("Fallback model succeeded")
+        return text
 
     if last_error:
+        logger.error(f"All models failed, raising last error: {last_error}")
         raise last_error
+    logger.error("No Gemini models available to handle the request")
     raise RuntimeError("No Gemini models available to handle the request")
 
 # Improved classifier using word boundaries
