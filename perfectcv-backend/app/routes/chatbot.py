@@ -19,6 +19,14 @@ from flask_login import login_required, current_user
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
+# Groq AI SDK
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    logger.warning("Groq library not available")
+
 # GridFS for storing CV text/files
 import gridfs
 from bson import ObjectId
@@ -237,8 +245,43 @@ def update_chat_history(user_msg: str, bot_msg: str):
     # store only last N messages
     session['chat_history'] = history[-(CHAT_HISTORY_LIMIT*2):]
 
+def safe_generate_with_groq(prompt: str) -> Optional[str]:
+    """Call Groq API safely and return text. Returns None if unavailable or fails."""
+    if not GROQ_AVAILABLE:
+        return None
+    
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if not groq_api_key:
+        current_app.logger.debug("GROQ_API_KEY not set in environment")
+        return None
+    
+    try:
+        client = Groq(api_key=groq_api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="llama-3.1-70b-versatile",  # Fast, high-quality model
+            temperature=0.7,
+            max_tokens=2048,
+        )
+        return chat_completion.choices[0].message.content.strip()
+    except Exception as e:
+        current_app.logger.warning(f"Groq API call failed: {e}")
+        return None
+
+
 def safe_generate_with_gemini(prompt: str) -> str:
     """Call Gemini safely and return text; raises on missing API key."""
+    # Try Groq first if available
+    groq_response = safe_generate_with_groq(prompt)
+    if groq_response:
+        return groq_response
+    
+    # Fallback to Gemini
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("API_KEY")
     if not api_key:
         current_app.logger.error("GOOGLE_API_KEY/API_KEY not set in environment")
