@@ -245,8 +245,13 @@ def update_chat_history(user_msg: str, bot_msg: str):
     # store only last N messages
     session['chat_history'] = history[-(CHAT_HISTORY_LIMIT*2):]
 
-def safe_generate_with_groq(prompt: str) -> Optional[str]:
-    """Call Groq API safely and return text. Returns None if unavailable or fails."""
+def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None) -> Optional[str]:
+    """Call Groq API safely and return text. Returns None if unavailable or fails.
+    
+    Args:
+        prompt: The system prompt or user message
+        chat_history: List of {"role": "user/assistant", "content": "..."} messages
+    """
     if not GROQ_AVAILABLE:
         logger.debug("Groq library not available")
         return None
@@ -258,13 +263,24 @@ def safe_generate_with_groq(prompt: str) -> Optional[str]:
     
     try:
         client = Groq(api_key=groq_api_key)
+        
+        # Build messages with history for conversational context
+        messages = []
+        
+        # Add chat history if available (for context)
+        if chat_history:
+            # Limit history to avoid token limits
+            recent_history = chat_history[-(CHAT_HISTORY_LIMIT*2):]
+            messages.extend(recent_history)
+        
+        # Add current prompt as user message
+        messages.append({
+            "role": "user",
+            "content": prompt,
+        })
+        
         chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            messages=messages,
             model="llama-3.3-70b-versatile",  # Updated to current supported model
             temperature=0.7,
             max_tokens=2048,
@@ -277,11 +293,16 @@ def safe_generate_with_groq(prompt: str) -> Optional[str]:
         return None
 
 
-def safe_generate_with_gemini(prompt: str) -> str:
-    """Call Gemini safely and return text; raises on missing API key."""
+def safe_generate_with_gemini(prompt: str, chat_history: Optional[list] = None) -> str:
+    """Call Gemini safely and return text; raises on missing API key.
+    
+    Args:
+        prompt: The system prompt or user message
+        chat_history: List of {"role": "user/assistant", "content": "..."} messages
+    """
     # Try Groq first if available
     logger.info("Attempting to generate response with AI...")
-    groq_response = safe_generate_with_groq(prompt)
+    groq_response = safe_generate_with_groq(prompt, chat_history)
     if groq_response:
         logger.info("Using Groq response")
         return groq_response
@@ -419,20 +440,26 @@ def handle_improvement(cv_text: str, question: str) -> Dict:
     # Check if user wants advice/suggestions vs a rewrite
     is_advice_request = any(w in question.lower() for w in ['how to', 'suggest', 'advice', 'tips', 'recommend', 'what should i'])
 
+    # Get conversation history
+    chat_history = get_chat_history()
+
     try:
         if section:
             if is_advice_request:
                 # Provide advice for the section
-                prompt = f"""Analyze the {section} section of this CV and provide specific advice on how to improve it.
+                prompt = f"""Analyze the {section} section of this CV and provide specific, actionable advice on how to improve it.
                 Focus on:
-                - Content quality
-                - Formatting
+                - Content quality and relevance
+                - Formatting and structure
                 - Impact and clarity
+                - Specific examples of what to add or change
                 
                 CV TEXT:
                 {cv_text}
+                
+                USER QUESTION: {question}
                 """
-                advice = safe_generate_with_gemini(prompt)
+                advice = safe_generate_with_gemini(prompt, chat_history)
                 return {"answer": advice}
             else:
                 # Rewrite the section
@@ -532,6 +559,7 @@ GUIDELINES:
 - Use professional but friendly language
 - Format your response clearly with bullet points when appropriate
 - Be specific about what's working well and what could be improved
+- Have a natural conversation - refer to previous messages when relevant
 
 CV SECTION CONTENT:
 {context}
@@ -539,7 +567,9 @@ CV SECTION CONTENT:
 USER QUESTION: {question}
 
 DETAILED RESPONSE:"""
-        answer_text = safe_generate_with_gemini(prompt)
+        # Get conversation history
+        chat_history = get_chat_history()
+        answer_text = safe_generate_with_gemini(prompt, chat_history)
         return {"answer": answer_text}
     except Exception:
         current_app.logger.exception("Section-specific handling failed")
@@ -570,8 +600,15 @@ def handle_extraction(cv_text: str, question: str) -> Dict:
             else:
                 return {"answer": "I couldn't reliably extract a skills list. Consider listing skills under a clear 'Skills' heading."}
         # fallback generic extraction: use RAG-ish or gemini
-        prompt = f"Extract the answer to: {question}\n\nFrom this CV: {cv_text[:CONTEXT_CHARS]}"
-        txt = safe_generate_with_gemini(prompt)
+        chat_history = get_chat_history()
+        prompt = f"""Extract the requested information from this CV in a conversational way.
+        
+CV CONTENT: {cv_text[:CONTEXT_CHARS]}
+
+USER QUESTION: {question}
+
+EXTRACTED INFORMATION:"""
+        txt = safe_generate_with_gemini(prompt, chat_history)
         return {"answer": txt}
     except Exception:
         current_app.logger.exception("Extraction failed")
@@ -596,14 +633,28 @@ def handle_courses(cv_text: str, question: str) -> Dict:
         certs = suggestions.get('certifications', [])
         path = suggestions.get('learning_path', '')
         
+        # Get conversation history for context
+        chat_history = get_chat_history()
+        
+        # Create a conversational response
+        prompt = f"""The user asked: "{question}"
+
+Based on their CV analysis, here are the recommendations:
+
+Learning Path: {path}
+
+Top Courses:
+{chr(10).join(f"- {c.get('title')} ({c.get('provider')}): {c.get('reason')}" for c in courses[:5])}
+
+Key Certifications:
+{chr(10).join(f"- {c.get('name')} ({c.get('issuer')}): {c.get('impact')}" for c in certs[:3])}
+
+Provide a friendly, conversational response that presents these recommendations naturally.
+Refer to our previous conversation if relevant."""
+        
+        answer = safe_generate_with_gemini(prompt, chat_history)
         return {
-            "answer": (
-                f"**Recommended Courses & Certifications**\n\n"
-                f"**Learning Path:**\n{path}\n\n"
-                f"**Top Courses:**\n" + "\n".join(f"• **{c.get('title')}** ({c.get('provider')}): {c.get('reason')}" for c in courses[:5]) + "\n\n"
-                f"**Key Certifications:**\n" + "\n".join(f"• **{c.get('name')}** ({c.get('issuer')}): {c.get('impact')}" for c in certs[:3]) + "\n\n"
-                f"Would you like more details on any of these?"
-            ),
+            "answer": answer,
             "courses": suggestions
         }
     else:
@@ -682,31 +733,37 @@ def handle_general(cv_text: str, question: str) -> Dict:
 
         if not context:
             context = cv_text[:CONTEXT_CHARS]
+        
+        # Get conversation history for context
+        chat_history = get_chat_history()
+        
         conv_context = session.get('conversation_context', {})
         context_note = f"\n\nPrevious context: We were discussing the {conv_context.get('last_section')} section." if conv_context.get('last_section') else ""
-        prompt = f"""You are an expert CV/Resume consultant and career advisor. 
-
-Analyze the CV content below and provide a detailed, helpful answer to the user's question.
-
-IMPORTANT INSTRUCTIONS:
-- Be specific and reference actual content from the CV
-- Provide actionable suggestions and concrete examples
-- If the CV is missing information relevant to the question, point that out
-- Be professional but conversational
-- Use bullet points for clarity when listing multiple items{context_note}
-- If the user asks a question unrelated to the CV or career advice, politely steer them back to the topic.
+        
+        # Build a conversational prompt with CV context
+        prompt = f"""You are a friendly, expert CV/Resume consultant and career advisor having a conversation with a job seeker.
 
 CV CONTENT:
 {context}
 
+INSTRUCTIONS:
+- Have a natural conversation - refer back to previous questions/answers when relevant
+- Be specific and reference actual content from their CV
+- Provide actionable, personalized suggestions with concrete examples
+- Point out missing information when relevant
+- Be professional yet conversational and encouraging
+- Use bullet points for clarity when listing multiple items{context_note}
+- If they ask something unrelated to CV/career advice, politely redirect
+- Remember context from earlier in the conversation
+
 USER QUESTION: {question}
 
-DETAILED ANSWER:"""
+YOUR RESPONSE:"""
         try:
-            answer = safe_generate_with_gemini(prompt)
+            answer = safe_generate_with_gemini(prompt, chat_history)
             return {"answer": answer}
         except Exception:
-            logger.warning("Gemini generation unavailable, falling back to local QA")
+            logger.warning("AI generation unavailable, falling back to error message")
             return {"answer": "I'm currently having trouble connecting to the AI service. Please try again in a moment."}
     except Exception:
         current_app.logger.exception("General handling failed")
