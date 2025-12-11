@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import {
@@ -16,6 +17,8 @@ import {
   FaChartLine,
   FaClock,
   FaClipboardCheck,
+  FaRobot,
+  FaComments,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
@@ -69,6 +72,7 @@ const CARD_SURFACE =
 const PANEL_SURFACE = `${CARD_SURFACE} shadow-lg transition-all duration-500`;
 
 export default function Dashboard({ user }) {
+  const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -88,6 +92,7 @@ export default function Dashboard({ user }) {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState("newest");
+  const [chatbotCV, setChatbotCV] = useState(null);
 
   // Utility: truncate long filenames
   const truncateFilename = (filename = "", maxLen = 30) => {
@@ -99,6 +104,7 @@ export default function Dashboard({ user }) {
 
   useEffect(() => {
     fetchFiles();
+    fetchChatbotCV();
   }, []);
 
   const fetchFiles = async () => {
@@ -116,6 +122,20 @@ export default function Dashboard({ user }) {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const fetchChatbotCV = async () => {
+    try {
+      const res = await api.get("/api/chatbot/cv-info");
+      if (res.data.success && res.data.hasCV) {
+        setChatbotCV(res.data.cv);
+      } else {
+        setChatbotCV(null);
+      }
+    } catch (err) {
+      console.error("Error fetching chatbot CV:", err);
+      setChatbotCV(null);
     }
   };
 
@@ -472,6 +492,46 @@ export default function Dashboard({ user }) {
             </div>
           </div>
         </section>
+
+        {/* Chatbot CV Link */}
+        {chatbotCV && (
+          <section className="mb-8">
+            <div className={`${CARD_SURFACE} p-6 shadow-md border-2 border-blue-200 dark:border-blue-800`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
+                    <FaRobot className="text-white text-2xl" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                      <FaComments className="text-blue-500" />
+                      Chatbot CV Analysis
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                      <strong>{truncateFilename(chatbotCV.filename, 40)}</strong>
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Uploaded {chatbotCV.uploadedAt ? formatRelativeTime(new Date(chatbotCV.uploadedAt)) : 'recently'} • Ready for interactive chat
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/chatbot')}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+                >
+                  <FaComments />
+                  Open Chat
+                </button>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                  <FaCheckCircle className="text-green-500" />
+                  Your CV is loaded and ready for AI-powered conversations, improvements, and analysis
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Upload & Activity */}
         <section className="grid gap-6 lg:grid-cols-3 mb-8">
