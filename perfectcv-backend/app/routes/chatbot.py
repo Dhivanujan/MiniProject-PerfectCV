@@ -245,12 +245,13 @@ def update_chat_history(user_msg: str, bot_msg: str):
     # store only last N messages
     session['chat_history'] = history[-(CHAT_HISTORY_LIMIT*2):]
 
-def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None) -> Optional[str]:
+def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None, system_message: Optional[str] = None) -> Optional[str]:
     """Call Groq API safely and return text. Returns None if unavailable or fails.
     
     Args:
-        prompt: The system prompt or user message
+        prompt: The user's current question
         chat_history: List of {"role": "user/assistant", "content": "..."} messages
+        system_message: System context (CV content, instructions)
     """
     if not GROQ_AVAILABLE:
         logger.debug("Groq library not available")
@@ -264,16 +265,23 @@ def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None) ->
     try:
         client = Groq(api_key=groq_api_key)
         
-        # Build messages with history for conversational context
+        # Build messages with proper structure
         messages = []
+        
+        # Add system message with CV context and instructions
+        if system_message:
+            messages.append({
+                "role": "system",
+                "content": system_message
+            })
         
         # Add chat history if available (for context)
         if chat_history:
-            # Limit history to avoid token limits
-            recent_history = chat_history[-(CHAT_HISTORY_LIMIT*2):]
+            # Limit history to last 6 exchanges to keep it focused
+            recent_history = chat_history[-12:]
             messages.extend(recent_history)
         
-        # Add current prompt as user message
+        # Add current user question
         messages.append({
             "role": "user",
             "content": prompt,
@@ -281,9 +289,9 @@ def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None) ->
         
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="llama-3.3-70b-versatile",  # Updated to current supported model
-            temperature=0.7,
-            max_tokens=2048,
+            model="llama-3.3-70b-versatile",
+            temperature=0.8,  # More creative and conversational
+            max_tokens=800,   # Shorter responses
         )
         response_text = chat_completion.choices[0].message.content.strip()
         logger.info("Groq API call successful")
@@ -293,16 +301,17 @@ def safe_generate_with_groq(prompt: str, chat_history: Optional[list] = None) ->
         return None
 
 
-def safe_generate_with_gemini(prompt: str, chat_history: Optional[list] = None) -> str:
+def safe_generate_with_gemini(prompt: str, chat_history: Optional[list] = None, system_message: Optional[str] = None) -> str:
     """Call Gemini safely and return text; raises on missing API key.
     
     Args:
-        prompt: The system prompt or user message
+        prompt: The user's current question
         chat_history: List of {"role": "user/assistant", "content": "..."} messages
+        system_message: System context (CV content, instructions)
     """
     # Try Groq first if available
     logger.info("Attempting to generate response with AI...")
-    groq_response = safe_generate_with_groq(prompt, chat_history)
+    groq_response = safe_generate_with_groq(prompt, chat_history, system_message)
     if groq_response:
         logger.info("Using Groq response")
         return groq_response
@@ -433,34 +442,26 @@ def handle_missing_info(cv_text: str) -> Dict:
         return {"answer": "I couldn't detect specific missing elements. Consider adding a professional summary, quantifiable achievements, and a clear skills section."}
 
 def handle_improvement(cv_text: str, question: str) -> Dict:
-    # detect section
+    """Handle improvement requests conversationally."""
     section_match = re.search(r'\b(summary|experience|education|skills|projects|achievements)\b', question, re.I)
     section = section_match.group(1).lower() if section_match else None
 
-    # Check if user wants advice/suggestions vs a rewrite
     is_advice_request = any(w in question.lower() for w in ['how to', 'suggest', 'advice', 'tips', 'recommend', 'what should i'])
-
-    # Get conversation history
     chat_history = get_chat_history()
 
     try:
         if section:
             if is_advice_request:
-                # Provide advice for the section
-                prompt = f"""Analyze the {section} section of this CV and provide specific, actionable advice on how to improve it.
-                Focus on:
-                - Content quality and relevance
-                - Formatting and structure
-                - Impact and clarity
-                - Specific examples of what to add or change
+                system_message = f"""You're a CV coach giving quick, friendly advice.
+
+User's CV:
+{cv_text[:3000]}
+
+Give SHORT, conversational advice (2-3 sentences). Be specific about their {section} section.
+Reference what you see in their CV. Keep it casual and encouraging."""
                 
-                CV TEXT:
-                {cv_text}
-                
-                USER QUESTION: {question}
-                """
-                advice = safe_generate_with_gemini(prompt, chat_history)
-                return {"answer": advice}
+                answer = safe_generate_with_gemini(question, chat_history, system_message)
+                return {"answer": answer}
             else:
                 # Rewrite the section
                 improved_section = generate_improved_cv(cv_text, focus_areas=[section])
@@ -569,7 +570,16 @@ USER QUESTION: {question}
 DETAILED RESPONSE:"""
         # Get conversation history
         chat_history = get_chat_history()
-        answer_text = safe_generate_with_gemini(prompt, chat_history)
+        
+        # Use conversational system message instead
+        system_message = f"""You're a friendly CV expert. Keep responses SHORT (2-4 sentences).
+
+User's CV section:
+{context}
+
+Be specific, casual, and reference their actual content. Ask follow-up questions to keep the conversation going."""
+        
+        answer_text = safe_generate_with_gemini(question, chat_history, system_message)
         return {"answer": answer_text}
     except Exception:
         current_app.logger.exception("Section-specific handling failed")
@@ -599,17 +609,17 @@ def handle_extraction(cv_text: str, question: str) -> Dict:
                 return {"answer": "**Skills Found in Your CV:**\n\n" + "\n".join(f"• {s}" for s in skills), "skills": skills}
             else:
                 return {"answer": "I couldn't reliably extract a skills list. Consider listing skills under a clear 'Skills' heading."}
-        # fallback generic extraction: use RAG-ish or gemini
+        # fallback generic extraction
         chat_history = get_chat_history()
-        prompt = f"""Extract the requested information from this CV in a conversational way.
+        system_message = f"""You're a helpful CV assistant. Extract what they're asking for from their CV.
+
+Their CV:
+{cv_text[:3000]}
+
+Be brief and conversational. Just answer what they asked for directly."""
         
-CV CONTENT: {cv_text[:CONTEXT_CHARS]}
-
-USER QUESTION: {question}
-
-EXTRACTED INFORMATION:"""
-        txt = safe_generate_with_gemini(prompt, chat_history)
-        return {"answer": txt}
+        answer = safe_generate_with_gemini(question, chat_history, system_message)
+        return {"answer": answer}
     except Exception:
         current_app.logger.exception("Extraction failed")
         return {"answer": "Extraction failed. Try again or paste the section you want extracted."}
@@ -633,30 +643,26 @@ def handle_courses(cv_text: str, question: str) -> Dict:
         certs = suggestions.get('certifications', [])
         path = suggestions.get('learning_path', '')
         
-        # Get conversation history for context
         chat_history = get_chat_history()
         
-        # Create a conversational response
-        prompt = f"""The user asked: "{question}"
+        # Make it super conversational
+        system_message = f"""You're a career mentor having a casual chat.
 
-Based on their CV analysis, here are the recommendations:
+Based on their CV, here are course recommendations:
 
 Learning Path: {path}
 
 Top Courses:
-{chr(10).join(f"- {c.get('title')} ({c.get('provider')}): {c.get('reason')}" for c in courses[:5])}
+{chr(10).join(f"- {c.get('title')} ({c.get('provider')}): {c.get('reason')}" for c in courses[:3])}
 
 Key Certifications:
-{chr(10).join(f"- {c.get('name')} ({c.get('issuer')}): {c.get('impact')}" for c in certs[:3])}
+{chr(10).join(f"- {c.get('name')} ({c.get('issuer')})" for c in certs[:2])}
 
-Provide a friendly, conversational response that presents these recommendations naturally.
-Refer to our previous conversation if relevant."""
+Present these in a SHORT, friendly way (3-4 sentences). Focus on the top 2-3 recommendations.
+Ask if they want more details."""
         
-        answer = safe_generate_with_gemini(prompt, chat_history)
-        return {
-            "answer": answer,
-            "courses": suggestions
-        }
+        answer = safe_generate_with_gemini(question, chat_history, system_message)
+        return {"answer": answer, "courses": suggestions}
     else:
         return {"answer": "I couldn't generate specific course recommendations. Consider looking for courses on platforms like Coursera, Udemy, or edX related to your field."}
 
@@ -719,55 +725,53 @@ def handle_generate(cv_text: str) -> Dict:
         return {"answer": "I couldn't generate an improved CV at this time. Try again later."}
 
 def handle_general(cv_text: str, question: str) -> Dict:
-    # Use RAG first if available, otherwise fallback to Gemini with a short CV context
+    """Handle general questions with short, conversational responses."""
     try:
-        # Try to use vectorstore retrieval for better answers
+        # Get conversation history
+        chat_history = get_chat_history()
+        
+        # Use RAG for relevant context if available
         context = None
         try:
             vectorstore = load_or_build_vectorstore_for_user(str(current_user.get_id()), cv_text)
             if vectorstore:
-                results = vectorstore.similarity_search(question, k=4)
+                results = vectorstore.similarity_search(question, k=3)
                 context = "\n\n".join([r.page_content for r in results])
         except Exception:
-            logger.debug("No vectorstore available for general handler; using short CV context")
+            logger.debug("No vectorstore available, using CV excerpt")
 
         if not context:
+            # Use relevant excerpt based on question
             context = cv_text[:CONTEXT_CHARS]
         
-        # Get conversation history for context
-        chat_history = get_chat_history()
-        
-        conv_context = session.get('conversation_context', {})
-        context_note = f"\n\nPrevious context: We were discussing the {conv_context.get('last_section')} section." if conv_context.get('last_section') else ""
-        
-        # Build a conversational prompt with CV context
-        prompt = f"""You are a friendly, expert CV/Resume consultant and career advisor having a conversation with a job seeker.
+        # Create system message with CV context and personality
+        system_message = f"""You are Alex, a friendly and knowledgeable CV coach having a casual conversation.
 
-CV CONTENT:
+**Your personality:**
+- Warm, encouraging, and conversational (like texting a knowledgeable friend)
+- Keep responses SHORT (2-4 sentences max unless specifically asked for details)
+- Natural and human - use "I think", "you might want to", "have you considered"
+- Reference previous messages naturally ("as we discussed", "like I mentioned")
+- Ask follow-up questions to keep conversation flowing
+
+**The user's CV excerpt:**
 {context}
 
-INSTRUCTIONS:
-- Have a natural conversation - refer back to previous questions/answers when relevant
-- Be specific and reference actual content from their CV
-- Provide actionable, personalized suggestions with concrete examples
-- Point out missing information when relevant
-- Be professional yet conversational and encouraging
-- Use bullet points for clarity when listing multiple items{context_note}
-- If they ask something unrelated to CV/career advice, politely redirect
-- Remember context from earlier in the conversation
-
-USER QUESTION: {question}
-
-YOUR RESPONSE:"""
-        try:
-            answer = safe_generate_with_gemini(prompt, chat_history)
-            return {"answer": answer}
-        except Exception:
-            logger.warning("AI generation unavailable, falling back to error message")
-            return {"answer": "I'm currently having trouble connecting to the AI service. Please try again in a moment."}
-    except Exception:
-        current_app.logger.exception("General handling failed")
-        return {"answer": "I encountered an error processing your question. Please try rephrasing or ask something more specific about your CV."}
+**Guidelines:**
+- Give concise, actionable advice
+- If asked "how is my cv", give a brief overall impression then ask what they want to focus on
+- For specific questions, answer directly without long explanations
+- Use casual language (not formal business speak)
+- Reference their actual CV content specifically
+- Keep it conversational - like you're having coffee together"""
+        
+        # Send just the question, let history and system message provide context
+        answer = safe_generate_with_gemini(question, chat_history, system_message)
+        return {"answer": answer}
+        
+    except Exception as e:
+        logger.exception("General handling failed")
+        return {"answer": "I'm having trouble connecting right now. Can you try asking that again?"}
 
 # --------- Routes ----------
 
@@ -813,9 +817,17 @@ def upload_cv():
         except Exception:
             logger.exception("Could not create or load vector store; continuing without RAG")
 
+        # Generate a friendly welcome message using AI
+        welcome_message = "Hey! I've got your CV loaded and ready to review. What would you like to work on first? I can help with overall feedback, specific sections, ATS optimization, or anything else!"
+        
+        # Add welcome to chat history
+        session['chat_history'] = [
+            {"role": "assistant", "content": welcome_message}
+        ]
+        
         return jsonify({
             "success": True,
-            "message": "CV uploaded and processed successfully. You can now ask questions about your CV.",
+            "message": welcome_message,
             "rag_enabled": vector_store_created
         })
     except Exception as e:
