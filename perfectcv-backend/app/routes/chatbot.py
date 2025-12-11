@@ -947,3 +947,44 @@ def get_analysis():
     except Exception:
         current_app.logger.exception("Error getting CV analysis")
         return jsonify({"success": False, "message": "Failed to produce analysis."}), 500
+
+@chatbot.route("/cv-info", methods=["GET"])
+@login_required
+def get_cv_info():
+    """Get information about the uploaded CV in chatbot session."""
+    try:
+        file_id = session.get('cv_file_id')
+        if not file_id:
+            return jsonify({
+                "success": True,
+                "hasCV": False,
+                "message": "No CV uploaded in chatbot yet"
+            })
+        
+        # Get file info from GridFS
+        fs = gridfs_instance()
+        try:
+            file_obj = fs.get(ObjectId(file_id))
+            filename = getattr(file_obj, 'filename', 'Unknown')
+            upload_date = getattr(file_obj, 'upload_date', None)
+            
+            return jsonify({
+                "success": True,
+                "hasCV": True,
+                "cv": {
+                    "fileId": file_id,
+                    "filename": filename,
+                    "uploadedAt": upload_date.isoformat() if upload_date else None
+                }
+            })
+        except Exception:
+            # File ID exists but file not found
+            session.pop('cv_file_id', None)
+            return jsonify({
+                "success": True,
+                "hasCV": False,
+                "message": "CV file not found"
+            })
+    except Exception as e:
+        current_app.logger.exception("Error getting CV info")
+        return jsonify({"success": False, "message": str(e)}), 500
