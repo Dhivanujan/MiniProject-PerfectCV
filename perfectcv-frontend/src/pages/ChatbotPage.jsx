@@ -1,5 +1,6 @@
 // ChatbotPage.jsx
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FaUpload,
   FaPaperPlane,
@@ -242,6 +243,7 @@ const ChatMessage = ({ message }) => {
 };
 
 export default function ChatbotPage() {
+  const navigate = useNavigate();
   const [chatHistory, setChatHistory] = useState([]);
   const [message, setMessage] = useState("");
   const [cvFiles, setCvFiles] = useState([]);
@@ -452,15 +454,24 @@ export default function ChatbotPage() {
                 <p className="text-xs text-gray-600 dark:text-gray-400">Your intelligent CV enhancement partner</p>
               </div>
             </div>
-            {hasGeneratedCv && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleDownloadCV}
-                className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
+                onClick={() => navigate('/dashboard')}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
               >
-                <FaDownload />
-                <span className="hidden md:inline">Download CV</span>
+                <FaRobot />
+                <span className="hidden md:inline">Dashboard</span>
               </button>
-            )}
+              {hasGeneratedCv && (
+                <button
+                  onClick={handleDownloadCV}
+                  className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
+                >
+                  <FaDownload />
+                  <span className="hidden md:inline">Download CV</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

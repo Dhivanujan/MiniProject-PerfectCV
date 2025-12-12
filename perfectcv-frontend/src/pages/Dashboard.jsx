@@ -412,9 +412,16 @@ export default function Dashboard({ user }) {
               <p className="text-lg md:text-xl mb-2 text-white/95">
                 Upload, optimize, and manage your professional resume
               </p>
-              <p className="text-md text-white/80">
+              <p className="text-md text-white/80 mb-4">
                 Welcome back, <span className="font-semibold">{user?.full_name || user?.username || user?.email || "User"}</span>
               </p>
+              <button
+                onClick={() => navigate('/chatbot')}
+                className="px-6 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white font-semibold rounded-xl border border-white/30 shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+              >
+                <FaRobot className="text-lg" />
+                Chatbot
+              </button>
             </div>
             <div className="hidden md:block flex-shrink-0">
               <img
