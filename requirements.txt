@@ -27,3 +27,8 @@ spacy==3.7.2
 phonenumbers==8.13.26
 pdfplumber==0.7.6
 PyMuPDF==1.22.5
+
+# OCR Support for scanned PDFs
+pytesseract>=0.3.10
+pillow>=10.0.0
+pdf2image>=1.16.3
