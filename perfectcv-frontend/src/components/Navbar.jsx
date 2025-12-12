@@ -129,7 +129,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                   to="/dashboard"
                   className="flex items-center gap-1 text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
-                  <FaRobot /> Dashboard
+                  Dashboard
                 </Link>
               ) : (
                 <Link
@@ -241,7 +241,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
               </span>
               {location.pathname === '/chatbot' ? (
                 <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800 transition">
-                  <FaRobot /> Dashboard
+                  Dashboard
                 </Link>
               ) : (
                 <Link to="/chatbot" onClick={() => setMenuOpen(false)} className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800 transition">
