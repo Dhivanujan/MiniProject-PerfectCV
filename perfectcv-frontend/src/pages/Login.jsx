@@ -38,12 +38,13 @@ function Login({ setUser }) {
         navigate("/dashboard");
       } else {
         setFlashMessages([
-          { type: "danger", message: data.message || "Login failed" },
+          { type: "danger", message: data.error || data.message || "Login failed" },
         ]);
       }
     } catch (error) {
       console.error("Login error:", error);
       const message =
+        error.response?.data?.error ||
         error.response?.data?.message ||
         "Unable to connect to the server. Please try again later.";
       setFlashMessages([{ type: "danger", message }]);

@@ -211,7 +211,8 @@ export default function Dashboard({ user }) {
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
       setOrderedSections(res.data.ordered_sections || []);
-      setTemplateData(res.data.template_data || null);
+      // Prefer structured_cv for the new modern template, fallback to template_data
+      setTemplateData(res.data.structured_cv || res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
       setFoundKeywords(res.data.found_keywords || []);
@@ -314,11 +315,11 @@ export default function Dashboard({ user }) {
     );
     const avgScore = scoredFiles.length
       ? Math.round(
-          scoredFiles.reduce((sum, file) => sum + (file.atsScore || 0), 0) / scoredFiles.length
-        )
+        scoredFiles.reduce((sum, file) => sum + (file.atsScore || 0), 0) / scoredFiles.length
+      )
       : typeof atsScore === "number"
-      ? atsScore
-      : null;
+        ? atsScore
+        : null;
     return {
       totalUploads: files.length,
       bestScore: bestScore || null,
@@ -554,11 +555,10 @@ export default function Dashboard({ user }) {
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   className={`lg:col-span-7 border-dashed border-2 
-                  ${
-                    dragActive
+                  ${dragActive
                       ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
                       : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
-                  } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
+                    } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
@@ -575,8 +575,8 @@ export default function Dashboard({ user }) {
                       {selectedFile
                         ? truncateFilename(selectedFile.name, 40)
                         : dragActive
-                        ? "Drop your CV here"
-                        : "Drag & drop your CV here"}
+                          ? "Drop your CV here"
+                          : "Drag & drop your CV here"}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       or click to select (.pdf, .doc, .docx)
@@ -679,13 +679,12 @@ export default function Dashboard({ user }) {
                           {getJobDomainLabel(file.jobDomain)}
                         </span>
                         {typeof file.atsScore === "number" && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                            file.atsScore >= 70 
-                              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${file.atsScore >= 70
+                              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
                               : file.atsScore >= 50
-                              ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
-                              : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
-                          }`}>
+                                ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                                : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                            }`}>
                             {file.atsScore}/100
                           </span>
                         )}
@@ -842,46 +841,46 @@ export default function Dashboard({ user }) {
             {/* Suggestions list (grouped) */}
             {(Object.keys(groupedSuggestions).length > 0 ||
               (suggestions && suggestions.length > 0)) && (
-              <div
-                className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
+                <div
+                  className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
                 border border-blue-200 dark:border-blue-700/50 p-6 
                 rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
-              >
-                <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
-                  <FaExclamationCircle className="text-lg" /> Improvement Suggestions
-                </h3>
-                {/* Prefer groupedSuggestions if provided by backend */}
-                {Object.keys(groupedSuggestions).length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
-                      <div key={cat}>
-                        <h4 className="font-semibold capitalize text-indigo-600">
-                          {cat.replace("_", " ")}
-                        </h4>
-                        <ul className="list-disc pl-6 mt-1">
-                          {msgs.map((m, i) => (
-                            <li key={i} className="text-sm">
-                              {m}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <ul className="list-disc pl-6">
-                    {suggestions.map((s, idx) => (
-                      <li key={idx} className="mb-2">
-                        <strong className="capitalize">
-                          {s.category || "General"}:
-                        </strong>{" "}
-                        {s.message || s}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+                >
+                  <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
+                    <FaExclamationCircle className="text-lg" /> Improvement Suggestions
+                  </h3>
+                  {/* Prefer groupedSuggestions if provided by backend */}
+                  {Object.keys(groupedSuggestions).length > 0 ? (
+                    <div className="space-y-3">
+                      {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
+                        <div key={cat}>
+                          <h4 className="font-semibold capitalize text-indigo-600">
+                            {cat.replace("_", " ")}
+                          </h4>
+                          <ul className="list-disc pl-6 mt-1">
+                            {msgs.map((m, i) => (
+                              <li key={i} className="text-sm">
+                                {m}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <ul className="list-disc pl-6">
+                      {suggestions.map((s, idx) => (
+                        <li key={idx} className="mb-2">
+                          <strong className="capitalize">
+                            {s.category || "General"}:
+                          </strong>{" "}
+                          {s.message || s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
           </section>
         )}
 
@@ -1030,19 +1029,18 @@ export default function Dashboard({ user }) {
                         </p>
                       </div>
                     </div>
-                    
+
                     <div className="flex flex-wrap gap-2 mt-4">
                       <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
                         {getJobDomainLabel(file.jobDomain)}
                       </span>
                       {typeof file.atsScore === "number" && (
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${
-                          file.atsScore >= 70 
-                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${file.atsScore >= 70
+                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
                             : file.atsScore >= 50
-                            ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
-                            : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
-                        }`}>
+                              ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                              : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                          }`}>
                           ATS: {file.atsScore}
                         </span>
                       )}
