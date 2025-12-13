@@ -415,13 +415,13 @@ def check_ats_compatibility(cv_text, job_description=""):
             return None
         prompt = f"""Analyze this CV for ATS (Applicant Tracking System) compatibility.
         Return as JSON with these keys:
-        - ats_score: number 0-100
-        - issues: array of ATS compatibility issues
-        - keyword_analysis: object with "found" and "missing" arrays
-        - formatting_suggestions: array of formatting improvements
-        - overall_recommendation: string with overall advice
+        - ats_score: number 0-100 (be strict)
+        - issues: array of specific ATS compatibility issues (e.g., "Complex formatting", "Missing keywords", "Filesize")
+        - keyword_analysis: object with "found" and "missing" arrays based on general industry standards for the detected role
+        - formatting_suggestions: array of specific formatting improvements
+        - overall_recommendation: string with specific, actionable advice
         
-        {f"Job Description: {job_description}" if job_description else ""}
+        {f"Job Description: {job_description}" if job_description else "Infer the target role from the CV content."}
         
         Return ONLY valid JSON, no additional text.
         
@@ -475,7 +475,7 @@ def suggest_keywords_for_role(role, cv_text):
         return None
 
 
-def generate_improved_cv(cv_text, focus_areas=None):
+def generate_improved_cv(cv_text, focus_areas=None, job_description=None):
     """Generate an improved version of the entire CV following strict professional guidelines."""
     try:
         model = get_generative_model()
@@ -483,54 +483,60 @@ def generate_improved_cv(cv_text, focus_areas=None):
             logger.warning("No Gemini model available for generate_improved_cv")
             return None
         
+        focus_instruction = ""
+        if focus_areas:
+            focus_text = ", ".join(focus_areas)
+            focus_instruction = f"Pay special attention to improving these sections: {focus_text}."
+            
+        jd_instruction = ""
+        if job_description:
+            jd_instruction = f"""
+            Optimize user's CV for this Job Description:
+            ---
+            {job_description}
+            ---
+            Ensure keywords from the JD are naturally integrated into the CV where relevant.
+            """
+
         prompt = f"""
         Act as a world-class CV parser + CV writer. 
         The CV generated above is not suitable for job applications. I want you to fully fix, clean, and professionally reformat it into a standard ATS-friendly CV. Follow these strict rules:
 
         1. Clean & Correct Content
-        - Remove all duplicated sections (Skills, Languages, Hobbies repeated multiple times).
+        - Remove all duplicated sections.
         - Remove symbols like ?, broken formatting, unclear spacing, or repeated words.
-        - Correct grammar, structure, and clarity in every section.
-        - Ensure all technical skills are grouped properly (Languages, Frameworks, Tools, Databases, Cloud, ML, etc.).
+        - Correct grammar, structure, and clarity.
+        - Ensure technical skills are grouped properly.
         - Add missing punctuation and remove incomplete sentences.
 
         2. Structure the CV Properly
         Create the CV in this exact order:
-        - Full Name
-        - Contact Details (phone, email, GitHub/LinkedIn if provided)
-        - Professional Summary — 3–4 lines only
-        - Skills — formatted in clean categories
-        - Projects — each with:
-          - Name
-          - Tech Stack
-          - Description (2–3 bullet points)
-          - IMPACT (What did you solve/improve?)
+        - Header (Name, Email, Phone, LinkedIn, GitHub, Location)
+        - Professional Summary (Strong, 3-4 lines)
+        - Skills (Categorized: Languages, Frameworks, Tools, etc.)
+        - Work Experience (Role, Company, Dates, Location, Impactful Bullet Points)
+        - Projects (Name, Tech Stack, Description, Impact)
         - Education
         - Certifications
         - Achievements
         - Languages
-        - Additional Information (Optional)
+        - Interests (Optional)
 
         3. Make It ATS-Friendly
         - Use clean bullet points.
         - Avoid tables, emojis, images, or fancy symbols.
-        - Maintain consistent formatting, spacing, and capitalization.
-        - Ensure each section header is clear and standardized.
-
-        4. Improve the Overall Quality
-        - Rewrite the Professional Summary to sound strong, clear, and industry-ready.
-        - Improve project descriptions to highlight:
-          - Impact
-          - Metrics (if possible)
-          - Technologies
-          - Problem solved
-        - Convert the entire CV into a crisp, polished, employer-ready resume.
+        - Ensure consistent formatting and standardized headers.
+        
+        4. Improve Quality
+        - Use strong action verbs.
+        - Quantify achievements (metrics, %) where possible.
+        - {focus_instruction}
+        - {jd_instruction}
 
         5. Output Requirements
-        - Provide the final CV in clean formatted text (no markdown unless asked).
-        - Ensure it is ready to copy-paste into a resume template.
-        - Make sure the final CV is 100% professional, error-free, and job-ready.
-
+        - Return ONLY the final CV text.
+        - Structure it clearly with headers.
+        
         CV TEXT:
         {cv_text}
         """
@@ -576,30 +582,31 @@ def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
         {{
             "language": "Detected language (e.g., English, French)",
             "parsed_data": {{
-                "personal_info": {{ "name": "", "email": "", "phone": "", "linkedin": "", "location": "", "github": "", "website": "" }},
+                "personal_info": {{ "name": "Full Name", "email": "email", "phone": "phone", "linkedin": "url", "location": "city, country", "github": "url", "website": "url", "job_title": "Current/Target Role" }},
                 "summary": "Professional summary text found in CV",
-                "education": [ {{ "degree": "", "institution": "", "year": "", "details": "" }} ],
-                "experience": [ {{ "role": "", "company": "", "duration": "", "details": [] }} ],
+                "education": [ {{ "degree": "Degree Name", "institution": "University", "year": "Year", "details": "Honors/GPA if available" }} ],
+                "experience": [ {{ "role": "Job Title", "company": "Company Name", "duration": "Dates", "details": ["Bullet point 1", "Bullet point 2"] }} ],
                 "skills": {{ 
-                    "programming_languages": [], 
-                    "frameworks_libraries": [], 
-                    "ai_ml_tools": [], 
-                    "databases": [], 
-                    "cloud_devops": [], 
+                    "programming_languages": ["Python", "JavaScript", ...], 
+                    "frameworks_libraries": ["React", "Django", ...], 
+                    "ai_ml_tools": ["TensorFlow", "PyTorch", ...], 
+                    "databases": ["PostgreSQL", "MongoDB", ...], 
+                    "cloud_devops": ["AWS", "Docker", ...], 
+                    "soft_skills": ["Leadership", "Communication", ...],
                     "other_skills": [] 
                 }},
-                "projects": [ {{ "name": "", "description": "", "technologies": [] }} ],
-                "certifications": [ {{ "name": "", "provider": "", "year": "" }} ],
-                "achievements": [],
-                "languages": []
+                "projects": [ {{ "name": "Project Name", "description": "Project Description", "technologies": ["Tech1", "Tech2"] }} ],
+                "certifications": [ {{ "name": "Cert Name", "provider": "Issuer", "year": "Year" }} ],
+                "achievements": ["Achievement 1", "Achievement 2"],
+                "languages": ["English (Native)", "Spanish (B2)"]
             }},
             "analysis": {{
                 "ats_score": 0-100,
-                "strengths": [],
-                "weaknesses": [],
-                "missing_sections": [],
-                "improvement_suggestions": [],
-                "summary": "Brief assessment of the CV"
+                "strengths": ["Strength 1", "Strength 2"],
+                "weaknesses": ["Weakness 1", "Weakness 2"],
+                "missing_sections": ["Missing Section 1"],
+                "improvement_suggestions": ["Suggestion 1", "Suggestion 2"],
+                "summary": "Brief assessment of the CV quality and readiness"
             }}
         }}
         """

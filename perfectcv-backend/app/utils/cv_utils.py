@@ -611,93 +611,279 @@ def extract_text_from_any(file_bytes: bytes, filename: Optional[str]) -> str:
     return normalize_text(decoded)
 
 
-def generate_pdf(text):
-    pdf = FPDF()
+class PDF(FPDF):
+    def header(self):
+        # No automatic header to allow custom first page styling
+        pass
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+    def chapter_title(self, title):
+        self.set_font('Helvetica', 'B', 14)
+        self.set_text_color(44, 62, 80)  # Dark blue-gray
+        self.cell(0, 10, title.upper(), 0, 1, 'L')
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(4)
+
+    def chapter_body(self, body):
+        self.set_font('Helvetica', '', 11)
+        self.set_text_color(0, 0, 0)
+        self.multi_cell(0, 5, body)
+        self.ln()
+
+def generate_pdf(data):
+    """
+    Generate a professional PDF CV.
+    Args:
+        data: Can be a dictionary (structured) or string (raw text).
+    """
+    def sanitize_text(text):
+        if not text:
+            return ""
+        # Replace common unicode chars that fail in latin-1/basic fonts
+        replacements = {
+            '\u2013': '-', '\u2014': '--',
+            '\u2018': "'", '\u2019': "'",
+            '\u201c': '"', '\u201d': '"',
+            '\u2022': '*', '\u2026': '...',
+            '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2015': '--',
+            '\u2032': "'", '\u2033': '"',
+            '\u00a0': ' ',  # non-breaking space
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        # Convert to ASCII-safe string, replacing any remaining non-latin-1 chars
+        try:
+            # First try to encode as latin-1
+            text.encode('latin-1')
+            return text
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            # If that fails, use ASCII with replacement
+            return text.encode('ascii', 'replace').decode('ascii')
+
+    def sanitize_data(obj):
+        if isinstance(obj, str):
+            return sanitize_text(obj)
+        if isinstance(obj, list):
+            return [sanitize_data(x) for x in obj]
+        if isinstance(obj, dict):
+            return {k: sanitize_data(v) for k, v in obj.items()}
+        return obj
+
+    # Sanitize input data first
+    data = sanitize_data(data)
+
+    pdf = PDF()
     pdf.add_page()
-    font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
-    if os.path.exists(font_path):
-        pdf.add_font("DejaVu", "", font_path, uni=True)
-        pdf.set_font("DejaVu", size=12)
-    else:
-        pdf.set_font("Helvetica", size=12)
-        text = text.encode("latin-1", "replace").decode("latin-1")
-    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Font setup
+    try:
+        font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+        if os.path.exists(font_path):
+            pdf.add_font("DejaVu", "", font_path, uni=True)
+            pdf.add_font("DejaVu", "B", font_path, uni=True) # Fallback bold
+            pdf.set_font("DejaVu", size=11)
+            main_font = "DejaVu"
+        else:
+            pdf.set_font("Helvetica", size=11)
+            main_font = "Helvetica"
+    except Exception:
+        pdf.set_font("Helvetica", size=11)
+        main_font = "Helvetica"
 
-    def get_width(indent=0):
-        return pdf.w - pdf.l_margin - pdf.r_margin - indent
+    # Helper for bullets
+    def print_bullet(text):
+        pdf.set_font(main_font, '', 10)
+        pdf.cell(5) # Indent
+        # Use simple dash if glyphs fail
+        bullet_char = "-" 
+        pdf.cell(5, 5, bullet_char, 0, 0) 
+        pdf.multi_cell(0, 5, text.strip())
+    
+    if isinstance(data, dict):
+        # --- HEADER ---
+        # Name
+        name = data.get('personal_info', {}).get('name') or data.get('name') or "Your Name"
+        pdf.set_font(main_font, 'B', 24)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 10, name, 0, 1, 'C')
+        
+        # Contact Info
+        contact_parts = []
+        p_info = data.get('personal_info', {}) or {}
+        if not p_info and isinstance(data.get('contact'), str):
+             # Fallback if contact is a string
+             pdf.set_font(main_font, '', 10)
+             pdf.cell(0, 5, data.get('contact'), 0, 1, 'C')
+        else:
+            if p_info.get('email'): contact_parts.append(p_info['email'])
+            if p_info.get('phone'): contact_parts.append(p_info['phone'])
+            if p_info.get('linkedin'): contact_parts.append(f"LinkedIn: {p_info['linkedin']}")
+            if p_info.get('location'): contact_parts.append(p_info['location'])
+            
+            pdf.set_font(main_font, '', 10)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 5, " | ".join(contact_parts), 0, 'C')
+        
+        pdf.ln(8)
 
-    # If caller passed a dict, treat it as structured sections and render template
-    if isinstance(text, dict):
-        sections = text
-        # Header placeholder
-        header = sections.get("header") or "NAME\nEmail: you@example.com | Phone: +1-555-555-5555\nLocation: City, Country"
-        for hline in header.split("\n"):
-            pdf.set_font(pdf.font_family, "B", 14)
-            pdf.cell(0, 8, hline, ln=True)
-        pdf.ln(4)
+        # --- SECTIONS ---
+        
+        # Summary
+        summary = data.get('summary') or data.get('professional_summary')
+        if summary:
+            pdf.chapter_title("Professional Summary")
+            pdf.set_font(main_font, '', 11)
+            pdf.multi_cell(0, 6, summary)
+            pdf.ln(5)
 
-        def render_section(title, content):
-            if not content:
-                return
-            pdf.set_font(pdf.font_family, "B", 12)
-            pdf.cell(0, 8, title, ln=True)
-            pdf.set_font(pdf.font_family, size=11)
-            # render bullets specially
-            for line in str(content).split("\n"):
-                line = line.strip()
-                if not line:
-                    pdf.ln(2)
-                    continue
-                if line.startswith("-"):
-                    bullet = "•" if pdf.font_family == "DejaVu" else "-"
-                    pdf.cell(6)
-                    pdf.multi_cell(get_width(6), 6, f"{bullet} {line.lstrip('- ').strip()}")
-                else:
-                    pdf.multi_cell(get_width(), 6, line)
+        # Skills
+        skills = data.get('skills')
+        if skills:
+            pdf.chapter_title("Technical Skills")
+            pdf.set_font(main_font, '', 10)
+            if isinstance(skills, dict):
+                for cat, items in skills.items():
+                    if not items: continue
+                    clean_cat = cat.replace('_', ' ').replace('skills', '').strip().title()
+                    if isinstance(items, list):
+                        item_str = ", ".join(items)
+                    else:
+                        item_str = str(items)
+                    pdf.set_font(main_font, 'B', 10)
+                    pdf.cell(40, 6, f"{clean_cat}:", 0, 0)
+                    pdf.set_font(main_font, '', 10)
+                    pdf.multi_cell(0, 6, item_str)
+            elif isinstance(skills, list):
+                pdf.multi_cell(0, 6, ", ".join(skills))
+            elif isinstance(skills, str):
+                pdf.multi_cell(0, 6, skills)
+            pdf.ln(5)
+
+        # Experience
+        exp = data.get('experience') or data.get('work_experience')
+        if exp:
+            pdf.chapter_title("Work Experience")
+            if isinstance(exp, list):
+                for job in exp:
+                    if isinstance(job, dict):
+                        # Title & Company
+                        title = job.get('role') or job.get('title') or "Role"
+                        company = job.get('company') or "Company"
+                        dates = job.get('duration') or job.get('dates') or ""
+                        
+                        pdf.set_font(main_font, 'B', 11)
+                        pdf.cell(120, 6, f"{title} at {company}", 0, 0)
+                        pdf.set_font(main_font, 'I', 10)
+                        pdf.cell(0, 6, dates, 0, 1, 'R')
+                        
+                        # Details
+                        details = job.get('details') or job.get('description') or job.get('points')
+                        if details:
+                            if isinstance(details, list):
+                                for point in details:
+                                    print_bullet(str(point))
+                            else:
+                                pdf.set_font(main_font, '', 10)
+                                pdf.multi_cell(0, 6, str(details))
+                        pdf.ln(3)
             pdf.ln(2)
 
-        # Render in sensible order
-        render_section("PROFESSIONAL SUMMARY", sections.get("about") or sections.get("summary"))
-        render_section("KEY SKILLS", sections.get("skills"))
-        render_section("WORK EXPERIENCE", sections.get("work_experience") or sections.get("experience"))
-        render_section("PROJECTS", sections.get("projects"))
-        render_section("ACHIEVEMENTS & EXTRACURRICULAR", sections.get("achievements") or sections.get("other"))
-        render_section("EDUCATION", sections.get("education"))
+        # Projects
+        projs = data.get('projects')
+        if projs:
+            pdf.chapter_title("Projects")
+            if isinstance(projs, list):
+                for proj in projs:
+                    if isinstance(proj, dict):
+                        name = proj.get('name') or "Project"
+                        tech = proj.get('technologies') or []
+                        if isinstance(tech, list): tech = ", ".join(tech)
+                        
+                        pdf.set_font(main_font, 'B', 11)
+                        pdf.cell(0, 6, name, 0, 1)
+                        
+                        if tech:
+                            pdf.set_font(main_font, 'I', 10)
+                            pdf.cell(0, 6, f"Technologies: {tech}", 0, 1)
+                            
+                        desc = proj.get('description') or proj.get('desc')
+                        if desc:
+                            pdf.set_font(main_font, '', 10)
+                            pdf.multi_cell(0, 6, str(desc))
+                        pdf.ln(3)
+            pdf.ln(2)
+
+        # Education
+        edu = data.get('education')
+        if edu:
+            pdf.chapter_title("Education")
+            if isinstance(edu, list):
+                for e in edu:
+                    if isinstance(e, dict):
+                        degree = e.get('degree') or "Degree"
+                        school = e.get('institution') or e.get('school') or "Institution"
+                        year = e.get('year') or e.get('dates') or ""
+                        
+                        pdf.set_font(main_font, 'B', 11)
+                        pdf.cell(140, 6, f"{degree}, {school}", 0, 0)
+                        pdf.set_font(main_font, 'I', 10)
+                        pdf.cell(0, 6, year, 0, 1, 'R')
+                        
+                        details = e.get('details')
+                        if details:
+                             pdf.set_font(main_font, '', 10)
+                             pdf.multi_cell(0, 6, str(details))
+                        pdf.ln(2)
+
+        # Certifications
+        certs = data.get('certifications')
+        if certs:
+             pdf.chapter_title("Certifications")
+             if isinstance(certs, list):
+                 for c in certs:
+                     if isinstance(c, dict):
+                         name = c.get('name')
+                         provider = c.get('provider') or c.get('issuer')
+                         line = name
+                         if provider: line += f" - {provider}"
+                         print_bullet(line)
+                     else:
+                         print_bullet(str(c))
+             pdf.ln(2)
+             
     else:
-        heading_prefixes = (
-            "education",
-            "experience",
-            "skills",
-            "projects",
-            "contact",
-            "professional summary",
-            "key skills",
-            "work experience",
-            "certifications",
-            "achievements",
-            "languages",
-            "additional information",
-        )
-        for line in text.split("\n"):
+        # Fallback for raw text
+        pdf.set_font(main_font, '', 11)
+        # Attempt to handle basic markdown headers
+        for line in data.split('\n'):
             line = line.strip()
             if not line:
-                pdf.ln(5)
+                pdf.ln(4)
                 continue
-            if line.lower().startswith(heading_prefixes):
-                pdf.set_font(pdf.font_family, "B", 14)
-                pdf.cell(0, 10, line, ln=True)
-                pdf.set_font(pdf.font_family, size=12)
-            elif line.startswith(("-", "*")) or (line and line[0:2].isdigit()):
-                indent = 10
-                pdf.cell(indent)
-                bullet = "•" if pdf.font_family == "DejaVu" else "-"
-                safe_text = line.lstrip("-*0123456789. ")
-                pdf.multi_cell(get_width(indent), 8, f"{bullet} {safe_text}")
+            if line.startswith('#'):
+                 pdf.set_font(main_font, 'B', 12)
+                 pdf.cell(0, 8, line.lstrip('#').strip(), 0, 1)
+                 pdf.set_font(main_font, '', 11)
+            elif line.startswith('-') or line.startswith('•'):
+                 print_bullet(line.lstrip('-• ').strip())
             else:
-                pdf.multi_cell(get_width(), 8, line)
-    # Use 'S' to get PDF as string and encode to bytes (avoid passing BytesIO to FPDF.output)
+                 pdf.multi_cell(0, 6, line)
+
+    # Output
     pdf_str = pdf.output(dest='S')
-    pdf_data = pdf_str.encode('latin-1')
+    # Handle the PDF string output - it may already be bytes in some FPDF versions
+    if isinstance(pdf_str, bytes):
+        pdf_data = pdf_str
+    else:
+        # Use 'replace' to handle any encoding issues gracefully
+        try:
+            pdf_data = pdf_str.encode('latin-1', errors='replace')
+        except (UnicodeEncodeError, AttributeError):
+            pdf_data = str(pdf_str).encode('utf-8', errors='replace')
     pdf_bytes = io.BytesIO(pdf_data)
     pdf_bytes.seek(0)
     return pdf_bytes
@@ -1925,70 +2111,70 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
     Target Domain: {job_domain or 'General'}
 
     1. Clean & Correct Content
-    - Remove all duplicated sections (Skills, Languages, Hobbies repeated multiple times).
+    - Remove all duplicated sections.
     - Remove symbols like ?, broken formatting, unclear spacing, or repeated words.
-    - Correct grammar, structure, and clarity in every section.
-    - Ensure all technical skills are grouped properly (Languages, Frameworks, Tools, Databases, Cloud, ML, etc.).
+    - Correct grammar, structure, and clarity.
+    - Ensure technical skills are grouped properly.
     - Add missing punctuation and remove incomplete sentences.
 
     2. Structure the CV Properly
     Create the CV in this exact order:
-    - Full Name
-    - Contact Details (phone, email, GitHub/LinkedIn if provided)
-    - Professional Summary — 3–4 lines only
-    - Skills — formatted in clean categories
-    - Projects — each with:
-      - Name
-      - Tech Stack
-      - Description (2–3 bullet points)
-      - IMPACT (What did you solve/improve?)
+    - Header (Name, Email, Phone, LinkedIn, GitHub, Location)
+    - Professional Summary (Strong, 3-4 lines)
+    - Skills (Categorized: Languages, Frameworks, Tools, etc.)
+    - Work Experience (Role, Company, Dates, Location, Impactful Bullet Points)
+    - Projects (Name, Tech Stack, Description, Impact)
     - Education
     - Certifications
     - Achievements
     - Languages
-    - Additional Information (Optional)
+    - Interests (Optional)
 
     3. Make It ATS-Friendly
     - Use clean bullet points.
     - Avoid tables, emojis, images, or fancy symbols.
-    - Maintain consistent formatting, spacing, and capitalization.
-    - Ensure each section header is clear and standardized.
+    - Ensure consistent formatting and standardized headers.
 
-    4. Improve the Overall Quality
+    4. Improve Quality
     - Rewrite the Professional Summary to sound strong, clear, and industry-ready.
-    - Improve project descriptions to highlight:
-      - Impact
-      - Metrics (if possible)
-      - Technologies
-      - Problem solved
-    - Convert the entire CV into a crisp, polished, employer-ready resume.
+    - Use strong action verbs.
+    - Quantify achievements (metrics, %) where possible.
 
     5. Output Requirements
-    - Provide the final CV in clean formatted text (no markdown unless asked).
-    - Ensure it is ready to copy-paste into a resume template.
-    - Make sure the final CV is 100% professional, error-free, and job-ready.
+    - Return ONLY the final CV text.
+    - Structure it clearly with headers.
 
     ===============================
     ### JSON RESPONSE STRUCTURE
     ===============================
     Return a SINGLE JSON object with the following structure:
     {{
-      "optimized_text": "The full text of the optimized CV following the STRICT OUTPUT FORMAT above.",
+      "optimized_text": "The full text of the optimized CV structure above.",
       "sections": {{
-        "summary": "The professional summary text",
+        "summary": "Professional summary text",
         "skills": ["List of skills"],
         "experience": ["List of experience entries"],
         "education": ["List of education entries"],
         "projects": ["List of projects"]
       }},
       "suggestions": [
-        {{ "category": "Content", "message": "..." }},
-        {{ "category": "Formatting", "message": "..." }},
-        {{ "category": "Keywords", "message": "..." }}
+        {{ "category": "Content", "message": "Suggestion 1" }},
+        {{ "category": "Formatting", "message": "Suggestion 2" }}
       ],
       "ats_score": 85,
-      "recommended_keywords": ["...", "..."],
-      "found_keywords": ["...", "..."]
+      "recommended_keywords": ["keyword1", "keyword2"],
+      "found_keywords": ["keyword1", "keyword2"],
+      "structured_cv": {{
+         "personal_info": {{ "name": "...", "email": "...", "phone": "...", "location": "...", "linkedin": "..." }},
+         "professional_summary": "...",
+         "skills": {{ "technical": [], "soft": [], "tools": [] }},
+         "work_experience": [ {{ "role": "...", "company": "...", "duration": "...", "details": [] }} ],
+         "projects": [ {{ "name": "...", "description": "...", "technologies": [] }} ],
+         "education": [ {{ "degree": "...", "institution": "...", "year": "..." }} ],
+         "certifications": [],
+         "achievements": [],
+         "languages": []
+      }}
     }}
 
     Input CV:
