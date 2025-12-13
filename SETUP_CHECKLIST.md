@@ -225,7 +225,7 @@ If you encounter issues:
 
 4. **Common Fixes**
    - Restart backend server
-   - Clear Python cache (`__pycache__`)
+   - Clear Python cache 
    - Reinstall dependencies
    - Check API key validity
 
