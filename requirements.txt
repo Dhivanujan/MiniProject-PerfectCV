@@ -16,17 +16,20 @@ flask-cors
 bcrypt==4.0.1
 google-generativeai==0.3.2
 groq>=0.4.0
-langchain==0.1.0
-langchain-community==0.0.10
-langchain-google-genai==0.0.5
+langchain>=0.1.0
+langchain-community>=0.0.10
+langchain-google-genai>=0.0.5
 faiss-cpu>=1.9.0
 tiktoken==0.5.2
 pdfminer.six==20221105
 python-docx==1.1.0
-spacy==3.7.2
+spacy==3.8.11
 phonenumbers==8.13.26
+jinja2>=3.1.2
+weasyprint>=60.0  # For professional PDF generation (requires GTK+ on Windows)
+# Alternative: use fpdf2 if WeasyPrint installation fails
 pdfplumber==0.7.6
-PyMuPDF==1.22.5
+# PyMuPDF==1.22.5  # Requires C++ compiler, install manually if needed
 
 # OCR Support for scanned PDFs
 pytesseract>=0.3.10

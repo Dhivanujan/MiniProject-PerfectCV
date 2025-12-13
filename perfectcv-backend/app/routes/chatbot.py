@@ -496,6 +496,7 @@ Reference what you see in their CV. Keep it casual and encouraging."""
                     return {"answer": "I couldn't analyze the CV for improvements. Please try again."}
             else:
                 # Rewrite the whole CV
+                # Try to extract JD from context if possible, or just standard improvement
                 improved_cv = generate_improved_cv(cv_text)
                 if improved_cv:
                     preview = improved_cv if len(improved_cv) < 1200 else improved_cv[:1200] + "..."
@@ -691,9 +692,10 @@ def handle_qualifications(cv_text: str, question: str) -> Dict:
     else:
         return {"answer": "I couldn't generate specific qualification advice. Generally, consider advanced degrees or specialized certifications in your industry."}
 
-def handle_generate(cv_text: str) -> Dict:
+def handle_generate(cv_text: str, payload: Dict = None) -> Dict:
     try:
-        improved = generate_improved_cv(cv_text)
+        job_description = payload.get('job_description') if payload else None
+        improved = generate_improved_cv(cv_text, job_description=job_description)
     except Exception:
         current_app.logger.exception("Generate improved CV failed")
         improved = None

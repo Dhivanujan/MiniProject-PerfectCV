@@ -30,7 +30,7 @@ def create_app(config_class=Config):
     
     # Initialize extensions
     # Allow credentials so frontend can send cookies/sessions when needed
-    CORS(app, supports_credentials=True)
+    CORS(app, supports_credentials=True, origins=['http://localhost:5173', 'http://localhost:5000', 'http://localhost:3000'])
     mongo.init_app(app)
     login_manager.init_app(app)
     mail.init_app(app)
@@ -48,6 +48,9 @@ def create_app(config_class=Config):
     # file management routes
     from app.routes.files import files_bp
     app.register_blueprint(files_bp, url_prefix='/api')
+    # NEW: Enhanced file routes with clean architecture
+    from app.routes.files_v2 import files_bp_v2
+    app.register_blueprint(files_bp_v2, url_prefix='/api/v2')
     
     # Quick startup DB check (non-fatal) and health endpoint
     try:
