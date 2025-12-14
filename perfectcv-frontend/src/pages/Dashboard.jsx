@@ -19,6 +19,16 @@ import {
   FaClipboardCheck,
   FaRobot,
   FaComments,
+  FaUser,
+  FaEnvelope,
+  FaPhone,
+  FaMapMarkerAlt,
+  FaGraduationCap,
+  FaCode,
+  FaCertificate,
+  FaTrophy,
+  FaLanguage,
+  FaProjectDiagram,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
@@ -70,6 +80,653 @@ const parseFilePayload = (payload) => {
 const CARD_SURFACE =
   "bg-white dark:bg-[#1E1E2F] border border-gray-100 dark:border-gray-800 rounded-2xl hover:shadow-md transition-all duration-300";
 const PANEL_SURFACE = `${CARD_SURFACE} shadow-lg transition-all duration-500`;
+
+// Helper function to safely parse JSON-like strings
+const parseContentSafely = (content) => {
+  if (!content) return null;
+  if (typeof content !== 'string') return content;
+  
+  // If it doesn't look like JSON, return as-is
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return content;
+  }
+  
+  try {
+    // Try multiple parsing strategies
+    
+    // Strategy 1: Replace single quotes with double quotes
+    let jsonStr = content.replace(/'/g, '"');
+    
+    // Strategy 2: Handle Python None, True, False
+    jsonStr = jsonStr.replace(/\bNone\b/g, 'null');
+    jsonStr = jsonStr.replace(/\bTrue\b/g, 'true');
+    jsonStr = jsonStr.replace(/\bFalse\b/g, 'false');
+    
+    // Strategy 3: Fix trailing commas
+    jsonStr = jsonStr.replace(/,(\s*[}\]])/g, '$1');
+    
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    // If parsing fails, return original content
+    return content;
+  }
+};
+
+// Component to render Skills section
+const SkillsRenderer = ({ content }) => {
+  const skillsData = parseContentSafely(content);
+  
+  if (!skillsData || typeof skillsData !== 'object') {
+    // If it's a plain string with skills, try to display it nicely
+    if (typeof content === 'string' && content.trim()) {
+      const skills = content.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+      if (skills.length > 0) {
+        return (
+          <div className="flex flex-wrap gap-2">
+            {skills.map((skill, idx) => (
+              <span 
+                key={idx}
+                className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    }
+    return <div className="text-sm text-gray-600 dark:text-gray-400">{content}</div>;
+  }
+
+  const categories = Object.entries(skillsData).filter(([key, value]) => 
+    Array.isArray(value) && value.length > 0
+  );
+
+  if (categories.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No skills listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {categories.map(([category, skills]) => (
+        <div key={category}>
+          <h5 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 capitalize mb-2">
+            {category.replace('_', ' ')} Skills
+          </h5>
+          <div className="flex flex-wrap gap-2">
+            {skills.map((skill, idx) => {
+              // Remove bullet points from skill names
+              const cleanSkill = skill.replace(/^[•\-]\s*/, '').trim();
+              return (
+                <span 
+                  key={idx}
+                  className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                >
+                  {cleanSkill}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Work Experience section
+const WorkExperienceRenderer = ({ content }) => {
+  let experienceData = parseContentSafely(content);
+  
+  if (!experienceData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No work experience listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(experienceData)) {
+    experienceData = [experienceData];
+  }
+
+  // Filter out invalid entries
+  experienceData = experienceData.filter(job => {
+    if (typeof job === 'string') return false;
+    if (!job || typeof job !== 'object') return false;
+    // Must have at least title or company
+    return job.title || job.position || job.company;
+  });
+
+  if (experienceData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No work experience listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {experienceData.map((job, idx) => (
+        <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-2">
+            <div>
+              <h5 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                {job.title || job.position || 'Position'}
+              </h5>
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                {job.company || 'Company'}
+              </p>
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              {job.dates || job.start_date || job.date || ''}
+              {job.is_current && ' - Present'}
+            </div>
+          </div>
+          {job.location && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">📍 {job.location}</p>
+          )}
+          {job.description && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+              {typeof job.description === 'string' ? (
+                job.description.split('\n').map((line, i) => {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith('-') || trimmed.startsWith('•')) {
+                    return (
+                      <div key={i} className="flex gap-2 mb-1">
+                        <span className="text-indigo-500">•</span>
+                        <span>{trimmed.replace(/^[-•]\s*/, '')}</span>
+                      </div>
+                    );
+                  }
+                  return trimmed ? <p key={i} className="mb-1">{trimmed}</p> : null;
+                })
+              ) : Array.isArray(job.description) ? (
+                job.description.map((point, i) => (
+                  <div key={i} className="flex gap-2 mb-1">
+                    <span className="text-indigo-500">•</span>
+                    <span>{point}</span>
+                  </div>
+                ))
+              ) : null}
+            </div>
+          )}
+          {job.achievements && Array.isArray(job.achievements) && job.achievements.length > 0 && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+              {job.achievements.map((achievement, i) => (
+                <div key={i} className="flex gap-2 mb-1">
+                  <span className="text-indigo-500">•</span>
+                  <span>{achievement}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Education section
+const EducationRenderer = ({ content }) => {
+  let educationData = parseContentSafely(content);
+  
+  if (!educationData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No education listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(educationData)) {
+    educationData = [educationData];
+  }
+
+  // Filter out invalid/incomplete entries (like standalone "GPA:", "3.8/", etc.)
+  educationData = educationData.filter(edu => {
+    if (typeof edu === 'string') return false; // Skip raw strings
+    if (!edu || typeof edu !== 'object') return false;
+    // Must have at least degree or institution
+    return edu.degree || edu.institution || edu.school;
+  });
+
+  if (educationData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No education listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {educationData.map((edu, idx) => (
+        <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+            <div>
+              <h5 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                {edu.degree || 'Degree'}
+                {edu.field && ` in ${edu.field}`}
+              </h5>
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                {edu.institution || edu.school || 'Institution'}
+              </p>
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              {edu.graduation_date || edu.year || edu.date || ''}
+            </div>
+          </div>
+          {edu.location && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">📍 {edu.location}</p>
+          )}
+          {edu.gpa && (
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">GPA: {edu.gpa}</p>
+          )}
+          {edu.honors && edu.honors.length > 0 && (
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              🏆 {Array.isArray(edu.honors) ? edu.honors.join(', ') : edu.honors}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Certifications section
+const CertificationsRenderer = ({ content }) => {
+  let certData = parseContentSafely(content);
+  
+  if (!certData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No certifications listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(certData)) {
+    // If it's a plain string, try to split by newlines
+    if (typeof certData === 'string') {
+      const items = certData.split('\n').map(s => s.trim()).filter(s => s);
+      if (items.length > 0) {
+        certData = items.map(item => ({ name: item }));
+      } else {
+        certData = [certData];
+      }
+    } else {
+      certData = [certData];
+    }
+  }
+
+  // Filter out invalid entries
+  certData = certData.filter(cert => {
+    if (typeof cert === 'string') return cert.trim().length > 0;
+    if (!cert || typeof cert !== 'object') return false;
+    return cert.name || cert.title;
+  });
+
+  return (
+    <div className="space-y-3">
+      {certData.map((cert, idx) => {
+        // Handle string items
+        if (typeof cert === 'string') {
+          return (
+            <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+              <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {cert}
+              </h5>
+            </div>
+          );
+        }
+        
+        // Handle object items
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {cert.name || cert.title || 'Certification'}
+                </h5>
+                {(cert.issuer || cert.organization) && (
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    {cert.issuer || cert.organization}
+                  </p>
+                )}
+              </div>
+              {cert.date && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {cert.date}
+                </span>
+              )}
+            </div>
+            {cert.credential_id && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                ID: {cert.credential_id}
+              </p>
+            )}
+            {cert.url && (
+              <a 
+                href={cert.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-1 inline-block"
+              >
+                View credential →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Main render function for CV sections
+const renderSectionContent = (key, content) => {
+  if (!content) return null;
+
+  // Debug logging
+  console.log(`🔍 Rendering section "${key}":`, {
+    contentType: typeof content,
+    isArray: Array.isArray(content),
+    contentPreview: typeof content === 'string' ? content.substring(0, 100) : JSON.stringify(content).substring(0, 100)
+  });
+
+  const lowerKey = key.toLowerCase();
+  
+  if (lowerKey.includes('skill')) {
+    return <SkillsRenderer content={content} />;
+  } else if (lowerKey.includes('experience') || lowerKey.includes('work')) {
+    return <WorkExperienceRenderer content={content} />;
+  } else if (lowerKey.includes('education')) {
+    return <EducationRenderer content={content} />;
+  } else if (lowerKey.includes('certification')) {
+    return <CertificationsRenderer content={content} />;
+  } else if (lowerKey.includes('personal') || lowerKey.includes('contact')) {
+    // For personal information, try to parse and display nicely
+    const data = parseContentSafely(content);
+    if (typeof data === 'object' && data !== null) {
+      return (
+        <div className="space-y-2 text-sm">
+          {data.name && <p><span className="font-semibold">Name:</span> {data.name}</p>}
+          {data.email && <p><span className="font-semibold">Email:</span> {data.email}</p>}
+          {data.phone && <p><span className="font-semibold">Phone:</span> {data.phone}</p>}
+          {data.location && <p><span className="font-semibold">Location:</span> {data.location}</p>}
+          {data.website && (
+            <p>
+              <span className="font-semibold">Website:</span>{' '}
+              <a href={data.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                {data.website}
+              </a>
+            </p>
+          )}
+          {data.linkedin && (
+            <p>
+              <span className="font-semibold">LinkedIn:</span>{' '}
+              <a href={data.linkedin} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                {data.linkedin}
+              </a>
+            </p>
+          )}
+        </div>
+      );
+    }
+  }
+  
+  // Default: display as text
+  return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+};
+
+// Enhanced CV Content Renderer with Icons and Better Formatting
+const EnhancedCVRenderer = ({ content }) => {
+  if (!content || !content.trim()) {
+    return <p className="text-gray-500 dark:text-gray-400 italic">No content available</p>;
+  }
+
+  const lines = content.split('\n');
+  const sections = [];
+  let currentSection = null;
+  let currentContent = [];
+
+  // Parse content into sections
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    
+    // Detect section headers (ALL CAPS or starts with #, but not contact info)
+    const isAllCaps = trimmed && trimmed === trimmed.toUpperCase();
+    const hasContactMarkers = trimmed.includes('@') || trimmed.includes('+') || /\d{3}/.test(trimmed);
+    const isMarkdownHeader = line.startsWith('##') || line.startsWith('###');
+    const isLikelyHeader = (isAllCaps && trimmed.length > 3 && !hasContactMarkers) || isMarkdownHeader;
+    
+    if (isLikelyHeader) {
+      // Save previous section
+      if (currentSection) {
+        sections.push({ title: currentSection, content: currentContent.join('\n') });
+      }
+      // Start new section
+      currentSection = trimmed.replace(/^#+\s*/, '');
+      currentContent = [];
+    } else if (trimmed) {
+      currentContent.push(line);
+    }
+  });
+  
+  // Add last section
+  if (currentSection) {
+    sections.push({ title: currentSection, content: currentContent.join('\n') });
+  }
+
+  // If no sections detected, treat first few lines as header and rest as content
+  if (sections.length === 0) {
+    const headerLines = lines.slice(0, 5).filter(l => l.trim());
+    const bodyLines = lines.slice(5);
+    sections.push({ title: 'HEADER', content: headerLines.join('\n'), isHeader: true });
+    sections.push({ title: 'CONTENT', content: bodyLines.join('\n') });
+  }
+
+  const getSectionIcon = (title) => {
+    const titleLower = title.toLowerCase();
+    if (titleLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+    if (titleLower.includes('experience') || titleLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+    if (titleLower.includes('skill')) return <FaCode className="text-green-500" />;
+    if (titleLower.includes('profile') || titleLower.includes('summary')) return <FaUser className="text-indigo-500" />;
+    if (titleLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
+    if (titleLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
+    if (titleLower.includes('achievement') || titleLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+    if (titleLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+    return <FaFileAlt className="text-gray-500" />;
+  };
+
+  return (
+    <div className="space-y-4">
+      {sections.map((section, idx) => {
+        if (section.isHeader) {
+          // Render header section with contact info styling
+          const headerLines = section.content.split('\n').filter(l => l.trim());
+          let nameShown = false;
+          let titleShown = false;
+          
+          return (
+            <div key={idx} className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-6 rounded-xl border-l-4 border-indigo-500 shadow-sm">
+              {headerLines.map((line, i) => {
+                const trimmed = line.trim();
+                
+                // Skip empty
+                if (!trimmed) return null;
+                
+                // Detect contact info
+                const hasEmail = trimmed.includes('@');
+                const hasPhone = trimmed.includes('+') || /\d{3}[\s\-]\d{3}[\s\-]\d{4}/.test(trimmed);
+                
+                // Name (first non-contact line)
+                if (!nameShown && !hasEmail && !hasPhone && trimmed.length < 50) {
+                  nameShown = true;
+                  return (
+                    <div key={i} className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
+                        <FaUser className="text-indigo-600 dark:text-indigo-400 text-xl" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{trimmed}</h2>
+                    </div>
+                  );
+                }
+                
+                // Job Title (second non-contact line)
+                if (nameShown && !titleShown && !hasEmail && !hasPhone && trimmed.length < 80) {
+                  titleShown = true;
+                  return (
+                    <p key={i} className="text-lg text-indigo-600 dark:text-indigo-400 font-medium mb-3 ml-14">
+                      {trimmed}
+                    </p>
+                  );
+                }
+                
+                // Email
+                if (hasEmail) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaEnvelope className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                // Phone
+                if (hasPhone) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaPhone className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                // Location (non-contact line after name/title)
+                if (nameShown && titleShown) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaMapMarkerAlt className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                return null;
+              })}
+            </div>
+          );
+        }
+
+        // Special handling for Skills section
+        const isSkillsSection = section.title.toLowerCase().includes('skill');
+        
+        // Regular section - group lines intelligently
+        const contentLines = section.content.split('\n').filter(l => l.trim());
+        
+        // If it's skills section, render as tags
+        if (isSkillsSection) {
+          const skills = contentLines.map(line => line.trim().replace(/^[-•]\s*/, '')).filter(s => s);
+          return (
+            <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+              <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  {getSectionIcon(section.title)}
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                  {section.title}
+                </h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {skills.map((skill, i) => (
+                  <span 
+                    key={i}
+                    className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        
+        const groupedContent = [];
+        let currentParagraph = [];
+        
+        contentLines.forEach((line, i) => {
+          const trimmed = line.trim();
+          
+          // Bullet point - flush paragraph and add bullet
+          if (trimmed.startsWith('-') || trimmed.startsWith('•')) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'bullet', text: trimmed.replace(/^[-•]\s*/, '') });
+          }
+          // Heading indicator (ends with : or all caps short line)
+          else if ((trimmed.endsWith(':') && trimmed.length < 50) || 
+                   (trimmed === trimmed.toUpperCase() && trimmed.length > 2 && trimmed.length < 50 && !/\d/.test(trimmed))) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'heading', text: trimmed });
+          }
+          // Date range
+          else if (/\d{4}\s*-\s*\d{4}|\d{4}\s*-\s*Present/i.test(trimmed)) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'date', text: trimmed });
+          }
+          // Regular text - accumulate into paragraph
+          else {
+            currentParagraph.push(trimmed);
+          }
+        });
+        
+        // Flush remaining paragraph
+        if (currentParagraph.length > 0) {
+          groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+        }
+        
+        return (
+          <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                {getSectionIcon(section.title)}
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                {section.title}
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {groupedContent.map((item, i) => {
+                if (item.type === 'bullet') {
+                  return (
+                    <div key={i} className="flex gap-3 items-start">
+                      <span className="text-indigo-500 mt-1">•</span>
+                      <span className="text-gray-700 dark:text-gray-300 flex-1">{item.text}</span>
+                    </div>
+                  );
+                }
+                if (item.type === 'heading') {
+                  return (
+                    <p key={i} className="text-sm font-semibold text-gray-900 dark:text-white mt-4 mb-2">
+                      {item.text}
+                    </p>
+                  );
+                }
+                if (item.type === 'date') {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                      <FaClock className="text-gray-400" />
+                      <span>{item.text}</span>
+                    </div>
+                  );
+                }
+                // Regular paragraph
+                return (
+                  <p key={i} className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {item.text}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
@@ -261,7 +918,20 @@ export default function Dashboard({ user }) {
       setSuggestions(res.data.suggestions || []);
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
-      setOrderedSections(res.data.ordered_sections || []);
+      
+      // Debug: Log ordered sections data
+      const orderedSectionsData = res.data.ordered_sections || [];
+      console.log('📊 Received ordered_sections from backend:', orderedSectionsData);
+      if (orderedSectionsData.length > 0) {
+        console.log('📝 First section sample:', {
+          key: orderedSectionsData[0].key,
+          label: orderedSectionsData[0].label,
+          contentType: typeof orderedSectionsData[0].content,
+          contentPreview: JSON.stringify(orderedSectionsData[0].content).substring(0, 100)
+        });
+      }
+      
+      setOrderedSections(orderedSectionsData);
       setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
@@ -841,76 +1511,46 @@ export default function Dashboard({ user }) {
                     </div>
 
                     {!expandedPreview ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 max-h-[500px] overflow-auto custom-scrollbar">
-                          <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800 dark:text-gray-200">
-                            {optimizedCV && optimizedCV.trim() ? (
-                              optimizedCV.split('\n').map((line, idx) => {
-                                // Check if line is a markdown heading
-                                if (line.startsWith('### ')) {
-                                  return (
-                                    <h3 key={idx} className="text-base font-bold text-indigo-700 dark:text-indigo-300 mt-4 mb-2">
-                                      {line.replace('### ', '')}
-                                    </h3>
-                                  );
-                                } else if (line.startsWith('## ')) {
-                                  return (
-                                    <h2 key={idx} className="text-lg font-bold text-indigo-800 dark:text-indigo-200 mt-5 mb-3 border-b-2 border-indigo-300 dark:border-indigo-700 pb-1">
-                                      {line.replace('## ', '')}
-                                    </h2>
-                                  );
-                                } else if (line.startsWith('# ')) {
-                                  return (
-                                    <h1 key={idx} className="text-xl font-bold text-indigo-900 dark:text-indigo-100 mt-6 mb-3">
-                                      {line.replace('# ', '')}
-                                    </h1>
-                                  );
-                                } else if (line.trim().startsWith('-') || line.trim().startsWith('•')) {
-                                  return (
-                                    <div key={idx} className="flex gap-2 ml-4 mb-1">
-                                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">•</span>
-                                      <span>{line.replace(/^[\s-•]+/, '')}</span>
-                                    </div>
-                                  );
-                                } else if (line.trim().startsWith('*') && line.trim().endsWith('*') && line.trim().length > 2) {
-                                  return (
-                                    <p key={idx} className="font-semibold text-gray-800 dark:text-gray-200 my-2">
-                                      {line.replace(/\*/g, '')}
-                                    </p>
-                                  );
-                                } else if (line.trim()) {
-                                  return (
-                                    <p key={idx} className="mb-2 leading-relaxed">
-                                      {line}
-                                    </p>
-                                  );
-                                } else {
-                                  return <div key={idx} className="h-2"></div>;
-                                }
-                              })
-                            ) : (
-                              <p className="text-gray-500 dark:text-gray-400 italic">No optimized content available</p>
-                            )}
-                          </div>
-                        </div>
+                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                        <EnhancedCVRenderer content={optimizedCV} />
                       </div>
                     ) : (
-                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
+                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
                         ) : orderedSections && orderedSections.length > 0 ? (
-                          <div className="space-y-5">
-                            {orderedSections.map((section) => (
-                              <div key={section.key} className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-4 rounded-lg border-l-4 border-indigo-500">
-                                <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-2 flex items-center gap-2">
-                                  <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
-                                  {section.label}
-                                </h4>
-                                <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-                                  {section.content}
+                          <div className="space-y-4">
+                            {orderedSections.map((section) => {
+                              const getSectionIcon = (key) => {
+                                const keyLower = key.toLowerCase();
+                                if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500 text-lg" />;
+                                if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500 text-lg" />;
+                                if (keyLower.includes('skill')) return <FaCode className="text-green-500 text-lg" />;
+                                if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500 text-lg" />;
+                                if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500 text-lg" />;
+                                if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500 text-lg" />;
+                                if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500 text-lg" />;
+                                if (keyLower.includes('language')) return <FaLanguage className="text-pink-500 text-lg" />;
+                                if (keyLower.includes('summary') || keyLower.includes('objective') || keyLower.includes('profile')) return <FaUser className="text-indigo-500 text-lg" />;
+                                return <FaFileAlt className="text-gray-500 text-lg" />;
+                              };
+
+                              return (
+                                <div key={section.key} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+                                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                                    <div className="p-2 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-lg">
+                                      {getSectionIcon(section.key)}
+                                    </div>
+                                    <h4 className="text-base font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                                      {section.label}
+                                    </h4>
+                                  </div>
+                                  <div className="text-sm leading-relaxed">
+                                    {renderSectionContent(section.key, parseContentSafely(section.content))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center p-8 text-center">
@@ -1051,46 +1691,6 @@ export default function Dashboard({ user }) {
                 </h4>
                 <div className="grid md:grid-cols-2 gap-4">
                   {orderedSections.map(({ key, label, content }) => {
-                    // Helper to format array data nicely
-                    const formatContent = (cont) => {
-                      if (!cont) return null;
-                      
-                      // If it's a string representation of an array/object, try to parse and format
-                      if (typeof cont === 'string' && (cont.startsWith('{') || cont.startsWith('['))) {
-                        try {
-                          const parsed = JSON.parse(cont.replace(/'/g, '"'));
-                          if (Array.isArray(parsed)) {
-                            return parsed.map((item, idx) => (
-                              <div key={idx} className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0">
-                                {typeof item === 'object' ? (
-                                  <div className="space-y-1">
-                                    {item.title && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.title}</div>}
-                                    {item.degree && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.degree}</div>}
-                                    {item.name && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.name}</div>}
-                                    {item.company && <div className="text-indigo-600 dark:text-indigo-400">{item.company}</div>}
-                                    {item.institution && <div className="text-indigo-600 dark:text-indigo-400">{item.institution}</div>}
-                                    {item.issuer && <div className="text-indigo-600 dark:text-indigo-400">{item.issuer}</div>}
-                                    {(item.dates || item.date || item.graduation_date) && (
-                                      <div className="text-xs text-gray-500">{item.dates || item.date || item.graduation_date}</div>
-                                    )}
-                                    {item.location && <div className="text-xs text-gray-500">{item.location}</div>}
-                                    {item.description && <div className="text-sm mt-1 text-gray-600 dark:text-gray-400">{item.description}</div>}
-                                  </div>
-                                ) : (
-                                  <div>{String(item)}</div>
-                                )}
-                              </div>
-                            ));
-                          }
-                        } catch (e) {
-                          // Not valid JSON, continue with string display
-                        }
-                      }
-                      
-                      // Default: display as formatted text
-                      return <div className="whitespace-pre-wrap">{cont}</div>;
-                    };
-
                     return content ? (
                       <div
                         key={key}
@@ -1098,12 +1698,12 @@ export default function Dashboard({ user }) {
                       >
                         <div className="flex items-center gap-2 mb-3">
                           <div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full group-hover:h-8 transition-all"></div>
-                          <h4 className="font-bold text-indigo-600 dark:text-indigo-400 capitalize text-sm uppercase tracking-wide">
+                          <h4 className="font-bold text-indigo-600 dark:text-indigo-400 text-sm uppercase tracking-wide">
                             {label}
                           </h4>
                         </div>
-                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-5 overflow-hidden leading-relaxed">
-                          {formatContent(content)}
+                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-[8] overflow-hidden leading-relaxed">
+                          {renderSectionContent(key, content)}
                         </div>
                         <button
                           onClick={() => setExpandedPreview(true)}

@@ -77,6 +77,21 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
     """Extract named entities like PERSON, ORG, GPE, DATE."""
     nlp = load_spacy_model()
     
+    # Blacklist of tech terms that spaCy might misidentify as entities
+    TECH_BLACKLIST = {
+        'spring boot', 'react', 'angular', 'vue', 'node', 'nodejs', 'java', 
+        'python', 'javascript', 'typescript', 'spring', 'django', 'flask',
+        'docker', 'kubernetes', 'aws', 'azure', 'mongodb', 'mysql', 'postgresql',
+        'redis', 'kafka', 'jenkins', 'github', 'gitlab', 'jira', 'confluence',
+        'tensorflow', 'pytorch', 'keras', 'pandas', 'numpy', 'scikit', 'opencv',
+        'express', 'fastapi', 'laravel', 'symfony', 'rails', 'ruby', 'php',
+        'c++', 'c#', 'golang', 'rust', 'kotlin', 'swift', 'objective-c',
+        'android', 'ios', 'linux', 'windows', 'macos', 'ubuntu', 'centos',
+        'git', 'svn', 'html', 'css', 'sass', 'scss', 'webpack', 'babel',
+        'jquery', 'bootstrap', 'tailwind', 'material', 'figma', 'sketch',
+        'postman', 'swagger', 'graphql', 'rest', 'api', 'json', 'xml'
+    }
+    
     entities = {
         "PERSON": [],
         "ORG": [],
@@ -92,7 +107,15 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
         doc = nlp(text)
         for ent in doc.ents:
             if ent.label_ in entities:
-                entities[ent.label_].append(ent.text)
+                ent_text = ent.text.strip()
+                ent_lower = ent_text.lower()
+                
+                # Filter out tech terms from PERSON and GPE entities
+                if ent.label_ in ('PERSON', 'GPE') and ent_lower in TECH_BLACKLIST:
+                    logger.debug(f"Filtering tech term from {ent.label_}: '{ent_text}'")
+                    continue
+                
+                entities[ent.label_].append(ent_text)
     except Exception as e:
         logger.warning(f"NLP entity extraction failed: {e}")
             

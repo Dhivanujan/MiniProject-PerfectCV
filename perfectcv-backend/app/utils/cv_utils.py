@@ -117,6 +117,18 @@ def extract_name_with_spacy(text: str) -> str:
         logger.warning("⚠ spaCy not available, cannot extract name")
         return ""
     
+    # Blacklist of common tech terms that spaCy might misidentify as names
+    TECH_BLACKLIST = {
+        'spring boot', 'react', 'angular', 'vue', 'node', 'nodejs', 'java', 
+        'python', 'javascript', 'typescript', 'spring', 'django', 'flask',
+        'docker', 'kubernetes', 'aws', 'azure', 'mongodb', 'mysql', 'postgresql',
+        'redis', 'kafka', 'jenkins', 'github', 'gitlab', 'jira', 'confluence',
+        'tensorflow', 'pytorch', 'keras', 'pandas', 'numpy', 'scikit', 'opencv',
+        'express', 'fastapi', 'laravel', 'symfony', 'rails', 'ruby', 'php',
+        'c++', 'c#', 'golang', 'rust', 'kotlin', 'swift', 'objective-c',
+        'android', 'ios', 'linux', 'windows', 'macos', 'ubuntu', 'centos'
+    }
+    
     # Search only first 500 characters (name is usually at top)
     search_text = text[:500] if len(text) > 500 else text
     
@@ -128,19 +140,39 @@ def extract_name_with_spacy(text: str) -> str:
         for ent in doc.ents:
             if ent.label_ == "PERSON":
                 name = ent.text.strip()
+                name_lower = name.lower()
                 words = name.split()
+                
+                # Check blacklist - skip technology/framework names
+                if name_lower in TECH_BLACKLIST:
+                    logger.debug(f"Skipping tech term identified as person: '{name}'")
+                    continue
+                
+                # Skip common non-name terms
+                if name_lower in ['name', 'resume', 'cv', 'curriculum vitae']:
+                    continue
                 
                 # Less restrictive: Accept single names OR multi-word names
                 # Just require reasonable character count
-                if len(name) >= 3 and not name.lower() in ['name', 'resume', 'cv']:
+                if len(name) >= 3:
                     # Skip if it's mostly numbers or special characters
                     if sum(c.isalpha() for c in name) / len(name) > 0.5:
-                        candidates.append((name, len(words), ent.start_char))
-                        logger.debug(f"Name candidate: '{name}' ({len(words)} words, pos {ent.start_char})")
+                        # Additional validation: Check if it contains common name patterns
+                        # Real names typically have proper capitalization and reasonable word count
+                        is_valid_name = True
+                        
+                        # Skip if single word and all caps (likely acronym or section header)
+                        if len(words) == 1 and name.isupper() and len(name) > 4:
+                            is_valid_name = False
+                            logger.debug(f"Skipping all-caps single word: '{name}'")
+                        
+                        if is_valid_name:
+                            candidates.append((name, len(words), ent.start_char))
+                            logger.debug(f"Name candidate: '{name}' ({len(words)} words, pos {ent.start_char})")
         
         if candidates:
             # Prefer multi-word names that appear early in document
-            # Sort by: (1) word count DESC, (2) position ASC
+            # Sort by: (1) word count DESC (prefer full names), (2) position ASC (prefer top)
             candidates.sort(key=lambda x: (-x[1], x[2]))
             best_name = candidates[0][0]
             logger.info(f"✓ Name extracted via spaCy: {best_name} (from {len(candidates)} candidates)")
@@ -2547,8 +2579,13 @@ def extract_contact_info(text):
 
     # 5. Extract Location (NLP GPE)
     if entities.get("GPE"):
-        contact['location'] = entities["GPE"][0]
-        contact['address'] = contact['location']
+        # Additional validation: GPE should not be a single tech term
+        location_candidate = entities["GPE"][0]
+        # Location should be reasonable (not too short, contains letters)
+        if len(location_candidate) >= 3 and not location_candidate.lower() in ['react', 'vue', 'node', 'java', 'php', 'ruby', 'go', 'rust']:
+            contact['location'] = location_candidate
+            contact['address'] = contact['location']
+    
     # Fallback: look for Address: label to capture location/address
     if not contact.get('location'):
         addr_match = re.search(r'(?m)^address\s*[:\-]\s*(?P<addr>.+)$', text, flags=re.IGNORECASE)
