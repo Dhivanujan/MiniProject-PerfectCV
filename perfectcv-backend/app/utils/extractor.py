@@ -78,6 +78,78 @@ def _try_ocr_extraction(file_bytes) -> str:
         return ""
 
 
+def normalize_phone_blocks(text: str) -> str:
+    """Normalize phone numbers broken across lines in PDF extraction.
+    
+    Example: '+94\n77\n2027\n2019' -> '+94 7720272019'
+    """
+    import re
+    
+    if not text:
+        return ""
+    
+    # Find phone number patterns that might be broken across lines
+    # Pattern: optional +, followed by digits with newlines/spaces between groups
+    phone_pattern = r'(\+?\d{1,4})[\s\n]+(\d{1,4})[\s\n]+(\d{2,4})[\s\n]+(\d{2,4})'
+    
+    def join_phone_parts(match):
+        # Join all captured groups with spaces, removing + if present
+        parts = [p for p in match.groups() if p]
+        if parts[0].startswith('+'):
+            return parts[0] + ' ' + ''.join(parts[1:])
+        return ''.join(parts)
+    
+    text = re.sub(phone_pattern, join_phone_parts, text)
+    
+    # Also handle simple newlines within phone numbers
+    # Pattern: digits followed by newline and more digits (likely phone number)
+    text = re.sub(r'(\d{2,4})\n(\d{2,4})', r'\1\2', text)
+    
+    return text
+
+def clean_extracted_text(text: str) -> str:
+    """Clean and normalize extracted PDF text with phone number normalization."""
+    import re
+    
+    if not text:
+        return ""
+    
+    # CRITICAL: Normalize phone numbers FIRST before any other processing
+    text = normalize_phone_blocks(text)
+    
+    # Remove common PDF artifacts
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]', '', text)
+    
+    # Normalize line breaks - preserve paragraph structure
+    text = text.replace('\\n', '\n')
+    
+    # Remove page numbers (standalone numbers on lines)
+    text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
+    
+    # Remove header/footer patterns (repeated text)
+    lines = text.split('\n')
+    if len(lines) > 10:
+        first_line = lines[0].strip().lower()
+        if any(word in first_line for word in ['page', 'confidential', 'draft']):
+            lines = lines[1:]
+        last_line = lines[-1].strip().lower()
+        if any(word in last_line for word in ['page', 'confidential', 'draft']):
+            lines = lines[:-1]
+    
+    text = '\n'.join(lines)
+    
+    # Restore proper spacing around punctuation
+    text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
+    
+    # Normalize excessive whitespace but preserve single newlines
+    text = re.sub(r' +', ' ', text)  # Multiple spaces to single space
+    text = re.sub(r'\n{3,}', '\n\n', text)  # Multiple newlines to double
+    
+    # Trim whitespace
+    text = text.strip()
+    
+    return text
+
 def extract_text_from_pdf(file_stream) -> str:
     """
     Extract text from PDF using the fastest available method.
@@ -99,29 +171,46 @@ def extract_text_from_pdf(file_stream) -> str:
     except Exception:
         pass
 
-    # 1. PyMuPDF (fitz) - Fastest
+    # 1. PyMuPDF (fitz) - PRIMARY EXTRACTION METHOD
     if fitz and file_bytes:
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             text_parts = []
-            for page in doc:
-                # Get text blocks to avoid headers/footers if needed, but simple text is fastest
-                text_parts.append(page.get_text())
             
-            full_text = "\n".join(text_parts)
+            for page_num, page in enumerate(doc, 1):
+                # Use "text" layout mode for better text extraction
+                # This preserves reading order and handles multi-column layouts better
+                page_text = page.get_text("text", sort=True)
+                
+                # Alternative: Use "blocks" for more structured extraction
+                # blocks = page.get_text("blocks")
+                # page_text = "\n".join([block[4] for block in blocks if block[6] == 0])  # text blocks only
+                
+                if page_text.strip():
+                    text_parts.append(page_text)
+                    logger.debug(f"PyMuPDF: Extracted {len(page_text)} chars from page {page_num}")
+            
+            doc.close()
+            
+            full_text = "\n\n".join(text_parts)  # Double newline between pages
             
             # Check if extraction was successful (not a scanned PDF)
             if full_text.strip() and len(full_text.strip()) > 100:
-                logger.info(f"Extracted PDF with PyMuPDF in {time.time() - start_time:.2f}s")
-                return full_text
+                # Clean and normalize the extracted text
+                cleaned_text = clean_extracted_text(full_text)
+                logger.info(f"✓ PyMuPDF extracted {len(cleaned_text)} chars in {time.time() - start_time:.2f}s")
+                return cleaned_text
             else:
-                logger.warning("PyMuPDF extracted minimal text, might be scanned PDF")
+                logger.warning("⚠ PyMuPDF extracted minimal text, might be scanned PDF")
         except Exception as e:
-            logger.warning(f"PyMuPDF extraction failed: {e}")
+            logger.warning(f"⚠ PyMuPDF extraction failed: {e}")
+    elif not fitz:
+        logger.warning("⚠ PyMuPDF not installed. Install: pip install PyMuPDF")
 
-    # 2. pdfplumber - Good accuracy, slower
+    # 2. pdfplumber - Fallback if PyMuPDF fails
     if pdfplumber:
         try:
+            logger.info("Trying pdfplumber as fallback")
             file_stream.seek(0)
             with pdfplumber.open(file_stream) as pdf:
                 text_parts = []
@@ -133,15 +222,15 @@ def extract_text_from_pdf(file_stream) -> str:
             full_text = "\n".join(text_parts)
             
             if full_text.strip() and len(full_text.strip()) > 100:
-                logger.info(f"Extracted PDF with pdfplumber in {time.time() - start_time:.2f}s")
+                logger.info(f"✓ pdfplumber extracted {len(full_text)} chars in {time.time() - start_time:.2f}s")
                 return full_text
             else:
-                logger.warning("pdfplumber extracted minimal text, might be scanned PDF")
+                logger.warning("⚠ pdfplumber extracted minimal text")
         except Exception as e:
-            logger.warning(f"pdfplumber extraction failed: {e}")
+            logger.warning(f"⚠ pdfplumber extraction failed: {e}")
 
-    # 3. pdfminer - Fallback, slowest
-    logger.info("Trying pdfminer extraction")
+    # 3. pdfminer - Last fallback
+    logger.info("Trying pdfminer as last fallback")
     text = _pdfminer_from_stream(file_stream)
     
     # If all text extraction methods failed or returned minimal text, try OCR
@@ -151,6 +240,11 @@ def extract_text_from_pdf(file_stream) -> str:
             ocr_text = _try_ocr_extraction(file_bytes)
             if ocr_text and len(ocr_text.strip()) > len(text.strip()):
                 logger.info(f"OCR extraction successful in {time.time() - start_time:.2f}s")
-                return ocr_text
+                text = ocr_text
     
-    return text
+    # Clean the extracted text
+    cleaned_text = clean_extracted_text(text)
+    
+    logger.info(f"Final extraction: {len(cleaned_text)} characters in {time.time() - start_time:.2f}s")
+    
+    return cleaned_text

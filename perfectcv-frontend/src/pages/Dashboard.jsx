@@ -206,13 +206,63 @@ export default function Dashboard({ user }) {
       // Let axios set the Content-Type including the boundary for multipart
       const res = await api.post("/api/upload-cv", formData);
       // backend now returns structured fields
-      setOptimizedCV(res.data.optimized_text || res.data.optimized_cv || "");
+      let optimizedContent = res.data.optimized_text || res.data.optimized_cv || "";
+      
+      // If optimized content is too short or missing, try to build from structured data
+      if ((!optimizedContent || optimizedContent.trim().length < 100) && res.data.structured_cv) {
+        const structured = res.data.structured_cv;
+        const parts = [];
+        
+        // Build readable text from structured data
+        if (structured.name) parts.push(`# ${structured.name}\n`);
+        if (structured.contact) parts.push(`${structured.contact}\n`);
+        if (structured.summary) parts.push(`\n## Professional Summary\n${structured.summary}\n`);
+        if (structured.skills && Array.isArray(structured.skills) && structured.skills.length > 0) {
+          parts.push(`\n## Skills\n${structured.skills.map(s => `- ${s}`).join('\n')}\n`);
+        }
+        if (structured.experience && Array.isArray(structured.experience) && structured.experience.length > 0) {
+          parts.push(`\n## Work Experience\n`);
+          structured.experience.forEach(exp => {
+            parts.push(`\n### ${exp.title || exp.role || 'Position'}`);
+            if (exp.company) parts.push(` at ${exp.company}`);
+            if (exp.dates || exp.years) parts.push(` | ${exp.dates || exp.years}`);
+            parts.push('\n');
+            if (exp.description) parts.push(`${exp.description}\n`);
+            if (exp.points && Array.isArray(exp.points)) {
+              exp.points.forEach(point => parts.push(`- ${point}\n`));
+            }
+          });
+        }
+        if (structured.education && Array.isArray(structured.education) && structured.education.length > 0) {
+          parts.push(`\n## Education\n`);
+          structured.education.forEach(edu => {
+            parts.push(`\n### ${edu.degree || 'Degree'}\n`);
+            if (edu.school || edu.institution) parts.push(`${edu.school || edu.institution}\n`);
+            if (edu.year) parts.push(`${edu.year}\n`);
+          });
+        }
+        if (structured.projects && Array.isArray(structured.projects) && structured.projects.length > 0) {
+          parts.push(`\n## Projects\n`);
+          structured.projects.forEach(proj => {
+            parts.push(`\n### ${proj.name || 'Project'}\n`);
+            if (proj.desc || proj.description) parts.push(`${proj.desc || proj.description}\n`);
+            if (proj.technologies && Array.isArray(proj.technologies)) {
+              parts.push(`Technologies: ${proj.technologies.join(', ')}\n`);
+            }
+          });
+        }
+        
+        if (parts.length > 0) {
+          optimizedContent = parts.join('');
+        }
+      }
+      
+      setOptimizedCV(optimizedContent);
       setSuggestions(res.data.suggestions || []);
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
       setOrderedSections(res.data.ordered_sections || []);
-      // Prefer structured_cv for the new modern template, fallback to template_data
-      setTemplateData(res.data.structured_cv || res.data.template_data || null);
+      setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
       setFoundKeywords(res.data.found_keywords || []);
@@ -257,16 +307,71 @@ export default function Dashboard({ user }) {
       const res = await api.get(`/api/download/${fileId}`, {
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement("a");
       link.href = url;
+      link.setAttribute("download", filename || "CV_Download.pdf");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      // Show success message
+      console.log(`✅ Downloaded: ${filename}`);
+    } catch (err) {
+      console.error("Download error:", err);
+      alert("Download failed! Please try again.");
+    }
+  };
+
+  const handleDownloadOptimizedCV = async () => {
+    if (!optimizedCV && !templateData) {
+      alert("No optimized CV available to download.");
+      return;
+    }
+
+    try {
+      const payload = {
+        structured_cv: templateData,
+        optimized_text: optimizedCV,
+        template_data: templateData,
+        filename: lastUploadedFilename || "Optimized_CV.pdf",
+      };
+
+      console.log("Sending download request with payload:", {
+        hasStructuredCV: !!templateData,
+        hasOptimizedText: !!optimizedCV,
+        filename: payload.filename
+      });
+
+      const res = await api.post("/api/download-optimized-cv", payload, {
+        responseType: "blob",
+      });
+
+      // Check if we got an error response as JSON
+      if (res.data.type === 'application/json') {
+        const text = await res.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.message || "Download failed");
+      }
+
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement("a");
+      link.href = url;
+      const filename = lastUploadedFilename 
+        ? `${lastUploadedFilename.replace(/\.[^/.]+$/, "")}_Optimized.pdf`
+        : "Optimized_CV.pdf";
       link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+
+      console.log(`✅ Downloaded optimized CV: ${filename}`);
     } catch (err) {
-      console.error(err);
-      alert("Download failed!");
+      console.error("Download optimized CV error:", err);
+      const errorMsg = err.response?.data?.message || err.message || "Failed to download optimized CV";
+      alert(`Download failed: ${errorMsg}\n\nPlease try again or use the 'Download from Library' button.`);
     }
   };
 
@@ -315,11 +420,11 @@ export default function Dashboard({ user }) {
     );
     const avgScore = scoredFiles.length
       ? Math.round(
-        scoredFiles.reduce((sum, file) => sum + (file.atsScore || 0), 0) / scoredFiles.length
-      )
+          scoredFiles.reduce((sum, file) => sum + (file.atsScore || 0), 0) / scoredFiles.length
+        )
       : typeof atsScore === "number"
-        ? atsScore
-        : null;
+      ? atsScore
+      : null;
     return {
       totalUploads: files.length,
       bestScore: bestScore || null,
@@ -555,10 +660,11 @@ export default function Dashboard({ user }) {
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   className={`lg:col-span-7 border-dashed border-2 
-                  ${dragActive
+                  ${
+                    dragActive
                       ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
                       : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
-                    } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
+                  } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
@@ -575,8 +681,8 @@ export default function Dashboard({ user }) {
                       {selectedFile
                         ? truncateFilename(selectedFile.name, 40)
                         : dragActive
-                          ? "Drop your CV here"
-                          : "Drag & drop your CV here"}
+                        ? "Drop your CV here"
+                        : "Drag & drop your CV here"}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       or click to select (.pdf, .doc, .docx)
@@ -679,12 +785,13 @@ export default function Dashboard({ user }) {
                           {getJobDomainLabel(file.jobDomain)}
                         </span>
                         {typeof file.atsScore === "number" && (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${file.atsScore >= 70
-                              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            file.atsScore >= 70 
+                              ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
                               : file.atsScore >= 50
-                                ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
-                                : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
-                            }`}>
+                              ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                              : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                          }`}>
                             {file.atsScore}/100
                           </span>
                         )}
@@ -716,101 +823,219 @@ export default function Dashboard({ user }) {
               border border-green-200 dark:border-green-700/50 p-6 
               rounded-2xl shadow-md mb-6 text-gray-800 dark:text-gray-200"
             >
-              <div className="flex items-start justify-between gap-6">
-                <div className="flex-1">
+              <div className="flex flex-col lg:flex-row items-start gap-6">
+                <div className="flex-1 w-full">
                   <h3 className="text-2xl font-bold mb-4 text-green-800 dark:text-green-400 flex items-center gap-2">
                     <FaCheckCircle className="text-xl" /> Optimized CV
                   </h3>
-                  <div className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-green-100 dark:border-green-800/50">
+                  <div className="bg-white dark:bg-gray-900/50 p-5 rounded-lg border border-green-100 dark:border-green-800/50 shadow-sm">
                     {/* Toggle between raw optimized text and organized preview */}
-                    <div className="flex items-center justify-end mb-2">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CV Content</span>
                       <button
                         onClick={() => setExpandedPreview(!expandedPreview)}
-                        className="text-xs px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200"
+                        className="text-xs px-4 py-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 transition-colors font-medium"
                       >
-                        {expandedPreview ? "Show Raw" : "Show Preview"}
+                        {expandedPreview ? "📄 Raw Text" : "👁 Preview"}
                       </button>
                     </div>
 
                     {!expandedPreview ? (
-                      <pre className="whitespace-pre-wrap max-h-96 overflow-auto font-mono text-sm leading-relaxed">
-                        {optimizedCV}
-                      </pre>
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 max-h-[500px] overflow-auto custom-scrollbar">
+                          <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                            {optimizedCV && optimizedCV.trim() ? (
+                              optimizedCV.split('\n').map((line, idx) => {
+                                // Check if line is a markdown heading
+                                if (line.startsWith('### ')) {
+                                  return (
+                                    <h3 key={idx} className="text-base font-bold text-indigo-700 dark:text-indigo-300 mt-4 mb-2">
+                                      {line.replace('### ', '')}
+                                    </h3>
+                                  );
+                                } else if (line.startsWith('## ')) {
+                                  return (
+                                    <h2 key={idx} className="text-lg font-bold text-indigo-800 dark:text-indigo-200 mt-5 mb-3 border-b-2 border-indigo-300 dark:border-indigo-700 pb-1">
+                                      {line.replace('## ', '')}
+                                    </h2>
+                                  );
+                                } else if (line.startsWith('# ')) {
+                                  return (
+                                    <h1 key={idx} className="text-xl font-bold text-indigo-900 dark:text-indigo-100 mt-6 mb-3">
+                                      {line.replace('# ', '')}
+                                    </h1>
+                                  );
+                                } else if (line.trim().startsWith('-') || line.trim().startsWith('•')) {
+                                  return (
+                                    <div key={idx} className="flex gap-2 ml-4 mb-1">
+                                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">•</span>
+                                      <span>{line.replace(/^[\s-•]+/, '')}</span>
+                                    </div>
+                                  );
+                                } else if (line.trim().startsWith('*') && line.trim().endsWith('*') && line.trim().length > 2) {
+                                  return (
+                                    <p key={idx} className="font-semibold text-gray-800 dark:text-gray-200 my-2">
+                                      {line.replace(/\*/g, '')}
+                                    </p>
+                                  );
+                                } else if (line.trim()) {
+                                  return (
+                                    <p key={idx} className="mb-2 leading-relaxed">
+                                      {line}
+                                    </p>
+                                  );
+                                } else {
+                                  return <div key={idx} className="h-2"></div>;
+                                }
+                              })
+                            ) : (
+                              <p className="text-gray-500 dark:text-gray-400 italic">No optimized content available</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     ) : (
-                      <div className="max-h-96 overflow-auto">
+                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
                         ) : orderedSections && orderedSections.length > 0 ? (
-                          <div className="space-y-4 text-sm text-gray-800 dark:text-gray-200">
+                          <div className="space-y-5">
                             {orderedSections.map((section) => (
-                              <div key={section.key} className="border-l-4 border-indigo-400 pl-3">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                                  <span>&mdash; {section.label} &mdash;</span>
-                                </p>
-                                <div className="mt-1 whitespace-pre-wrap leading-relaxed">
+                              <div key={section.key} className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-4 rounded-lg border-l-4 border-indigo-500">
+                                <h4 className="text-sm font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-2 flex items-center gap-2">
+                                  <span className="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                                  {section.label}
+                                </h4>
+                                <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                                   {section.content}
                                 </div>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-500">No structured preview available.</p>
+                          <div className="flex flex-col items-center justify-center p-8 text-center">
+                            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
+                              <FaFileAlt className="text-gray-400 text-2xl" />
+                            </div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No structured preview available</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Use Raw Text view to see content</p>
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-5 border border-green-100 dark:border-green-800/50 min-w-max">
-                  <div className="flex items-center justify-center gap-2 mb-3">
-                    <FaStar className="text-yellow-500" />
-                    <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                      ATS Score
-                    </span>
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[280px]">
+                  <div className="text-center mb-5">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <FaStar className="text-yellow-500 text-lg" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                        ATS Score
+                      </span>
+                    </div>
+                    <div className="relative w-32 h-32 mx-auto mb-3">
+                      <svg className="transform -rotate-90 w-32 h-32">
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          className="text-gray-200 dark:text-gray-700"
+                        />
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          strokeDasharray={`${2 * Math.PI * 56}`}
+                          strokeDashoffset={`${2 * Math.PI * 56 * (1 - (atsScore || 0) / 100)}`}
+                          className={`transition-all duration-500 ${
+                            (atsScore || 0) >= 70 
+                              ? 'text-green-500' 
+                              : (atsScore || 0) >= 50 
+                              ? 'text-yellow-500' 
+                              : 'text-red-500'
+                          }`}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className={`text-3xl font-bold ${
+                          (atsScore || 0) >= 70 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : (atsScore || 0) >= 50 
+                            ? 'text-yellow-600 dark:text-yellow-400' 
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {atsScore ?? "--"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {(atsScore || 0) >= 70 
+                        ? '✅ Excellent score!' 
+                        : (atsScore || 0) >= 50 
+                        ? '⚠️ Good, can improve' 
+                        : '❌ Needs optimization'}
+                    </p>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-3">
-                    <div
-                      className={`bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, atsScore || 0))}%`,
-                      }}
-                    />
-                  </div>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400 text-center">{atsScore ?? "N/A"}<span className="text-sm">/100</span></p>
                   {recommendedKeywords.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-green-100 dark:border-green-800/50">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Key Words</p>
-                      <div className="flex flex-wrap gap-1">
-                        {recommendedKeywords.slice(0, 5).map((kw, i) => (
-                          <span key={i} className="bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
+                    <div className="mb-4 pb-4 border-b border-green-100 dark:border-green-800/50">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Recommended Keywords</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {recommendedKeywords.slice(0, 6).map((kw, i) => (
+                          <span key={i} className="bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg font-medium border border-green-200 dark:border-green-700">
                             {kw}
                           </span>
                         ))}
                       </div>
+                      {recommendedKeywords.length > 6 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{recommendedKeywords.length - 6} more</p>
+                      )}
                     </div>
                   )}
                   {foundKeywords && foundKeywords.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-green-50 dark:border-green-900/20">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Found Keywords</p>
-                      <div className="flex flex-wrap gap-1">
-                        {foundKeywords.slice(0, 8).map((kw, i) => (
-                          <span key={i} className="bg-gray-100 dark:bg-gray-800/30 text-gray-700 dark:text-gray-200 text-xs px-2 py-1 rounded-full">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Found Keywords</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {foundKeywords.slice(0, 10).map((kw, i) => (
+                          <span key={i} className="bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-200 text-xs px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700">
                             {kw}
                           </span>
                         ))}
                       </div>
+                      {foundKeywords.length > 10 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{foundKeywords.length - 10} more</p>
+                      )}
                     </div>
                   )}
+                  <button
+                    onClick={handleDownloadOptimizedCV}
+                    className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-800 dark:hover:to-purple-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                  >
+                    <FaDownload className="text-base" /> Download Optimized PDF
+                  </button>
                   {lastUploadedFileId && (
                     <button
                       onClick={() =>
                         handleDownload(
                           lastUploadedFileId,
-                          lastUploadedFilename || "optimized_cv.pdf"
+                          lastUploadedFilename?.replace(/\.[^/.]+$/, "_ATS_Optimized.pdf") || "CV_ATS_Optimized.pdf"
                         )
                       }
-                      className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-3 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2"
+                      className="mt-2 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
                     >
-                      <FaDownload className="text-sm" /> Download PDF
+                      <FaDownload className="text-sm" /> Download from Library
                     </button>
                   )}
                 </div>
@@ -819,68 +1044,123 @@ export default function Dashboard({ user }) {
 
             {/* Structured sections preview */}
             {orderedSections && orderedSections.length > 0 && (
-              <div className="grid md:grid-cols-2 gap-4 mb-6">
-                {orderedSections.map(({ key, label, content }) => (
-                  content ? (
-                    <div
-                      key={key}
-                      className="bg-white dark:bg-gray-900/50 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all"
-                    >
-                      <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3 capitalize text-sm">
-                        {label}
-                      </h4>
-                      <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 overflow-hidden">
-                        {content}
+              <div className="mt-6">
+                <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
+                  <FaFileAlt className="text-indigo-500" />
+                  CV Sections Overview
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {orderedSections.map(({ key, label, content }) => {
+                    // Helper to format array data nicely
+                    const formatContent = (cont) => {
+                      if (!cont) return null;
+                      
+                      // If it's a string representation of an array/object, try to parse and format
+                      if (typeof cont === 'string' && (cont.startsWith('{') || cont.startsWith('['))) {
+                        try {
+                          const parsed = JSON.parse(cont.replace(/'/g, '"'));
+                          if (Array.isArray(parsed)) {
+                            return parsed.map((item, idx) => (
+                              <div key={idx} className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0">
+                                {typeof item === 'object' ? (
+                                  <div className="space-y-1">
+                                    {item.title && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.title}</div>}
+                                    {item.degree && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.degree}</div>}
+                                    {item.name && <div className="font-semibold text-gray-900 dark:text-gray-100">{item.name}</div>}
+                                    {item.company && <div className="text-indigo-600 dark:text-indigo-400">{item.company}</div>}
+                                    {item.institution && <div className="text-indigo-600 dark:text-indigo-400">{item.institution}</div>}
+                                    {item.issuer && <div className="text-indigo-600 dark:text-indigo-400">{item.issuer}</div>}
+                                    {(item.dates || item.date || item.graduation_date) && (
+                                      <div className="text-xs text-gray-500">{item.dates || item.date || item.graduation_date}</div>
+                                    )}
+                                    {item.location && <div className="text-xs text-gray-500">{item.location}</div>}
+                                    {item.description && <div className="text-sm mt-1 text-gray-600 dark:text-gray-400">{item.description}</div>}
+                                  </div>
+                                ) : (
+                                  <div>{String(item)}</div>
+                                )}
+                              </div>
+                            ));
+                          }
+                        } catch (e) {
+                          // Not valid JSON, continue with string display
+                        }
+                      }
+                      
+                      // Default: display as formatted text
+                      return <div className="whitespace-pre-wrap">{cont}</div>;
+                    };
+
+                    return content ? (
+                      <div
+                        key={key}
+                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all group"
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full group-hover:h-8 transition-all"></div>
+                          <h4 className="font-bold text-indigo-600 dark:text-indigo-400 capitalize text-sm uppercase tracking-wide">
+                            {label}
+                          </h4>
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-5 overflow-hidden leading-relaxed">
+                          {formatContent(content)}
+                        </div>
+                        <button
+                          onClick={() => setExpandedPreview(true)}
+                          className="mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                        >
+                          View full section →
+                        </button>
                       </div>
-                    </div>
-                  ) : null
-                ))}
+                    ) : null;
+                  })}
+                </div>
               </div>
             )}
 
             {/* Suggestions list (grouped) */}
             {(Object.keys(groupedSuggestions).length > 0 ||
               (suggestions && suggestions.length > 0)) && (
-                <div
-                  className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
+              <div
+                className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
                 border border-blue-200 dark:border-blue-700/50 p-6 
                 rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
-                >
-                  <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
-                    <FaExclamationCircle className="text-lg" /> Improvement Suggestions
-                  </h3>
-                  {/* Prefer groupedSuggestions if provided by backend */}
-                  {Object.keys(groupedSuggestions).length > 0 ? (
-                    <div className="space-y-3">
-                      {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
-                        <div key={cat}>
-                          <h4 className="font-semibold capitalize text-indigo-600">
-                            {cat.replace("_", " ")}
-                          </h4>
-                          <ul className="list-disc pl-6 mt-1">
-                            {msgs.map((m, i) => (
-                              <li key={i} className="text-sm">
-                                {m}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <ul className="list-disc pl-6">
-                      {suggestions.map((s, idx) => (
-                        <li key={idx} className="mb-2">
-                          <strong className="capitalize">
-                            {s.category || "General"}:
-                          </strong>{" "}
-                          {s.message || s}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+              >
+                <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
+                  <FaExclamationCircle className="text-lg" /> Improvement Suggestions
+                </h3>
+                {/* Prefer groupedSuggestions if provided by backend */}
+                {Object.keys(groupedSuggestions).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
+                      <div key={cat}>
+                        <h4 className="font-semibold capitalize text-indigo-600">
+                          {cat.replace("_", " ")}
+                        </h4>
+                        <ul className="list-disc pl-6 mt-1">
+                          {msgs.map((m, i) => (
+                            <li key={i} className="text-sm">
+                              {m}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <ul className="list-disc pl-6">
+                    {suggestions.map((s, idx) => (
+                      <li key={idx} className="mb-2">
+                        <strong className="capitalize">
+                          {s.category || "General"}:
+                        </strong>{" "}
+                        {s.message || s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </section>
         )}
 
@@ -1029,18 +1309,19 @@ export default function Dashboard({ user }) {
                         </p>
                       </div>
                     </div>
-
+                    
                     <div className="flex flex-wrap gap-2 mt-4">
                       <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
                         {getJobDomainLabel(file.jobDomain)}
                       </span>
                       {typeof file.atsScore === "number" && (
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${file.atsScore >= 70
-                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-md border ${
+                          file.atsScore >= 70 
+                            ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800" 
                             : file.atsScore >= 50
-                              ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
-                              : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
-                          }`}>
+                            ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+                            : "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800"
+                        }`}>
                           ATS: {file.atsScore}
                         </span>
                       )}

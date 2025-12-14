@@ -1,5 +1,5 @@
 """
-Advanced AI-powered CV parsing using OpenAI GPT-4 and other AI services.
+Advanced AI-powered CV parsing using OpenAI GPT-4, Groq, and other AI services.
 This module provides intelligent extraction and structuring of CV data.
 """
 
@@ -20,6 +20,14 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("OpenAI library not installed. Install with: pip install openai")
 
+# Try to import Groq (ultra-fast inference)
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    logger.warning("Groq library not installed. Install with: pip install groq")
+
 # Try to import pytesseract for OCR
 try:
     import pytesseract
@@ -32,23 +40,34 @@ except ImportError:
 
 
 class AICVParser:
-    """Advanced CV parser using OpenAI GPT-4 for intelligent extraction."""
+    """Advanced CV parser using AI models (Groq, OpenAI GPT-4, etc.) for intelligent extraction."""
     
-    def __init__(self, openai_api_key: Optional[str] = None):
+    def __init__(self, openai_api_key: Optional[str] = None, groq_api_key: Optional[str] = None):
         """Initialize AI CV parser with API credentials."""
         self.openai_api_key = openai_api_key or getattr(Config, "OPENAI_API_KEY", None)
-        self.client = None
+        self.groq_api_key = groq_api_key or getattr(Config, "GROQ_API_KEY", None)
+        self.openai_client = None
+        self.groq_client = None
         
+        # Initialize Groq client (prioritized for speed and free tier)
+        if GROQ_AVAILABLE and self.groq_api_key:
+            try:
+                self.groq_client = Groq(api_key=self.groq_api_key)
+                logger.info("Groq client initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Groq client: {e}")
+        
+        # Initialize OpenAI client as fallback
         if OPENAI_AVAILABLE and self.openai_api_key:
             try:
-                self.client = OpenAI(api_key=self.openai_api_key)
+                self.openai_client = OpenAI(api_key=self.openai_api_key)
                 logger.info("OpenAI client initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI client: {e}")
     
     def is_available(self) -> bool:
-        """Check if AI parsing is available."""
-        return self.client is not None
+        """Check if AI parsing is available (either Groq or OpenAI)."""
+        return self.groq_client is not None or self.openai_client is not None
     
     def extract_structured_cv_data(self, cv_text: str, use_ai: bool = True) -> Dict[str, Any]:
         """
@@ -74,123 +93,203 @@ class AICVParser:
             logger.info("AI not available or disabled, using rule-based extraction")
             return self._get_empty_cv_structure()
     
-    def _ai_extract(self, cv_text: str) -> Dict[str, Any]:
-        """Use OpenAI GPT-4 to intelligently extract CV data."""
+    def _preprocess_cv_text(self, cv_text: str) -> str:
+        """Preprocess CV text to improve extraction accuracy."""
+        # Remove excessive whitespace and newlines
+        text = re.sub(r'\n{3,}', '\n\n', cv_text)
+        text = re.sub(r' {2,}', ' ', text)
         
-        system_prompt = """You are an expert CV/Resume parser. Extract structured information from the provided CV text.
-Return a JSON object with the following structure (all fields are required, use empty arrays/strings if data not found):
+        # Remove common PDF artifacts
+        text = re.sub(r'\f', ' ', text)  # Form feed
+        text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\xff]', '', text)  # Control chars
+        
+        # Normalize line breaks
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+        
+        return text.strip()
+    
+    def _ai_extract(self, cv_text: str) -> Dict[str, Any]:
+        """Use AI (Groq or OpenAI GPT-4) to intelligently extract CV data."""
+        
+        # Preprocess text for better parsing
+        cv_text = self._preprocess_cv_text(cv_text)
+        
+        system_prompt = """You are an expert CV/Resume parser with deep understanding of document structure. Extract ONLY the actual information present in the CV text with high accuracy.
+
+CRITICAL EXTRACTION RULES:
+1. NEVER generate placeholder text like "Your Name", "Company", "Position", "Institution", "Degree", "Certification Name"
+2. ONLY extract information that is explicitly stated - DO NOT INFER OR GUESS
+3. Use empty strings or arrays if information is not found
+4. Preserve exact formatting from CV (dates, numbers, titles)
+5. For skills, extract ONLY actual skills - ignore headers like "SKILLS:", "COURSE", "Technical Skills:"
+6. Distinguish between job title and company name carefully - they are NOT interchangeable
+7. For contact info, extract from header/footer sections first (usually at top of CV)
+8. Parse email, phone, LinkedIn, GitHub URLs accurately using patterns
+9. Handle multi-line addresses and locations properly
+10. For experience: title=job role, company=employer name, NOT the reverse
+11. Extract dates in their original format (e.g., "Jan 2020 - Present", "2018-2020")
+12. For education: degree name first, then institution, then year
+13. Skills should be individual items, not sentences
+14. Separate technical skills from soft skills
+15. Look for name in the first few lines of the CV (usually header)
+
+Return a JSON object with this exact structure:
 
 {
     "contact_information": {
-        "name": "Full Name",
-        "email": "email@example.com",
-        "phone": "phone number",
-        "location": "City, Country",
-        "linkedin": "LinkedIn URL",
-        "github": "GitHub URL",
-        "website": "Personal website",
-        "address": "Full address if available"
+        "name": "Actual full name from CV or empty string",
+        "email": "Actual email or empty string",
+        "phone": "Actual phone number or empty string",
+        "location": "Actual location or empty string",
+        "linkedin": "Actual LinkedIn URL or empty string",
+        "github": "Actual GitHub URL or empty string",
+        "website": "Actual website or empty string",
+        "address": "Actual address or empty string"
     },
-    "professional_summary": "Brief professional summary or objective",
+    "professional_summary": "Actual summary/objective text or empty string",
     "skills": {
-        "technical": ["Python", "Java", "Docker"],
-        "soft": ["Leadership", "Communication"],
-        "tools": ["VS Code", "Git", "Jira"],
-        "frameworks": ["React", "Django"],
-        "languages_programming": ["Python", "JavaScript"]
+        "technical": ["Only actual technical skills"],
+        "soft": ["Only actual soft skills"],
+        "tools": ["Only actual tools"],
+        "frameworks": ["Only actual frameworks"],
+        "languages_programming": ["Only actual programming languages"]
     },
     "work_experience": [
         {
-            "title": "Job Title",
-            "company": "Company Name",
-            "location": "City, Country",
-            "dates": "Jan 2020 - Present",
-            "start_date": "2020-01",
-            "end_date": "Present",
-            "is_current": true,
-            "description": "Role description",
-            "achievements": [
-                "Achievement 1",
-                "Achievement 2"
-            ],
-            "technologies": ["Tech1", "Tech2"]
+            "title": "Actual job title (NOT 'Position' or 'Job Title')",
+            "company": "Actual company name (NOT 'Company' or 'Company Name')",
+            "location": "Actual location or empty string",
+            "dates": "Actual date range from CV",
+            "start_date": "Start date or empty string",
+            "end_date": "End date or 'Present'",
+            "is_current": true/false,
+            "description": "Actual role description or empty string",
+            "achievements": ["Only actual achievements listed"],
+            "technologies": ["Only actual technologies mentioned"]
         }
     ],
     "education": [
         {
-            "degree": "Degree Name",
-            "field": "Field of Study",
-            "institution": "University Name",
-            "location": "City, Country",
-            "graduation_date": "2020",
-            "gpa": "3.8/4.0",
-            "honors": "Cum Laude"
+            "degree": "Actual degree name (NOT 'Degree Name')",
+            "field": "Actual field of study or empty string",
+            "institution": "Actual university/school name (NOT 'Institution' or 'University Name')",
+            "location": "Actual location or empty string",
+            "graduation_date": "Actual graduation year or empty string",
+            "gpa": "Actual GPA if mentioned or empty string",
+            "honors": "Actual honors if mentioned or empty string"
         }
     ],
     "projects": [
         {
-            "name": "Project Name",
-            "description": "Project description",
-            "technologies": ["Tech1", "Tech2"],
-            "url": "Project URL if available",
-            "highlights": ["Highlight 1", "Highlight 2"]
+            "name": "Actual project name",
+            "description": "Actual project description",
+            "technologies": ["Only actual technologies used"],
+            "url": "Actual URL or empty string",
+            "highlights": ["Only actual highlights"]
         }
     ],
     "certifications": [
         {
-            "name": "Certification Name",
-            "issuer": "Issuing Organization",
-            "date": "2020",
-            "credential_id": "ID if available",
-            "url": "Verification URL"
+            "name": "Actual certification name (NOT 'Certification Name')",
+            "issuer": "Actual issuing organization or empty string",
+            "date": "Actual certification date or empty string",
+            "credential_id": "Actual ID or empty string",
+            "url": "Actual URL or empty string"
         }
     ],
     "languages": [
         {
-            "language": "English",
-            "proficiency": "Native/Fluent/Professional/Basic"
+            "language": "Actual language name",
+            "proficiency": "Actual proficiency level"
         }
     ],
-    "achievements": [
-        "Achievement or award description"
-    ],
+    "achievements": ["Only actual achievements/awards"],
     "volunteer_experience": [
         {
-            "role": "Volunteer Role",
-            "organization": "Organization Name",
-            "dates": "2020 - 2021",
-            "description": "What you did"
+            "role": "Actual volunteer role",
+            "organization": "Actual organization name",
+            "dates": "Actual dates",
+            "description": "Actual description"
         }
     ],
     "publications": [
         {
-            "title": "Publication Title",
-            "venue": "Conference/Journal Name",
-            "date": "2020",
-            "url": "URL if available"
+            "title": "Actual publication title",
+            "venue": "Actual conference/journal name",
+            "date": "Actual publication date",
+            "url": "Actual URL or empty string"
         }
     ],
-    "interests": ["Interest 1", "Interest 2"]
+    "interests": ["Only actual interests listed"]
 }
 
-Be thorough and accurate. Extract all information present in the CV."""
+Remember: Extract ONLY what is actually in the CV. Empty values are better than placeholders."""
 
-        user_prompt = f"Parse this CV and extract all information:\n\n{cv_text}"
+        # Add extraction hints based on text content
+        hints = []
+        if '@' in cv_text:
+            hints.append("Email found in CV")
+        if 'linkedin.com' in cv_text.lower():
+            hints.append("LinkedIn URL present")
+        if 'github.com' in cv_text.lower():
+            hints.append("GitHub URL present")
+        
+        hints_text = " | ".join(hints) if hints else "No obvious markers"
+        
+        user_prompt = f"""Parse this CV and extract ONLY the actual information present (no placeholders, no guesses).
+
+Extraction hints: {hints_text}
+
+IMPORTANT:
+- The person's name is usually in the FIRST LINE or at the very top
+- Look for email address pattern (someone@example.com)
+- Phone numbers have digits and may include country codes
+- Extract skills as individual items from sections labeled "Skills", "Technical Skills", "Core Competencies", etc.
+
+CV TEXT:
+{cv_text}"""
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"}
-            )
+            # Try Groq first (faster and often free)
+            if self.groq_client:
+                try:
+                    logger.info("Using Groq for CV parsing (ultra-fast)")
+                    response = self.groq_client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",  # Updated: was llama-3.1-70b-versatile (deprecated)
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        temperature=0.1,
+                        response_format={"type": "json_object"}
+                    )
+                    
+                    result = json.loads(response.choices[0].message.content)
+                    logger.info("Successfully parsed CV with Groq")
+                    # Validate and clean the extracted data
+                    return self._validate_and_clean_data(result)
+                except Exception as e:
+                    logger.warning(f"Groq extraction failed, trying OpenAI: {e}")
             
-            result = json.loads(response.choices[0].message.content)
-            logger.info("Successfully parsed CV with AI")
-            return result
+            # Fallback to OpenAI if Groq fails or unavailable
+            if self.openai_client:
+                logger.info("Using OpenAI GPT-4 for CV parsing")
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4-turbo-preview",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+                
+                result = json.loads(response.choices[0].message.content)
+                logger.info("Successfully parsed CV with OpenAI")
+                # Validate and clean the extracted data
+                return self._validate_and_clean_data(result)
+            
+            raise Exception("No AI client available")
             
         except Exception as e:
             logger.error(f"AI extraction error: {e}")
@@ -213,8 +312,12 @@ Original bullets:
 
 Return improved bullets in the same format (one per line with - prefix)."""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+            # Use the appropriate client
+            client = self.groq_client or self.openai_client
+            model = "llama-3.3-70b-versatile" if self.groq_client else "gpt-4-turbo-preview"
+            
+            response = client.chat.completions.create(
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are an expert resume writer. Improve bullet points to be impactful and ATS-friendly."},
                     {"role": "user", "content": prompt}
@@ -250,8 +353,11 @@ Skills: {skills_text}
 
 Return JSON with structure: {{"technical": [], "soft": [], "tools": [], "frameworks": [], "other": []}}"""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+            client = self.groq_client or self.openai_client
+            model = "llama-3.3-70b-versatile" if self.groq_client else "gpt-4-turbo-preview"
+            
+            response = client.chat.completions.create(
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are a skill categorization expert. Return only valid JSON."},
                     {"role": "user", "content": prompt}
@@ -282,8 +388,11 @@ Current skills: {skills_text}
 
 Return only a JSON array of skill names: ["Skill1", "Skill2", ...]"""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+            client = self.groq_client or self.openai_client
+            model = "llama-3.3-70b-versatile" if self.groq_client else "gpt-4-turbo-preview"
+            
+            response = client.chat.completions.create(
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are a career development expert. Suggest relevant skills."},
                     {"role": "user", "content": prompt}
@@ -352,8 +461,11 @@ Context:
 
 Make it impactful and professional."""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4-turbo-preview",
+            client = self.groq_client or self.openai_client
+            model = "llama-3.3-70b-versatile" if self.groq_client else "gpt-4-turbo-preview"
+            
+            response = client.chat.completions.create(
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are an expert resume writer. Write concise, impactful professional summaries."},
                     {"role": "user", "content": prompt}
@@ -368,6 +480,142 @@ Make it impactful and professional."""
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
             return ""
+    
+    def _validate_and_clean_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clean extracted CV data to remove placeholders and ensure quality."""
+        # Placeholder patterns to filter out
+        placeholder_patterns = [
+            "your name", "name", "full name", "[name]", "candidate name",
+            "your email", "email", "[email]", "email@example.com",
+            "your phone", "phone", "[phone]", "123-456-7890",
+            "company", "company name", "[company]", "employer",
+            "position", "job title", "[position]", "role", "title",
+            "degree", "degree name", "[degree]", "certification",
+            "institution", "university", "school name", "[institution]",
+            "your location", "city, state", "location", "[location]",
+            "skill", "skills", "course", "technology", "tool",
+            "n/a", "tbd", "null", "none", "not specified"
+        ]
+        
+        def is_placeholder(value: str) -> bool:
+            """Check if a value is a placeholder."""
+            if not value or not isinstance(value, str):
+                return True
+            value_lower = value.lower().strip()
+            return (value_lower in placeholder_patterns or 
+                    len(value) < 2 or 
+                    value.strip() in ["—", "-", "*", "•", "[]", "()", "{}"])
+        
+        # Clean contact information
+        if "contact_information" in data and isinstance(data["contact_information"], dict):
+            contact = data["contact_information"]
+            
+            # Validate name (must have at least first and last name)
+            if "name" in contact:
+                name = contact.get("name", "").strip()
+                logger.info(f"🔍 Validating name: '{name}' (has space: {' ' in name}, is_placeholder: {is_placeholder(name)})")
+                # Allow single-word names (international names) - just check it's not a placeholder
+                if is_placeholder(name):
+                    logger.warning(f"⚠ Name '{name}' detected as placeholder, clearing")
+                    contact["name"] = ""
+                else:
+                    logger.info(f"✓ Name '{name}' passed validation")
+            
+            # Validate email
+            if "email" in contact:
+                email = contact.get("email", "").strip()
+                if is_placeholder(email) or "@" not in email or "." not in email:
+                    contact["email"] = ""
+            
+            # Validate phone
+            if "phone" in contact:
+                phone = contact.get("phone", "").strip()
+                if is_placeholder(phone) or not any(c.isdigit() for c in phone):
+                    contact["phone"] = ""
+        
+        # Clean skills
+        if "skills" in data and isinstance(data["skills"], dict):
+            for skill_type in ["technical", "soft", "tools", "frameworks", "languages_programming"]:
+                if skill_type in data["skills"] and isinstance(data["skills"][skill_type], list):
+                    data["skills"][skill_type] = [
+                        s for s in data["skills"][skill_type]
+                        if s and not is_placeholder(str(s)) and len(str(s)) > 1 and len(str(s)) < 50
+                    ]
+        
+        # Clean work experience
+        if "work_experience" in data and isinstance(data["work_experience"], list):
+            cleaned_exp = []
+            for exp in data["work_experience"]:
+                if not isinstance(exp, dict):
+                    continue
+                
+                title = exp.get("title", "").strip()
+                company = exp.get("company", "").strip()
+                
+                # Skip if title or company are placeholders
+                if is_placeholder(title):
+                    title = ""
+                if is_placeholder(company):
+                    company = ""
+                
+                # Only keep if we have at least title OR company
+                if title or company:
+                    exp["title"] = title
+                    exp["company"] = company
+                    cleaned_exp.append(exp)
+            
+            data["work_experience"] = cleaned_exp
+        
+        # Clean education
+        if "education" in data and isinstance(data["education"], list):
+            cleaned_edu = []
+            for edu in data["education"]:
+                if not isinstance(edu, dict):
+                    continue
+                
+                degree = edu.get("degree", "").strip()
+                institution = edu.get("institution", "").strip()
+                
+                # Skip if both are placeholders
+                if is_placeholder(degree):
+                    degree = ""
+                if is_placeholder(institution):
+                    institution = ""
+                
+                # Only keep if we have at least degree OR institution
+                if degree or institution:
+                    edu["degree"] = degree
+                    edu["institution"] = institution
+                    cleaned_edu.append(edu)
+            
+            data["education"] = cleaned_edu
+        
+        # Clean certifications
+        if "certifications" in data and isinstance(data["certifications"], list):
+            data["certifications"] = [
+                cert for cert in data["certifications"]
+                if isinstance(cert, dict) and not is_placeholder(cert.get("name", ""))
+            ]
+        
+        # Clean projects
+        if "projects" in data and isinstance(data["projects"], list):
+            data["projects"] = [
+                proj for proj in data["projects"]
+                if isinstance(proj, dict) and not is_placeholder(proj.get("name", ""))
+            ]
+        
+        # Clean achievements (simple list)
+        if "achievements" in data and isinstance(data["achievements"], list):
+            data["achievements"] = [
+                ach for ach in data["achievements"]
+                if ach and not is_placeholder(str(ach)) and len(str(ach)) > 10
+            ]
+        
+        logger.info(f"Data validation complete - Name: {data.get('contact_information', {}).get('name', 'EMPTY')}, "
+                   f"Skills: {sum(len(v) for v in data.get('skills', {}).values() if isinstance(v, list))}, "
+                   f"Experience: {len(data.get('work_experience', []))}")
+        
+        return data
     
     def _get_empty_cv_structure(self) -> Dict[str, Any]:
         """Return empty CV structure."""

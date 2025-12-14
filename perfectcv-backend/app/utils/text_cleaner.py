@@ -171,31 +171,62 @@ class TextCleaner:
     def extract_sections(text: str) -> dict:
         """
         Extract major CV sections from text.
+        Handles various formats including markdown headers (##), plain text headers, etc.
         
         Returns:
             Dict with section names as keys and content as values
         """
         sections = {}
         
-        # Common section headers (case-insensitive)
+        logger.info(f"Extracting sections from text (length: {len(text)})")
+        
+        # Common section headers (case-insensitive) - broader patterns
         section_patterns = {
-            'summary': r'(?i)(professional\s+summary|summary|profile|objective|about\s+me)',
-            'experience': r'(?i)(work\s+experience|professional\s+experience|experience|employment\s+history)',
-            'education': r'(?i)(education|academic\s+background|qualifications)',
-            'skills': r'(?i)(skills|technical\s+skills|core\s+competencies|expertise)',
-            'certifications': r'(?i)(certifications|certificates|licenses)',
-            'projects': r'(?i)(projects|key\s+projects)',
-            'awards': r'(?i)(awards|honors|achievements)',
+            'summary': r'(professional\s+summary|summary|profile|objective|about\s+me|career\s+summary)',
+            'experience': r'(work\s+experience|professional\s+experience|experience|employment\s+history|work\s+history)',
+            'education': r'(education|academic\s+background|qualifications|academic\s+qualifications|educational\s+background)',
+            'skills': r'(skills|technical\s+skills|core\s+competencies|expertise|competencies|key\s+skills)',
+            'certifications': r'(certifications|certificates|licenses|professional\s+certifications)',
+            'projects': r'(projects|key\s+projects|project\s+experience)',
+            'awards': r'(awards|honors|honours|achievements|accomplishments)',
+            'languages': r'(languages|language\s+skills)',
         }
         
-        # Find section positions
+        # Find section positions - handle markdown (##), plain headers, and colon-based headers
         section_positions = []
         for section_name, pattern in section_patterns.items():
-            for match in re.finditer(f'^{pattern}\\s*:?\\s*$', text, re.MULTILINE):
+            # Try markdown headers (## Header)
+            for match in re.finditer(
+                f'^##\\s*{pattern}\\s*$',
+                text,
+                flags=re.MULTILINE | re.IGNORECASE,
+            ):
                 section_positions.append((match.start(), section_name, match.group()))
+            
+            # Try single # markdown headers
+            for match in re.finditer(
+                f'^#\\s*{pattern}\\s*$',
+                text,
+                flags=re.MULTILINE | re.IGNORECASE,
+            ):
+                # Only add if not already found with ##
+                if not any(pos[1] == section_name for pos in section_positions):
+                    section_positions.append((match.start(), section_name, match.group()))
+            
+            # Try plain text headers (uppercase)
+            for match in re.finditer(
+                f'^{pattern}\\s*:?\\s*$',
+                text,
+                flags=re.MULTILINE | re.IGNORECASE,
+            ):
+                # Only add if not already found
+                if not any(pos[1] == section_name and abs(pos[0] - match.start()) < 50 for pos in section_positions):
+                    section_positions.append((match.start(), section_name, match.group()))
         
         # Sort by position
         section_positions.sort(key=lambda x: x[0])
+        
+        logger.info(f"Found {len(section_positions)} section headers: {[name for _, name, _ in section_positions]}")
         
         # Extract content between sections
         for i, (pos, name, header) in enumerate(section_positions):
@@ -203,6 +234,15 @@ class TextCleaner:
             content = text[pos:next_pos].strip()
             # Remove the header from content
             content = content[len(header):].strip()
-            sections[name] = content
+            
+            # Clean up content - remove extra blank lines
+            content = re.sub(r'\n{3,}', '\n\n', content)
+            content = content.strip()
+            
+            # Only add non-empty sections
+            if content and len(content) > 5:
+                sections[name] = content
+                logger.info(f"Extracted section '{name}': {len(content)} chars")
         
+        logger.info(f"Total sections extracted: {len(sections)}")
         return sections

@@ -5,7 +5,9 @@ from bson import ObjectId
 import gridfs
 from gridfs.errors import NoFile
 import io
+import json
 from app.utils.cv_utils import extract_text_from_any, generate_pdf, optimize_cv
+from app.utils.cv_template_mapper import normalize_cv_for_template
 
 files_bp = Blueprint('files', __name__)
 
@@ -46,14 +48,184 @@ def upload_cv():
     try:
         # Read file bytes once
         file_bytes = file.read()
-        # Extract text with format-aware parser
-        text = extract_text_from_any(file_bytes, file.filename)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # MODERN EXTRACTION SYSTEM
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.modern_extractor import extract_pdf_modern
+        
+        try:
+            # Use modern extraction system
+            extraction_result = extract_pdf_modern(file_bytes)
+            text = extraction_result.text
+            extraction_metadata = extraction_result.to_dict()
+            current_app.logger.info(f"✨ Modern extraction: {extraction_result.method.value}, "
+                                  f"{extraction_result.word_count} words, "
+                                  f"confidence: {extraction_result.confidence:.2f}")
+        except Exception as e:
+            current_app.logger.warning(f"Modern extraction failed, using fallback: {e}")
+            # Fallback to legacy extraction
+            text = extract_text_from_any(file_bytes, file.filename)
+            extraction_metadata = {}
 
         # Accept optional job_domain form field to tailor optimization
         job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
 
-        # Attempt optimization (AI); function will fallback to rule-based if AI not configured
-        result = optimize_cv(text, job_domain=job_domain, use_ai=True)
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 1: EXTRACT CONTACT INFO (ALWAYS RUNS - NOT CONDITIONAL)
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.cv_utils import (
+            extract_contact_info_basic, 
+            needs_ai_extraction, 
+            validate_contact_info
+        )
+        from app.services.cv_ai_service import extract_contact_with_ai
+        
+        # Basic extraction (spaCy for name, regex for email/phone)
+        contact_info = extract_contact_info_basic(text)
+        current_app.logger.info(f"📧 Basic extraction: name={contact_info.get('name')}, email={contact_info.get('email')}, phone={contact_info.get('phone')}")
+        
+        # Validate completeness
+        validation = validate_contact_info(contact_info)
+        current_app.logger.info(f"✓ Contact validation: {validation['score']:.0f}% complete ({validation['completeness']}/3 fields)")
+        
+        # AI fallback if extraction incomplete
+        if needs_ai_extraction(contact_info):
+            current_app.logger.info("🤖 Triggering AI fallback for incomplete contact info")
+            ai_contact = extract_contact_with_ai(text)
+            
+            # Merge AI results (AI fills missing fields only)
+            if ai_contact:
+                for field in ['name', 'email', 'phone', 'linkedin', 'github']:
+                    if not contact_info.get(field) and ai_contact.get(field):
+                        contact_info[field] = ai_contact[field]
+                        current_app.logger.info(f"✓ AI filled missing field: {field}={ai_contact[field]}")
+        
+        # Final validation after AI fallback
+        final_validation = validate_contact_info(contact_info)
+        current_app.logger.info(f"✅ Final contact info: {final_validation['score']:.0f}% complete")
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 2: ANALYZE ATS SCORE
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.cv_utils import analyze_ats_score_detailed
+        ats_analysis = analyze_ats_score_detailed(text, job_domain)
+        ats_score = ats_analysis['overall_score']
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 3: FORMAT EXTRACTED TEXT WITH MODERN PRESENTATION
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.cv_utils import format_extracted_text_with_sections, build_standardized_sections
+        from app.utils.modern_formatter import format_cv_modern
+        
+        # Get structured data first
+        structured_data = build_standardized_sections(text)
+        
+        # Legacy formatted output (backward compatibility)
+        formatted_result = format_extracted_text_with_sections(text)
+        formatted_text = formatted_result['formatted_text']
+        text_sections = formatted_result['sections']
+        section_order = formatted_result['section_order']
+        
+        # Modern Rich-formatted output
+        modern_formatted = {
+            'text': '',
+            'html': '',
+            'markdown': ''
+        }
+        
+        try:
+            cv_display_data = {
+                'name': contact_info.get('name', ''),
+                'contact_info': contact_info,
+                'professional_summary': structured_data.get('professional_summary', ''),
+                'skills': structured_data.get('skills', {}),
+                'work_experience': structured_data.get('work_experience', []),
+                'projects': structured_data.get('projects', []),
+                'education': structured_data.get('education', []),
+                'certifications': structured_data.get('certifications', []),
+                'structured_data': structured_data
+            }
+            
+            modern_formatted['text'] = format_cv_modern(cv_display_data, 'text')
+            modern_formatted['html'] = format_cv_modern(cv_display_data, 'html')
+            modern_formatted['markdown'] = format_cv_modern(cv_display_data, 'markdown')
+            
+            current_app.logger.info(f"✨ Modern formatting applied: text, html, markdown")
+        except Exception as e:
+            current_app.logger.warning(f"Modern formatting failed: {e}")
+            modern_formatted = {'text': formatted_text, 'html': '', 'markdown': ''}
+        
+        current_app.logger.info(f"📋 Formatted text into {len(section_order)} sections: {', '.join(section_order)}")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 4: CONDITIONAL OPTIMIZATION (BASED ON ATS SCORE)
+        # ═══════════════════════════════════════════════════════════════
+        # If ATS score >= 75: minimal processing, return original with analysis
+        # If ATS score < 75: full AI optimization with keywords and proper formatting
+        if ats_score >= 75:
+            current_app.logger.info(f"High ATS score ({ats_score}), skipping optimization")
+            # Build basic structure without heavy AI processing
+            from app.utils.cv_utils import build_standardized_sections, build_structured_cv_payload
+            structured = build_standardized_sections(text)
+            
+            # Inject extracted contact info into structured payload
+            structured_payload = build_structured_cv_payload(structured)
+            if 'Personal Information' not in structured_payload or not structured_payload['Personal Information']:
+                structured_payload['Personal Information'] = contact_info
+            else:
+                # Merge with existing data, preferring extracted values
+                existing = structured_payload['Personal Information']
+                for field in ['name', 'email', 'phone', 'linkedin', 'github']:
+                    if contact_info.get(field) and not existing.get(field):
+                        existing[field] = contact_info[field]
+            
+            result = {
+                "optimized_text": text,
+                "optimized_cv": text,
+                "optimized_ats_cv": text,
+                "formatted_text": formatted_text,  # Add formatted text with sections
+                "text_sections": text_sections,  # Add individual sections
+                "section_order": section_order,  # Add section order
+                "sections": {},
+                "structured_cv": structured_payload,
+                "contact_info": contact_info,  # Add extracted contact info
+                "contact_validation": final_validation,  # Add validation results
+                "ats_score": ats_score,
+                "ats_analysis": ats_analysis,
+                "recommended_keywords": ats_analysis['missing_keywords'],
+                "found_keywords": ats_analysis['found_keywords'],
+                "suggestions": [{"category": "info", "message": "Your CV already has a good ATS score! Minor improvements suggested below."}] + 
+                              [{"category": "improvement", "message": rec} for rec in ats_analysis['recommendations']],
+                "extracted_text": text,
+                "needs_optimization": False
+            }
+        else:
+            current_app.logger.info(f"Low ATS score ({ats_score}), generating optimized CV")
+            # Full AI-powered optimization with keywords
+            result = optimize_cv(text, job_domain=job_domain, use_ai=True)
+            
+            # Inject extracted contact info, formatted text, and ATS analysis into result
+            if result:
+                result['ats_score'] = ats_score
+                result['ats_analysis'] = ats_analysis
+                result['needs_optimization'] = True
+                result['contact_info'] = contact_info  # Add extracted contact info
+                result['contact_validation'] = final_validation  # Add validation results
+                result['formatted_text'] = formatted_text  # Add formatted text with sections
+                result['text_sections'] = text_sections  # Add individual sections
+                result['section_order'] = section_order  # Add section order
+                
+                # Ensure contact info is in structured_cv
+                if 'structured_cv' in result and isinstance(result['structured_cv'], dict):
+                    if 'Personal Information' not in result['structured_cv'] or not result['structured_cv']['Personal Information']:
+                        result['structured_cv']['Personal Information'] = contact_info
+                    else:
+                        # Merge with existing data
+                        existing = result['structured_cv']['Personal Information']
+                        for field in ['name', 'email', 'phone', 'linkedin', 'github']:
+                            if contact_info.get(field) and not existing.get(field):
+                                existing[field] = contact_info[field]
 
         if not isinstance(result, dict):
             current_app.logger.warning('optimize_cv returned non-dict result; using safe defaults')
@@ -89,19 +261,44 @@ def upload_cv():
         extracted_text = result.get('extracted_text') or text
         structured_payload = structured_cv if isinstance(structured_cv, dict) else {}
 
-        # Generate PDF directly from optimized preview text to ensure parity with UI
+        # Normalize structured CV data for the template component
+        # Try different sources for normalization in order of preference
+        normalization_source = None
+        if structured_payload and any(structured_payload.values()):
+            normalization_source = structured_payload
+        elif result.get('extracted') and isinstance(result.get('extracted'), dict):
+            normalization_source = result['extracted']
+        elif result.get('template_data') and isinstance(result.get('template_data'), dict):
+            normalization_source = result['template_data']
+        
+        if normalization_source:
+            template_data = normalize_cv_for_template(normalization_source)
+        else:
+            # Fallback to empty template if no source available
+            template_data = {}
+        
+        current_app.logger.info(f"Template data created - Name: {template_data.get('name')}, Skills: {len(template_data.get('skills', []))}, Experience: {len(template_data.get('experience', []))}")
+
+        # Generate PDF with structured data for better formatting
         try:
-            pdf_bytes = generate_pdf(optimized_ats_cv)
+            # Pass structured CV data to generate_pdf for professional HTML/CSS rendering
+            if structured_payload and any(structured_payload.values()):
+                pdf_bytes = generate_pdf(structured_payload)
+            else:
+                pdf_bytes = generate_pdf(optimized_ats_cv)
         except Exception as e:
             current_app.logger.warning("Error generating PDF, returning fallback text version: %s", e)
-            pdf_bytes = generate_pdf(text)
+            pdf_bytes = generate_pdf(optimized_ats_cv)
 
         fs = gridfs.GridFS(current_app.mongo.db)
-        filename = secure_filename(f"ATS_{current_user.get_id()}_{file.filename.rsplit('.',1)[0]}.pdf")
+        # Create a clean, descriptive filename for the optimized CV
+        base_name = file.filename.rsplit('.', 1)[0]
+        optimized_filename = secure_filename(f"{base_name}_ATS_Optimized.pdf")
+        
         pdf_bytes.seek(0)
         file_id = fs.put(
             pdf_bytes.read(),
-            filename=filename,
+            filename=optimized_filename,
             content_type='application/pdf',
             user_id=str(current_user.get_id()),
             original_filename=file.filename,
@@ -125,14 +322,23 @@ def upload_cv():
             "optimized_ats_cv": optimized_ats_cv,
             "extracted": result.get('extracted') or template_data,
             "extracted_text": extracted_text,
+            "formatted_text": result.get('formatted_text', ''),  # Legacy formatted text
+            "text_sections": result.get('text_sections', {}),  # Individual sections
+            "section_order": result.get('section_order', []),  # Section display order
+            "modern_formatted": modern_formatted,  # NEW: Modern Rich-formatted outputs (text, html, markdown)
+            "extraction_metadata": extraction_metadata,  # NEW: Extraction quality metrics
+            "contact_info": result.get('contact_info', {}),  # Extracted contact information
+            "contact_validation": result.get('contact_validation', {}),  # Validation results
             "sections": sections,
             "ordered_sections": ordered_sections,
             "structured_sections": structured_sections,
             "structured_cv": structured_payload,
-            "template_data": template_data,
+            "template_data": template_data,  # Properly normalized data for ResumeTemplate
             "suggestions": suggestions,
             "grouped_suggestions": grouped,
             "ats_score": ats_score,
+            "ats_analysis": result.get('ats_analysis'),  # Full ATS analysis
+            "needs_optimization": result.get('needs_optimization', False),  # Whether optimization was applied
             "recommended_keywords": recommended_keywords,
             "found_keywords": found_keywords,
             "file": file_payload,
@@ -140,6 +346,58 @@ def upload_cv():
     except Exception as e:
         current_app.logger.exception("Error saving/processing file to GridFS")
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+
+
+@files_bp.route('/debug-cv/<file_id>', methods=['GET'])
+@login_required
+def debug_cv_data(file_id):
+    """Debug endpoint to inspect raw CV data before template normalization"""
+    try:
+        fs = gridfs.GridFS(current_app.mongo.db)
+        file_obj = fs.get(ObjectId(file_id))
+        
+        # Check authorization
+        if str(getattr(file_obj, 'user_id', '')) != str(current_user.get_id()):
+            return jsonify({"success": False, "message": "Not authorized"}), 403
+        
+        # Get the metadata
+        metadata = file_obj.metadata or {}
+        structured_cv = metadata.get('structured_cv', {})
+        
+        # Return debug information
+        debug_info = {
+            "file_id": file_id,
+            "filename": file_obj.filename,
+            "has_structured_cv": bool(structured_cv),
+            "structured_cv_keys": list(structured_cv.keys()) if isinstance(structured_cv, dict) else "Not a dict",
+            "raw_structured_cv": json.dumps(structured_cv, indent=2, default=str),
+            "normalized_preview": None
+        }
+        
+        # Try normalizing
+        if structured_cv:
+            try:
+                normalized = normalize_cv_for_template(structured_cv)
+                debug_info["normalized_preview"] = {
+                    "name": normalized.get('name'),
+                    "email": normalized.get('email'),
+                    "skills_count": len(normalized.get('skills', [])),
+                    "skills_sample": normalized.get('skills', [])[:5],
+                    "experience_count": len(normalized.get('experience', [])),
+                    "experience_sample": normalized.get('experience', [])[:2],
+                    "education_count": len(normalized.get('education', [])),
+                    "education_sample": normalized.get('education', [])[:2],
+                }
+            except Exception as e:
+                debug_info["normalization_error"] = str(e)
+        
+        return jsonify({"success": True, "debug": debug_info}), 200
+        
+    except NoFile:
+        return jsonify({"success": False, "message": "File not found"}), 404
+    except Exception as e:
+        current_app.logger.exception("Debug endpoint error")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @files_bp.route('/download/<file_id>', methods=['GET'])
@@ -150,11 +408,16 @@ def download(file_id):
         file_obj = fs.get(ObjectId(file_id))
         if str(getattr(file_obj, 'user_id', '')) != str(current_user.get_id()):
             return jsonify({"success": False, "message": "Not authorized"}), 403
-        download_name = getattr(file_obj, 'original_filename', None) or file_obj.filename
+        
+        # Use optimized filename if available, otherwise use stored filename
+        download_name = file_obj.filename
+        if not download_name.lower().endswith('.pdf'):
+            download_name = f"{download_name}.pdf"
+        
         return send_file(
             io.BytesIO(file_obj.read()),
             download_name=download_name,
-            mimetype=file_obj.content_type,
+            mimetype=file_obj.content_type or 'application/pdf',
             as_attachment=True,
         )
     except NoFile:
@@ -163,6 +426,78 @@ def download(file_id):
     except Exception:
         current_app.logger.exception("Download error")
         return jsonify({"success": False, "message": "Unable to download file"}), 500
+
+
+@files_bp.route('/download-optimized-cv', methods=['POST'])
+@login_required
+def download_optimized_cv():
+    """Generate and download PDF from optimized CV data sent from frontend."""
+    try:
+        current_app.logger.info(f"Download request from user: {current_user.get_id()}")
+        
+        data = request.get_json()
+        if not data:
+            current_app.logger.error("No data provided in request")
+            return jsonify({"success": False, "message": "No data provided"}), 400
+        
+        # Extract CV data from request
+        structured_cv = data.get('structured_cv') or data.get('template_data')
+        optimized_text = data.get('optimized_text') or data.get('optimized_cv')
+        filename = data.get('filename', 'Optimized_CV.pdf')
+        
+        # Ensure filename has .pdf extension
+        if not filename.lower().endswith('.pdf'):
+            filename = f"{filename.rsplit('.', 1)[0]}_Optimized.pdf"
+        
+        current_app.logger.info(f"Download request - Structured CV: {bool(structured_cv)}, Text length: {len(optimized_text) if optimized_text else 0}")
+        
+        # Generate PDF from structured data or optimized text
+        pdf_bytes = None
+        if structured_cv and isinstance(structured_cv, dict) and any(structured_cv.values()):
+            current_app.logger.info("Generating PDF from structured CV data")
+            try:
+                pdf_bytes = generate_pdf(structured_cv)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to generate from structured data: {e}, trying text fallback")
+                pdf_bytes = None
+        
+        if not pdf_bytes and optimized_text:
+            current_app.logger.info("Generating PDF from optimized text")
+            try:
+                pdf_bytes = generate_pdf(optimized_text)
+            except Exception as e:
+                current_app.logger.error(f"Failed to generate from text: {e}")
+                return jsonify({"success": False, "message": f"PDF generation failed: {str(e)}"}), 500
+        
+        if not pdf_bytes:
+            current_app.logger.error("No valid CV data provided")
+            return jsonify({"success": False, "message": "No valid CV data provided"}), 400
+        
+        # Ensure we're at the start of the BytesIO
+        pdf_bytes.seek(0)
+        
+        current_app.logger.info(f"Sending PDF file: {filename}")
+        
+        # Use the correct parameter name for Flask's send_file
+        # In Flask 2.0+, it's 'download_name', in older versions it's 'attachment_filename'
+        try:
+            return send_file(
+                pdf_bytes,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename
+            )
+        except TypeError:
+            # Fallback for older Flask versions
+            return send_file(
+                pdf_bytes,
+                mimetype='application/pdf',
+                as_attachment=True,
+                attachment_filename=filename
+            )
+    except Exception as e:
+        current_app.logger.exception("Error generating optimized CV PDF")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
 
 
 @files_bp.route('/delete-cv/<file_id>', methods=['DELETE'])
@@ -201,3 +536,79 @@ def current_user_info():
         return jsonify({"user": None})
     except Exception:
         return jsonify({"user": None})
+
+
+@files_bp.route('/generate-pdf-from-json', methods=['POST'])
+@login_required
+def generate_pdf_from_json():
+    """
+    Generate a PDF from structured CV JSON data (for creating new CVs).
+    Accepts CV data in JSON format and returns a PDF file.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No CV data provided"}), 400
+        
+        current_app.logger.info(f"Generating PDF from JSON for user: {current_user.get_id()}")
+        
+        # Extract CV structure from request
+        cv_data = data.get('cv_data') or data.get('structured_cv') or data
+        filename = data.get('filename', 'Generated_CV.pdf')
+        
+        # Ensure filename has .pdf extension
+        if not filename.lower().endswith('.pdf'):
+            filename = f"{filename.rsplit('.', 1)[0]}.pdf"
+        
+        # Generate PDF from structured CV data
+        try:
+            pdf_bytes = generate_pdf(cv_data)
+            pdf_bytes.seek(0)
+        except Exception as e:
+            current_app.logger.error(f"PDF generation failed: {e}")
+            return jsonify({"success": False, "message": f"PDF generation failed: {str(e)}"}), 500
+        
+        # Optionally save to GridFS if requested
+        save_to_storage = data.get('save_to_storage', False)
+        file_id = None
+        
+        if save_to_storage:
+            try:
+                fs = gridfs.GridFS(current_app.mongo.db)
+                pdf_bytes.seek(0)
+                file_id = fs.put(
+                    pdf_bytes.read(),
+                    filename=secure_filename(filename),
+                    content_type='application/pdf',
+                    user_id=str(current_user.get_id()),
+                    cv_type='generated'
+                )
+                current_app.logger.info(f"Saved generated CV to GridFS: {file_id}")
+                pdf_bytes.seek(0)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to save to GridFS: {e}")
+        
+        # Return PDF file for download
+        response_data = {
+            "success": True,
+            "message": "CV PDF generated successfully"
+        }
+        
+        if file_id:
+            response_data["file_id"] = str(file_id)
+        
+        # For download requests, return the file directly
+        if data.get('download', True):
+            return send_file(
+                pdf_bytes,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            # Return JSON response with file info
+            return jsonify(response_data)
+            
+    except Exception as e:
+        current_app.logger.exception("Error in generate_pdf_from_json")
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500

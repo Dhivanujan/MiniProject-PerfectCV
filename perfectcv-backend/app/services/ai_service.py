@@ -151,20 +151,22 @@ class AIService:
         return improved_sections
     
     def _build_extraction_prompt(self, text: str, missing_fields: List[str]) -> str:
-        """Build prompt for extracting missing fields."""
+        """Build prompt for extracting missing fields - strict extraction only, no hallucination."""
         fields_desc = {
-            'name': 'full name of the person',
-            'email': 'email address',
-            'phone': 'phone number',
-            'location': 'city and country/state',
-            'skills': 'list of technical skills',
+            'name': 'full name of the person (exactly as written)',
+            'email': 'email address (exactly as written)',
+            'phone': 'phone number (exactly as written)',
+            'location': 'city and country/state (exactly as written)',
+            'skills': 'list of technical skills (only those explicitly mentioned)',
         }
         
         field_descriptions = [f"- {field}: {fields_desc.get(field, field)}" 
                             for field in missing_fields]
         
-        prompt = f"""Extract ONLY the following information from this CV text. 
-Do NOT make up or invent any information. If a field is not clearly present in the text, return null.
+        prompt = f"""CRITICAL: Extract ONLY information that is EXPLICITLY present in the CV text below.
+Do NOT invent, assume, or generate any information. If a field is not clearly present, return null.
+
+Your task is to act as a STRICT EXTRACTOR, not a generator.
 
 Fields to extract:
 {chr(10).join(field_descriptions)}
@@ -172,8 +174,15 @@ Fields to extract:
 CV Text:
 {text[:3000]}
 
-Return ONLY a valid JSON object with the extracted fields. Example format:
-{{"name": "John Doe", "email": "john@example.com", "phone": "+1 234-567-8900"}}
+RULES:
+1. Return ONLY a valid JSON object
+2. Use exact text from the CV - no paraphrasing
+3. If a field is not found, use null
+4. Do not add example data
+5. Skills must be explicitly listed in the CV
+
+Example valid response:
+{{"name": "John Doe", "email": "john@example.com", "phone": null}}
 
 JSON Response:"""
         
@@ -239,8 +248,10 @@ Improved Experience:"""
             return response.text.strip()
         
         elif self.provider == "groq":
+            # Use latest Llama model available on Groq (fast inference)
+            # Alternative models: "llama-3.3-70b-versatile", "llama-3.1-8b-instant"
             response = self.client.chat.completions.create(
-                model="mixtral-8x7b-32768",
+                model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
                 temperature=temperature

@@ -4,6 +4,8 @@ Uses Jinja2 for templating and WeasyPrint for PDF generation.
 """
 import logging
 import os
+import sys
+import warnings
 from typing import Dict, Optional
 from datetime import datetime
 
@@ -17,12 +19,34 @@ except ImportError:
     JINJA2_AVAILABLE = False
     logger.warning("Jinja2 not available")
 
+# Suppress all WeasyPrint warnings
+WEASYPRINT_AVAILABLE = False
+HTML = None
+CSS = None
+
 try:
-    from weasyprint import HTML, CSS
-    WEASYPRINT_AVAILABLE = True
-except ImportError:
+    # Redirect stderr to suppress GTK library warnings
+    _original_stderr = sys.stderr
+    _original_stdout = sys.stdout
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sys.stderr = open(os.devnull, 'w')
+        sys.stdout = open(os.devnull, 'w')
+        try:
+            from weasyprint import HTML, CSS
+            WEASYPRINT_AVAILABLE = True
+        finally:
+            sys.stderr.close()
+            sys.stdout.close()
+            sys.stderr = _original_stderr
+            sys.stdout = _original_stdout
+except (ImportError, OSError):
     WEASYPRINT_AVAILABLE = False
-    logger.warning("WeasyPrint not available - will use fallback PDF generation")
+    if sys.stderr != _original_stderr:
+        sys.stderr = _original_stderr
+    if sys.stdout != _original_stdout:
+        sys.stdout = _original_stdout
 
 try:
     from fpdf import FPDF
@@ -313,6 +337,8 @@ class CVGenerationService:
     @staticmethod
     def _html_to_pdf_weasyprint(html_content: str) -> bytes:
         """Convert HTML to PDF using WeasyPrint."""
+        if not WEASYPRINT_AVAILABLE or HTML is None:
+            raise RuntimeError("WeasyPrint is not available. Install with: pip install weasyprint")
         html = HTML(string=html_content)
         pdf_bytes = html.write_pdf()
         return pdf_bytes

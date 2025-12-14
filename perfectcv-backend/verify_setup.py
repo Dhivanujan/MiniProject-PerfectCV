@@ -72,6 +72,7 @@ def main():
     
     # Core dependencies
     core_deps = {
+        'groq': 'groq',
         'openai': 'openai',
         'pytesseract': 'pytesseract',
         'PIL': 'pillow',
@@ -97,6 +98,7 @@ def main():
     print("Checking API Configuration:")
     print("-" * 60)
     
+    groq_ok = check_env_variable('GROQ_API_KEY')
     openai_ok = check_env_variable('OPENAI_API_KEY')
     google_ok = check_env_variable('GOOGLE_API_KEY')
     
@@ -107,7 +109,7 @@ def main():
     
     all_core = all(core_status)
     ocr_ready = tesseract_ok and poppler_ok
-    ai_ready = openai_ok or google_ok
+    ai_ready = groq_ok or openai_ok or google_ok
     
     if all_core:
         print("✓ All core Python dependencies are installed")
@@ -121,19 +123,24 @@ def main():
         print("  Install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki")
         print("  Install Poppler: https://github.com/oschwartz10612/poppler-windows/releases/")
     
-    if openai_ok:
-        print("✓ OpenAI GPT-4 is configured (best quality)")
+    if groq_ok:
+        print("✓ Groq is configured (RECOMMENDED - ultra-fast & FREE)")
+    elif openai_ok:
+        print("✓ OpenAI GPT-4 is configured (high quality)")
     elif google_ok:
-        print("⚠ Using Google Gemini (OpenAI not configured)")
-        print("  Add OPENAI_API_KEY to .env for best results")
+        print("⚠ Using Google Gemini only (consider adding Groq for speed)")
+        print("  Groq is FREE and 10x faster! Add GROQ_API_KEY to .env")
     else:
         print("⚠ No AI API configured - will use rule-based extraction only")
-        print("  Add OPENAI_API_KEY or GOOGLE_API_KEY to .env")
+        print("  Add GROQ_API_KEY to .env (FREE & recommended)")
+        print("  Or add OPENAI_API_KEY or GOOGLE_API_KEY")
     
     print()
     
     if all_core and ai_ready:
         print("🎉 Setup complete! AI-enhanced CV extraction is ready to use.")
+        if groq_ok:
+            print("⚡ Using Groq for ultra-fast processing!")
     elif all_core:
         print("⚠ Core features ready, but AI enhancement needs API key configuration.")
     else:
@@ -143,8 +150,9 @@ def main():
     print("Next steps:")
     if not all_core:
         print("  1. Run: pip install -r requirements.txt")
-    if not openai_ok and not google_ok:
-        print("  2. Add API keys to .env file")
+    if not groq_ok and not openai_ok and not google_ok:
+        print("  2. Add GROQ_API_KEY to .env (FREE, ultra-fast, recommended!)")
+        print("     Get key at: https://console.groq.com")
     if not ocr_ready:
         print("  3. (Optional) Install Tesseract and Poppler for OCR support")
     

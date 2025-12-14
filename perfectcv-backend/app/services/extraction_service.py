@@ -30,7 +30,9 @@ class ExtractionService:
         Returns:
             Dictionary with all extracted and processed data
         """
-        logger.info(f"Starting CV processing for: {filename}")
+        logger.info("="*60)
+        logger.info(f"📄 Starting CV processing for: {filename}")
+        logger.info("="*60)
         
         # Stage 1: Extract raw text
         logger.info("Stage 1: Extracting text from file")
@@ -46,12 +48,19 @@ class ExtractionService:
         logger.info("Stage 3: Extracting CV sections")
         sections = self.text_cleaner.extract_sections(cleaned_text)
         logger.info(f"Extracted {len(sections)} sections: {list(sections.keys())}")
+        for section_name, content in sections.items():
+            logger.info(f"  - {section_name}: {len(content)} chars")
         
         # Stage 4: Extract entities
-        logger.info("Stage 4: Extracting entities using NLP")
+        logger.info("Stage 4: Extracting entities using spaCy + Regex")
         entities = self.entity_extractor.extract_entities(cleaned_text)
-        logger.info(f"Extracted entities: name={entities.get('name')}, email={entities.get('email')}, "
-                   f"phone={entities.get('phone')}, {len(entities.get('skills', []))} skills")
+        logger.info(f"Entity extraction complete:")
+        logger.info(f"  - Name: {entities.get('name') or 'NOT FOUND'}")
+        logger.info(f"  - Email: {entities.get('email') or 'NOT FOUND'}")
+        logger.info(f"  - Phone: {entities.get('phone') or 'NOT FOUND'}")
+        logger.info(f"  - Location: {entities.get('location') or 'NOT FOUND'}")
+        logger.info(f"  - Skills: {len(entities.get('skills', []))} found")
+        logger.info(f"  - Organizations: {len(entities.get('organizations', []))} found")
         
         # Compile results
         result = {
@@ -63,7 +72,9 @@ class ExtractionService:
             'filename': filename,
         }
         
-        logger.info(f"CV processing completed for: {filename}")
+        logger.info("="*60)
+        logger.info(f"CV processing completed successfully for: {filename}")
+        logger.info("="*60)
         return result
     
     def extract_text_only(self, file_bytes: bytes, filename: str) -> str:

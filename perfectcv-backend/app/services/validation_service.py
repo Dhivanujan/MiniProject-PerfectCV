@@ -30,27 +30,37 @@ class ValidationService:
         missing_critical = []
         missing_important = []
         
-        # Check critical fields
+        # Check critical fields with detailed logging
         for field in ValidationService.CRITICAL_FIELDS:
-            if not entities.get(field):
+            value = entities.get(field)
+            if not value:
                 missing_critical.append(field)
                 logger.warning(f"Missing critical field: {field}")
+            else:
+                logger.info(f"Found critical field: {field} = {str(value)[:50]}")
         
-        # Check important fields
+        # Check important fields with detailed logging
         for field in ValidationService.IMPORTANT_FIELDS:
             # Skills can be in entities or sections
             if field == 'skills':
-                has_skills = bool(entities.get('skills') or sections.get('skills'))
+                skills = entities.get('skills') or sections.get('skills')
+                has_skills = bool(skills)
                 if not has_skills:
                     missing_important.append(field)
-                    logger.warning(f"Missing important field: {field}")
+                    logger.warning(f"⚠ Missing important field: {field}")
+                else:
+                    skill_count = len(skills) if isinstance(skills, list) else 1
+                    logger.info(f"✓ Found {skill_count} skills")
             
             # Experience in sections
             elif field == 'experience':
-                has_experience = bool(sections.get('experience'))
+                experience = sections.get('experience')
+                has_experience = bool(experience)
                 if not has_experience:
                     missing_important.append(field)
-                    logger.warning(f"Missing important field: {field}")
+                    logger.warning(f"⚠ Missing important field: {field}")
+                else:
+                    logger.info(f"✓ Found experience section ({len(experience)} chars)")
         
         is_complete = len(missing_critical) == 0
         
@@ -82,11 +92,15 @@ class ValidationService:
     @staticmethod
     def validate_name(name: str) -> bool:
         """Validate name field."""
-        if not name:
+        if not name or len(name.strip()) < 2:
             return False
-        # Should have at least 2 words, each > 1 character
+        # Accept single names (1+ words, mostly alphabetic)
         words = name.strip().split()
-        return len(words) >= 2 and all(len(w) > 1 for w in words)
+        if len(words) == 0:
+            return False
+        # At least 70% alphabetic characters
+        alpha_ratio = sum(c.isalpha() or c.isspace() for c in name) / len(name)
+        return alpha_ratio > 0.7 and all(len(w) > 0 for w in words)
     
     @staticmethod
     def get_validation_report(entities: Dict, sections: Dict) -> Dict:

@@ -13,7 +13,14 @@ else:
 
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key')
+    
+    # MongoDB configuration with timeout handling
+    # If MongoDB Atlas (mongodb+srv://) times out, fallback to local
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/perfectcv')
+    # Add connection timeout settings
+    MONGO_CONNECT_TIMEOUT_MS = 5000  # 5 seconds
+    MONGO_SERVER_SELECTION_TIMEOUT_MS = 5000  # 5 seconds
+    
     MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
     MAIL_PORT = int(os.getenv('MAIL_PORT', 587))
     MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'

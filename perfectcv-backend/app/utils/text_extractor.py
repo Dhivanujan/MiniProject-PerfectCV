@@ -1,6 +1,6 @@
 """
 Text extraction utilities for PDF and DOCX files.
-Supports multiple extraction methods with fallback.
+Prioritizes PyMuPDF (fitz) for PDF and docx2txt for DOCX.
 """
 import io
 import logging
@@ -8,34 +8,45 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Import available libraries
+# Import primary libraries
 try:
-    import PyPDF2
-    PYPDF2_AVAILABLE = True
+    import fitz  # PyMuPDF
+    FITZ_AVAILABLE = True
 except ImportError:
-    PYPDF2_AVAILABLE = False
-    logger.warning("PyPDF2 not available")
+    FITZ_AVAILABLE = False
+    logger.warning("PyMuPDF (fitz) not available. Install with: pip install pymupdf")
 
+try:
+    import docx2txt
+    DOCX2TXT_AVAILABLE = True
+except ImportError:
+    DOCX2TXT_AVAILABLE = False
+    logger.warning("docx2txt not available. Install with: pip install docx2txt")
+
+# Fallback libraries
 try:
     import pdfplumber
     PDFPLUMBER_AVAILABLE = True
 except ImportError:
     PDFPLUMBER_AVAILABLE = False
-    logger.warning("pdfplumber not available")
+
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
 
 try:
     from pdfminer.high_level import extract_text as pdfminer_extract_text
     PDFMINER_AVAILABLE = True
 except ImportError:
     PDFMINER_AVAILABLE = False
-    logger.warning("pdfminer.six not available")
 
 try:
     from docx import Document
-    DOCX_AVAILABLE = True
+    DOCX_LIB_AVAILABLE = True
 except ImportError:
-    DOCX_AVAILABLE = False
-    logger.warning("python-docx not available")
+    DOCX_LIB_AVAILABLE = False
 
 try:
     import pytesseract
@@ -48,12 +59,12 @@ except ImportError:
 
 
 class TextExtractor:
-    """Extract text from PDF and DOCX files with multiple fallback methods."""
+    """Extract text from PDF and DOCX files with prioritized clean extraction."""
     
     @staticmethod
     def extract_from_pdf(file_bytes: bytes, filename: str = "document.pdf") -> Tuple[str, str]:
         """
-        Extract text from PDF with fallback methods.
+        Extract text from PDF using PyMuPDF (fitz) as primary.
         
         Args:
             file_bytes: PDF file content as bytes
@@ -65,80 +76,71 @@ class TextExtractor:
         text = ""
         method = "none"
         
-        # Try pdfplumber first (best for CVs with tables)
-        if PDFPLUMBER_AVAILABLE and not text:
+        # 1. Primary: PyMuPDF (fitz)
+        if FITZ_AVAILABLE:
             try:
-                text = TextExtractor._extract_with_pdfplumber(file_bytes)
+                with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                    text_parts = []
+                    for page in doc:
+                        # Extract text with layout preservation
+                        page_text = page.get_text("text")
+                        if page_text:
+                            text_parts.append(page_text)
+                    text = "\n\n".join(text_parts)
+                    
+                if text and len(text.strip()) > 50:
+                    method = "pymupdf"
+                    logger.info(f"Extracted {len(text)} chars from {filename} using PyMuPDF")
+                    return text, method
+            except Exception as e:
+                logger.warning(f"PyMuPDF extraction failed for {filename}: {e}")
+
+        # 2. Secondary: pdfplumber (Good for tables)
+        if PDFPLUMBER_AVAILABLE:
+            try:
+                text_parts = []
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_parts.append(page_text)
+                text = "\n\n".join(text_parts)
+                
                 if text and len(text.strip()) > 50:
                     method = "pdfplumber"
                     logger.info(f"Extracted {len(text)} chars from {filename} using pdfplumber")
+                    return text, method
             except Exception as e:
                 logger.warning(f"pdfplumber extraction failed: {e}")
-        
-        # Try PyPDF2 as fallback
-        if PYPDF2_AVAILABLE and not text:
+
+        # 3. Fallback: pdfminer.six
+        if PDFMINER_AVAILABLE:
             try:
-                text = TextExtractor._extract_with_pypdf2(file_bytes)
-                if text and len(text.strip()) > 50:
-                    method = "pypdf2"
-                    logger.info(f"Extracted {len(text)} chars from {filename} using PyPDF2")
-            except Exception as e:
-                logger.warning(f"PyPDF2 extraction failed: {e}")
-        
-        # Try pdfminer as fallback
-        if PDFMINER_AVAILABLE and not text:
-            try:
-                text = TextExtractor._extract_with_pdfminer(file_bytes)
+                text = pdfminer_extract_text(io.BytesIO(file_bytes))
                 if text and len(text.strip()) > 50:
                     method = "pdfminer"
                     logger.info(f"Extracted {len(text)} chars from {filename} using pdfminer")
+                    return text, method
             except Exception as e:
                 logger.warning(f"pdfminer extraction failed: {e}")
-        
-        # Try OCR as last resort for scanned PDFs
-        if OCR_AVAILABLE and (not text or len(text.strip()) < 50):
+
+        # 4. Last Resort: OCR
+        if OCR_AVAILABLE:
             try:
-                ocr_text = TextExtractor._extract_with_ocr(file_bytes)
-                if ocr_text and len(ocr_text.strip()) > 50:
-                    text = ocr_text
+                text = TextExtractor._extract_with_ocr(file_bytes)
+                if text and len(text.strip()) > 50:
                     method = "ocr"
                     logger.info(f"Extracted {len(text)} chars from {filename} using OCR")
+                    return text, method
             except Exception as e:
                 logger.warning(f"OCR extraction failed: {e}")
-        
+
         if not text:
-            logger.error(f"Failed to extract text from {filename}")
+            logger.error(f"Failed to extract text from {filename} using all available methods")
             raise ValueError("Could not extract text from PDF. File may be corrupted or scanned without OCR support.")
         
         return text, method
-    
-    @staticmethod
-    def _extract_with_pdfplumber(file_bytes: bytes) -> str:
-        """Extract text using pdfplumber (good for tables)."""
-        text_parts = []
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-        return "\n\n".join(text_parts)
-    
-    @staticmethod
-    def _extract_with_pypdf2(file_bytes: bytes) -> str:
-        """Extract text using PyPDF2."""
-        text_parts = []
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-        for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
-        return "\n\n".join(text_parts)
-    
-    @staticmethod
-    def _extract_with_pdfminer(file_bytes: bytes) -> str:
-        """Extract text using pdfminer.six."""
-        return pdfminer_extract_text(io.BytesIO(file_bytes))
-    
+
     @staticmethod
     def _extract_with_ocr(file_bytes: bytes) -> str:
         """Extract text using OCR (for scanned PDFs)."""
@@ -163,16 +165,15 @@ class TextExtractor:
             
             return "\n\n".join(text_parts)
         finally:
-            # Cleanup temp file
             try:
                 os.unlink(tmp_path)
             except Exception:
                 pass
-    
+
     @staticmethod
     def extract_from_docx(file_bytes: bytes, filename: str = "document.docx") -> Tuple[str, str]:
         """
-        Extract text from DOCX file.
+        Extract text from DOCX using docx2txt as primary.
         
         Args:
             file_bytes: DOCX file content as bytes
@@ -181,37 +182,65 @@ class TextExtractor:
         Returns:
             Tuple of (extracted_text, extraction_method)
         """
-        if not DOCX_AVAILABLE:
-            raise ImportError("python-docx library not available. Install with: pip install python-docx")
-        
-        try:
-            doc = Document(io.BytesIO(file_bytes))
-            text_parts = []
+        text = ""
+        method = "none"
+
+        # 1. Primary: docx2txt
+        if DOCX2TXT_AVAILABLE:
+            try:
+                # docx2txt process expects a file path or file-like object, but usually works best with temporary file
+                # However, the library 'docx2txt' typically exposes process(filename, html=False)
+                # We can try to use a temporary file to be safe
+                import tempfile
+                import os
+                
+                with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
+                    tmp_file.write(file_bytes)
+                    tmp_path = tmp_file.name
+                
+                try:
+                    text = docx2txt.process(tmp_path)
+                    if text and len(text.strip()) > 20:
+                        method = "docx2txt"
+                        logger.info(f"Extracted {len(text)} chars from {filename} using docx2txt")
+                        return text, method
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"docx2txt extraction failed: {e}")
+
+        # 2. Fallback: python-docx
+        if DOCX_LIB_AVAILABLE:
+            try:
+                doc = Document(io.BytesIO(file_bytes))
+                text_parts = []
+                
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        text_parts.append(para.text)
+                
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                        if row_text:
+                            text_parts.append(row_text)
+                
+                text = "\n".join(text_parts)
+                if text and len(text.strip()) > 20:
+                    method = "python-docx"
+                    logger.info(f"Extracted {len(text)} chars from {filename} using python-docx")
+                    return text, method
+            except Exception as e:
+                logger.warning(f"python-docx extraction failed: {e}")
+
+        if not text:
+            raise ValueError(f"Could not extract text from DOCX: {filename}")
             
-            # Extract paragraphs
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    text_parts.append(para.text)
-            
-            # Extract tables
-            for table in doc.tables:
-                for row in table.rows:
-                    row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
-                    if row_text:
-                        text_parts.append(row_text)
-            
-            text = "\n".join(text_parts)
-            logger.info(f"Extracted {len(text)} chars from {filename} using python-docx")
-            
-            if not text or len(text.strip()) < 20:
-                raise ValueError("Extracted text is too short or empty")
-            
-            return text, "python-docx"
-            
-        except Exception as e:
-            logger.error(f"Failed to extract text from {filename}: {e}")
-            raise ValueError(f"Could not extract text from DOCX: {str(e)}")
-    
+        return text, method
+
     @staticmethod
     def extract_text(file_bytes: bytes, filename: str) -> Tuple[str, str]:
         """

@@ -4,7 +4,7 @@ import re
 import json
 import logging
 import zipfile
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from pdfminer.high_level import extract_text as pdf_extract_text
 from app.utils import extractor as _extractor
@@ -29,6 +29,421 @@ logger = logging.getLogger(__name__)
 
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
+
+
+def needs_ai_extraction(contact_info: dict) -> bool:
+    """Check if AI extraction is needed for incomplete contact info.
+    
+    Args:
+        contact_info: Dictionary with name, email, phone fields
+        
+    Returns:
+        True if any critical field (name, email, phone) is missing
+    """
+    critical_fields = ["name", "email", "phone"]
+    missing_fields = [f for f in critical_fields if not contact_info.get(f)]
+    
+    if missing_fields:
+        logger.warning(f"⚠ Incomplete extraction. Missing: {', '.join(missing_fields)}")
+        return True
+    
+    logger.info(f"✓ Complete extraction: name={bool(contact_info.get('name'))}, "
+                f"email={bool(contact_info.get('email'))}, phone={bool(contact_info.get('phone'))}")
+    return False
+
+
+def validate_contact_info(contact_info: dict) -> dict:
+    """Validate and score contact information completeness.
+    
+    Args:
+        contact_info: Dictionary with contact fields
+        
+    Returns:
+        Dictionary with validation results and completeness score
+    """
+    import re
+    
+    result = {
+        'valid_name': False,
+        'valid_email': False,
+        'valid_phone': False,
+        'completeness': 0,
+        'score': 0
+    }
+    
+    # Validate name (at least 2 words, 3+ characters each)
+    name = contact_info.get('name', '').strip()
+    if name and len(name) >= 6:
+        words = name.split()
+        if len(words) >= 2 and all(len(w) >= 2 for w in words):
+            result['valid_name'] = True
+    
+    # Validate email (proper format)
+    email = contact_info.get('email', '').strip()
+    if email and '@' in email and '.' in email.split('@')[-1]:
+        if re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            result['valid_email'] = True
+    
+    # Validate phone (has digits, reasonable length)
+    phone = contact_info.get('phone', '').strip()
+    if phone:
+        digits = re.sub(r'\D', '', phone)
+        if 7 <= len(digits) <= 15:  # Valid phone number length
+            result['valid_phone'] = True
+    
+    # Calculate completeness
+    valid_count = sum([result['valid_name'], result['valid_email'], result['valid_phone']])
+    result['completeness'] = valid_count
+    result['score'] = (valid_count / 3.0) * 100
+    
+    return result
+
+
+def extract_name_with_spacy(text: str) -> str:
+    """Extract name using spaCy PERSON entity recognition ONLY.
+    
+    NO REGEX ALLOWED for name extraction.
+    
+    Args:
+        text: CV text (searches first 500 characters only)
+        
+    Returns:
+        Extracted name or empty string
+    """
+    from app.utils.nlp_utils import get_nlp
+    
+    nlp = get_nlp()
+    if not nlp:
+        logger.warning("⚠ spaCy not available, cannot extract name")
+        return ""
+    
+    # Search only first 500 characters (name is usually at top)
+    search_text = text[:500] if len(text) > 500 else text
+    
+    try:
+        doc = nlp(search_text)
+        
+        # Find PERSON entities - collect all candidates
+        candidates = []
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                name = ent.text.strip()
+                words = name.split()
+                
+                # Less restrictive: Accept single names OR multi-word names
+                # Just require reasonable character count
+                if len(name) >= 3 and not name.lower() in ['name', 'resume', 'cv']:
+                    # Skip if it's mostly numbers or special characters
+                    if sum(c.isalpha() for c in name) / len(name) > 0.5:
+                        candidates.append((name, len(words), ent.start_char))
+                        logger.debug(f"Name candidate: '{name}' ({len(words)} words, pos {ent.start_char})")
+        
+        if candidates:
+            # Prefer multi-word names that appear early in document
+            # Sort by: (1) word count DESC, (2) position ASC
+            candidates.sort(key=lambda x: (-x[1], x[2]))
+            best_name = candidates[0][0]
+            logger.info(f"✓ Name extracted via spaCy: {best_name} (from {len(candidates)} candidates)")
+            return best_name
+        
+        logger.warning("⚠ No valid PERSON entity found in first 500 chars")
+        return ""
+    except Exception as e:
+        logger.warning(f"⚠ spaCy name extraction failed: {e}")
+        return ""
+
+
+def extract_email_with_regex(text: str) -> str:
+    """Extract email using regex after text normalization."""
+    import re
+    
+    # Standard email pattern
+    pattern = r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
+    matches = re.findall(pattern, text)
+    
+    if matches:
+        # Return first valid-looking email
+        for email in matches:
+            if not email.startswith('.') and not email.endswith('.'):
+                logger.info(f"✓ Email extracted: {email}")
+                return email
+    
+    return ""
+
+
+def extract_phone_with_regex(text: str) -> str:
+    """Extract phone using regex after text normalization.
+    
+    Supports: +country codes, (), spaces, dashes
+    Example: +94 7720272019, (555) 123-4567, +1-555-123-4567
+    """
+    import re
+    
+    # Comprehensive phone pattern
+    # Matches: +1234567890, +1 234 567 8900, (555) 123-4567, 555-123-4567, etc.
+    pattern = r'\+?\d{1,4}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,4}[\s.-]?\d{0,4}'
+    matches = re.findall(pattern, text)
+    
+    if matches:
+        # Find the longest match (likely most complete)
+        best_match = max(matches, key=lambda x: len(re.sub(r'\D', '', x)))
+        digits = re.sub(r'\D', '', best_match)
+        
+        # Validate phone number length (7-15 digits)
+        if 7 <= len(digits) <= 15:
+            phone = best_match.strip()
+            logger.info(f"✓ Phone extracted: {phone}")
+            return phone
+    
+    return ""
+
+
+def extract_contact_info_basic(text: str) -> dict:
+    """Extract basic contact info using spaCy (name) and regex (email/phone).
+    
+    Args:
+        text: Normalized CV text
+        
+    Returns:
+        Dictionary with name, email, phone, linkedin, github
+    """
+    contact_info = {
+        'name': '',
+        'email': '',
+        'phone': '',
+        'linkedin': '',
+        'github': ''
+    }
+    
+    # Extract name using spaCy ONLY (NO REGEX)
+    contact_info['name'] = extract_name_with_spacy(text)
+    
+    # Extract email and phone using regex
+    contact_info['email'] = extract_email_with_regex(text)
+    contact_info['phone'] = extract_phone_with_regex(text)
+    
+    # Extract LinkedIn
+    import re
+    linkedin_pattern = r'(?:https?://)?(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+/?'
+    linkedin_match = re.search(linkedin_pattern, text, re.IGNORECASE)
+    if linkedin_match:
+        contact_info['linkedin'] = linkedin_match.group(0)
+    
+    # Extract GitHub
+    github_pattern = r'(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9_-]+/?'
+    github_match = re.search(github_pattern, text, re.IGNORECASE)
+    if github_match:
+        contact_info['github'] = github_match.group(0)
+    
+    return contact_info
+
+
+def format_extracted_text_with_sections(raw_text: str) -> dict:
+    """Format extracted CV text with clear section headers for better readability.
+    
+    Args:
+        raw_text: Raw extracted CV text
+        
+    Returns:
+        Dictionary with:
+        - formatted_text: Text with clear section headers
+        - sections: Dictionary of categorized sections
+        - section_order: List of section names in order
+    """
+    from app.utils.cv_utils import build_standardized_sections
+    
+    # Build structured sections
+    structured = build_standardized_sections(raw_text)
+    
+    # Format with clear headers
+    formatted_parts = []
+    section_map = {}
+    section_order = []
+    
+    # Personal Information / Contact
+    contact = structured.get('contact_information', {})
+    if contact and any(contact.values()):
+        section_text = "═══════════════════════════════════════════════════\n"
+        section_text += "📧 PERSONAL INFORMATION\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        
+        if contact.get('name'):
+            section_text += f"Name: {contact['name']}\n"
+        if contact.get('email'):
+            section_text += f"Email: {contact['email']}\n"
+        if contact.get('phone'):
+            section_text += f"Phone: {contact['phone']}\n"
+        if contact.get('linkedin'):
+            section_text += f"LinkedIn: {contact['linkedin']}\n"
+        if contact.get('github'):
+            section_text += f"GitHub: {contact['github']}\n"
+        if contact.get('address'):
+            section_text += f"Address: {contact['address']}\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Personal Information'] = section_text
+        section_order.append('Personal Information')
+    
+    # Professional Summary
+    summary = structured.get('professional_summary', '').strip()
+    if summary:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "💼 PROFESSIONAL SUMMARY\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        section_text += summary + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Professional Summary'] = section_text
+        section_order.append('Professional Summary')
+    
+    # Skills
+    skills = structured.get('skills', {})
+    if skills and (skills.get('technical') or skills.get('soft') or skills.get('languages_skills')):
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "🔧 SKILLS\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        
+        if skills.get('technical'):
+            section_text += "Technical Skills:\n"
+            section_text += "  • " + "\n  • ".join(skills['technical']) + "\n\n"
+        
+        if skills.get('soft'):
+            section_text += "Soft Skills:\n"
+            section_text += "  • " + "\n  • ".join(skills['soft']) + "\n\n"
+        
+        if skills.get('languages_skills'):
+            section_text += "Programming Languages:\n"
+            section_text += "  • " + "\n  • ".join(skills['languages_skills']) + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Skills'] = section_text
+        section_order.append('Skills')
+    
+    # Work Experience
+    experience = structured.get('work_experience', [])
+    if experience:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "💼 WORK EXPERIENCE\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        
+        for exp in experience:
+            if isinstance(exp, dict):
+                section_text += f"• {exp.get('role', 'Position')}"
+                if exp.get('company'):
+                    section_text += f" at {exp['company']}"
+                if exp.get('years'):
+                    section_text += f" ({exp['years']})"
+                section_text += "\n"
+                
+                if exp.get('description'):
+                    section_text += f"  {exp['description']}\n"
+                section_text += "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Work Experience'] = section_text
+        section_order.append('Work Experience')
+    
+    # Projects
+    projects = structured.get('projects', [])
+    if projects:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "🚀 PROJECTS\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        
+        for proj in projects:
+            if isinstance(proj, dict):
+                section_text += f"• {proj.get('name', 'Project')}\n"
+                if proj.get('description'):
+                    section_text += f"  {proj['description']}\n"
+                if proj.get('technologies'):
+                    section_text += f"  Technologies: {', '.join(proj['technologies'])}\n"
+                section_text += "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Projects'] = section_text
+        section_order.append('Projects')
+    
+    # Education
+    education = structured.get('education', [])
+    if education:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "🎓 EDUCATION\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        
+        for edu in education:
+            if isinstance(edu, dict):
+                section_text += f"• {edu.get('degree', 'Degree')}"
+                if edu.get('institution'):
+                    section_text += f" - {edu['institution']}"
+                if edu.get('year'):
+                    section_text += f" ({edu['year']})"
+                section_text += "\n"
+                
+                if edu.get('details'):
+                    section_text += f"  {edu['details']}\n"
+                section_text += "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Education'] = section_text
+        section_order.append('Education')
+    
+    # Certifications
+    certifications = structured.get('certifications', [])
+    if certifications:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "📜 CERTIFICATIONS\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        section_text += "  • " + "\n  • ".join(certifications) + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Certifications'] = section_text
+        section_order.append('Certifications')
+    
+    # Achievements
+    achievements = structured.get('achievements', [])
+    if achievements:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "🏆 ACHIEVEMENTS\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        section_text += "  • " + "\n  • ".join(achievements) + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Achievements'] = section_text
+        section_order.append('Achievements')
+    
+    # Languages
+    languages = structured.get('languages', [])
+    if languages:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "🌍 LANGUAGES\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        section_text += "  • " + "\n  • ".join(languages) + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Languages'] = section_text
+        section_order.append('Languages')
+    
+    # Additional Information
+    additional = structured.get('additional_information', '').strip()
+    if additional:
+        section_text = "\n═══════════════════════════════════════════════════\n"
+        section_text += "ℹ️  ADDITIONAL INFORMATION\n"
+        section_text += "═══════════════════════════════════════════════════\n\n"
+        section_text += additional + "\n"
+        
+        formatted_parts.append(section_text)
+        section_map['Additional Information'] = section_text
+        section_order.append('Additional Information')
+    
+    # Combine all sections
+    formatted_text = "\n".join(formatted_parts)
+    
+    return {
+        'formatted_text': formatted_text,
+        'sections': section_map,
+        'section_order': section_order,
+        'structured_data': structured
+    }
 
 
 def allowed_file(filename):
@@ -611,279 +1026,135 @@ def extract_text_from_any(file_bytes: bytes, filename: Optional[str]) -> str:
     return normalize_text(decoded)
 
 
-class PDF(FPDF):
-    def header(self):
-        # No automatic header to allow custom first page styling
-        pass
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
-        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
-
-    def chapter_title(self, title):
-        self.set_font('Helvetica', 'B', 14)
-        self.set_text_color(44, 62, 80)  # Dark blue-gray
-        self.cell(0, 10, title.upper(), 0, 1, 'L')
-        self.line(10, self.get_y(), 200, self.get_y())
-        self.ln(4)
-
-    def chapter_body(self, body):
-        self.set_font('Helvetica', '', 11)
-        self.set_text_color(0, 0, 0)
-        self.multi_cell(0, 5, body)
-        self.ln()
-
-def generate_pdf(data):
-    """
-    Generate a professional PDF CV.
+def generate_pdf(text):
+    """Generate professional PDF from CV text or structured data using WeasyPrint.
+    
     Args:
-        data: Can be a dictionary (structured) or string (raw text).
+        text: Either a string (plain CV text) or dict (structured CV data)
+        
+    Returns:
+        BytesIO object containing the PDF
     """
-    def sanitize_text(text):
-        if not text:
-            return ""
-        # Replace common unicode chars that fail in latin-1/basic fonts
-        replacements = {
-            '\u2013': '-', '\u2014': '--',
-            '\u2018': "'", '\u2019': "'",
-            '\u201c': '"', '\u201d': '"',
-            '\u2022': '*', '\u2026': '...',
-            '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2015': '--',
-            '\u2032': "'", '\u2033': '"',
-            '\u00a0': ' ',  # non-breaking space
-        }
-        for k, v in replacements.items():
-            text = text.replace(k, v)
-        # Convert to ASCII-safe string, replacing any remaining non-latin-1 chars
-        try:
-            # First try to encode as latin-1
-            text.encode('latin-1')
-            return text
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            # If that fails, use ASCII with replacement
-            return text.encode('ascii', 'replace').decode('ascii')
-
-    def sanitize_data(obj):
-        if isinstance(obj, str):
-            return sanitize_text(obj)
-        if isinstance(obj, list):
-            return [sanitize_data(x) for x in obj]
-        if isinstance(obj, dict):
-            return {k: sanitize_data(v) for k, v in obj.items()}
-        return obj
-
-    # Sanitize input data first
-    data = sanitize_data(data)
-
-    pdf = PDF()
-    pdf.add_page()
-    
-    # Font setup
     try:
-        font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
-        if os.path.exists(font_path):
-            pdf.add_font("DejaVu", "", font_path, uni=True)
-            pdf.add_font("DejaVu", "B", font_path, uni=True) # Fallback bold
-            pdf.set_font("DejaVu", size=11)
-            main_font = "DejaVu"
-        else:
-            pdf.set_font("Helvetica", size=11)
-            main_font = "Helvetica"
-    except Exception:
-        pdf.set_font("Helvetica", size=11)
-        main_font = "Helvetica"
+        from xhtml2pdf import pisa
+        from app.utils.cv_templates import build_professional_cv_html
+        
+        # Build HTML from input
+        html_content = build_professional_cv_html(text)
+        
+        # Generate PDF with xhtml2pdf (Windows-compatible)
+        pdf_io = io.BytesIO()
+        pisa_status = pisa.CreatePDF(html_content, dest=pdf_io)
+        
+        if pisa_status.err:
+            logger.warning("xhtml2pdf reported errors, falling back to FPDF")
+            return _generate_pdf_fallback(text)
+        
+        # Return as BytesIO
+        pdf_io.seek(0)
+        return pdf_io
+        
+    except ImportError:
+        logger.warning("xhtml2pdf not available, falling back to basic PDF generation")
+        # Fallback to FPDF if xhtml2pdf not installed
+        return _generate_pdf_fallback(text)
+    except Exception as e:
+        logger.error(f"PDF generation failed: {e}", exc_info=True)
+        # Try fallback on any error
+        return _generate_pdf_fallback(text)
 
-    # Helper for bullets
-    def print_bullet(text):
-        pdf.set_font(main_font, '', 10)
-        pdf.cell(5) # Indent
-        # Use simple dash if glyphs fail
-        bullet_char = "-" 
-        pdf.cell(5, 5, bullet_char, 0, 0) 
-        pdf.multi_cell(0, 5, text.strip())
+
+def _generate_pdf_fallback(text):
+    """Fallback PDF generation using FPDF (legacy)."""
+    from fpdf import FPDF
     
-    if isinstance(data, dict):
-        # --- HEADER ---
-        # Name
-        name = data.get('personal_info', {}).get('name') or data.get('name') or "Your Name"
-        pdf.set_font(main_font, 'B', 24)
-        pdf.set_text_color(44, 62, 80)
-        pdf.cell(0, 10, name, 0, 1, 'C')
-        
-        # Contact Info
-        contact_parts = []
-        p_info = data.get('personal_info', {}) or {}
-        if not p_info and isinstance(data.get('contact'), str):
-             # Fallback if contact is a string
-             pdf.set_font(main_font, '', 10)
-             pdf.cell(0, 5, data.get('contact'), 0, 1, 'C')
-        else:
-            if p_info.get('email'): contact_parts.append(p_info['email'])
-            if p_info.get('phone'): contact_parts.append(p_info['phone'])
-            if p_info.get('linkedin'): contact_parts.append(f"LinkedIn: {p_info['linkedin']}")
-            if p_info.get('location'): contact_parts.append(p_info['location'])
-            
-            pdf.set_font(main_font, '', 10)
-            pdf.set_text_color(100, 100, 100)
-            pdf.multi_cell(0, 5, " | ".join(contact_parts), 0, 'C')
-        
-        pdf.ln(8)
-
-        # --- SECTIONS ---
-        
-        # Summary
-        summary = data.get('summary') or data.get('professional_summary')
-        if summary:
-            pdf.chapter_title("Professional Summary")
-            pdf.set_font(main_font, '', 11)
-            pdf.multi_cell(0, 6, summary)
-            pdf.ln(5)
-
-        # Skills
-        skills = data.get('skills')
-        if skills:
-            pdf.chapter_title("Technical Skills")
-            pdf.set_font(main_font, '', 10)
-            if isinstance(skills, dict):
-                for cat, items in skills.items():
-                    if not items: continue
-                    clean_cat = cat.replace('_', ' ').replace('skills', '').strip().title()
-                    if isinstance(items, list):
-                        item_str = ", ".join(items)
-                    else:
-                        item_str = str(items)
-                    pdf.set_font(main_font, 'B', 10)
-                    pdf.cell(40, 6, f"{clean_cat}:", 0, 0)
-                    pdf.set_font(main_font, '', 10)
-                    pdf.multi_cell(0, 6, item_str)
-            elif isinstance(skills, list):
-                pdf.multi_cell(0, 6, ", ".join(skills))
-            elif isinstance(skills, str):
-                pdf.multi_cell(0, 6, skills)
-            pdf.ln(5)
-
-        # Experience
-        exp = data.get('experience') or data.get('work_experience')
-        if exp:
-            pdf.chapter_title("Work Experience")
-            if isinstance(exp, list):
-                for job in exp:
-                    if isinstance(job, dict):
-                        # Title & Company
-                        title = job.get('role') or job.get('title') or "Role"
-                        company = job.get('company') or "Company"
-                        dates = job.get('duration') or job.get('dates') or ""
-                        
-                        pdf.set_font(main_font, 'B', 11)
-                        pdf.cell(120, 6, f"{title} at {company}", 0, 0)
-                        pdf.set_font(main_font, 'I', 10)
-                        pdf.cell(0, 6, dates, 0, 1, 'R')
-                        
-                        # Details
-                        details = job.get('details') or job.get('description') or job.get('points')
-                        if details:
-                            if isinstance(details, list):
-                                for point in details:
-                                    print_bullet(str(point))
-                            else:
-                                pdf.set_font(main_font, '', 10)
-                                pdf.multi_cell(0, 6, str(details))
-                        pdf.ln(3)
-            pdf.ln(2)
-
-        # Projects
-        projs = data.get('projects')
-        if projs:
-            pdf.chapter_title("Projects")
-            if isinstance(projs, list):
-                for proj in projs:
-                    if isinstance(proj, dict):
-                        name = proj.get('name') or "Project"
-                        tech = proj.get('technologies') or []
-                        if isinstance(tech, list): tech = ", ".join(tech)
-                        
-                        pdf.set_font(main_font, 'B', 11)
-                        pdf.cell(0, 6, name, 0, 1)
-                        
-                        if tech:
-                            pdf.set_font(main_font, 'I', 10)
-                            pdf.cell(0, 6, f"Technologies: {tech}", 0, 1)
-                            
-                        desc = proj.get('description') or proj.get('desc')
-                        if desc:
-                            pdf.set_font(main_font, '', 10)
-                            pdf.multi_cell(0, 6, str(desc))
-                        pdf.ln(3)
-            pdf.ln(2)
-
-        # Education
-        edu = data.get('education')
-        if edu:
-            pdf.chapter_title("Education")
-            if isinstance(edu, list):
-                for e in edu:
-                    if isinstance(e, dict):
-                        degree = e.get('degree') or "Degree"
-                        school = e.get('institution') or e.get('school') or "Institution"
-                        year = e.get('year') or e.get('dates') or ""
-                        
-                        pdf.set_font(main_font, 'B', 11)
-                        pdf.cell(140, 6, f"{degree}, {school}", 0, 0)
-                        pdf.set_font(main_font, 'I', 10)
-                        pdf.cell(0, 6, year, 0, 1, 'R')
-                        
-                        details = e.get('details')
-                        if details:
-                             pdf.set_font(main_font, '', 10)
-                             pdf.multi_cell(0, 6, str(details))
-                        pdf.ln(2)
-
-        # Certifications
-        certs = data.get('certifications')
-        if certs:
-             pdf.chapter_title("Certifications")
-             if isinstance(certs, list):
-                 for c in certs:
-                     if isinstance(c, dict):
-                         name = c.get('name')
-                         provider = c.get('provider') or c.get('issuer')
-                         line = name
-                         if provider: line += f" - {provider}"
-                         print_bullet(line)
-                     else:
-                         print_bullet(str(c))
-             pdf.ln(2)
-             
+    pdf = FPDF()
+    pdf.add_page()
+    font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+    if os.path.exists(font_path):
+        pdf.add_font("DejaVu", "", font_path, uni=True)
+        pdf.set_font("DejaVu", size=12)
     else:
-        # Fallback for raw text
-        pdf.set_font(main_font, '', 11)
-        # Attempt to handle basic markdown headers
-        for line in data.split('\n'):
+        pdf.set_font("Helvetica", size=12)
+        if isinstance(text, str):
+            text = text.encode("latin-1", "replace").decode("latin-1")
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    def get_width(indent=0):
+        return pdf.w - pdf.l_margin - pdf.r_margin - indent
+
+    # If caller passed a dict, treat it as structured sections and render template
+    if isinstance(text, dict):
+        sections = text
+        # Header placeholder
+        header = sections.get("header") or "NAME\nEmail: you@example.com | Phone: +1-555-555-5555\nLocation: City, Country"
+        for hline in header.split("\n"):
+            pdf.set_font(pdf.font_family, "B", 14)
+            pdf.cell(0, 8, hline, ln=True)
+        pdf.ln(4)
+
+        def render_section(title, content):
+            if not content:
+                return
+            pdf.set_font(pdf.font_family, "B", 12)
+            pdf.cell(0, 8, title, ln=True)
+            pdf.set_font(pdf.font_family, size=11)
+            # render bullets specially
+            for line in str(content).split("\n"):
+                line = line.strip()
+                if not line:
+                    pdf.ln(2)
+                    continue
+                if line.startswith("-"):
+                    bullet = "•" if pdf.font_family == "DejaVu" else "-"
+                    pdf.cell(6)
+                    pdf.multi_cell(get_width(6), 6, f"{bullet} {line.lstrip('- ').strip()}")
+                else:
+                    pdf.multi_cell(get_width(), 6, line)
+            pdf.ln(2)
+
+        # Render in sensible order
+        render_section("PROFESSIONAL SUMMARY", sections.get("about") or sections.get("summary"))
+        render_section("KEY SKILLS", sections.get("skills"))
+        render_section("WORK EXPERIENCE", sections.get("work_experience") or sections.get("experience"))
+        render_section("PROJECTS", sections.get("projects"))
+        render_section("ACHIEVEMENTS & EXTRACURRICULAR", sections.get("achievements") or sections.get("other"))
+        render_section("EDUCATION", sections.get("education"))
+    else:
+        heading_prefixes = (
+            "education",
+            "experience",
+            "skills",
+            "projects",
+            "contact",
+            "professional summary",
+            "key skills",
+            "work experience",
+            "certifications",
+            "achievements",
+            "languages",
+            "additional information",
+        )
+        for line in str(text).split("\n"):
             line = line.strip()
             if not line:
-                pdf.ln(4)
+                pdf.ln(5)
                 continue
-            if line.startswith('#'):
-                 pdf.set_font(main_font, 'B', 12)
-                 pdf.cell(0, 8, line.lstrip('#').strip(), 0, 1)
-                 pdf.set_font(main_font, '', 11)
-            elif line.startswith('-') or line.startswith('•'):
-                 print_bullet(line.lstrip('-• ').strip())
+            if line.lower().startswith(heading_prefixes):
+                pdf.set_font(pdf.font_family, "B", 14)
+                pdf.cell(0, 10, line, ln=True)
+                pdf.set_font(pdf.font_family, size=12)
+            elif line.startswith(("-", "*")) or (line and line[0:2].isdigit()):
+                indent = 10
+                pdf.cell(indent)
+                bullet = "•" if pdf.font_family == "DejaVu" else "-"
+                safe_text = line.lstrip("-*0123456789. ")
+                pdf.multi_cell(get_width(indent), 8, f"{bullet} {safe_text}")
             else:
-                 pdf.multi_cell(0, 6, line)
-
-    # Output
+                pdf.multi_cell(get_width(), 8, line)
+    # Use 'S' to get PDF as string and encode to bytes (avoid passing BytesIO to FPDF.output)
     pdf_str = pdf.output(dest='S')
-    # Handle the PDF string output - it may already be bytes in some FPDF versions
-    if isinstance(pdf_str, bytes):
-        pdf_data = pdf_str
-    else:
-        # Use 'replace' to handle any encoding issues gracefully
-        try:
-            pdf_data = pdf_str.encode('latin-1', errors='replace')
-        except (UnicodeEncodeError, AttributeError):
-            pdf_data = str(pdf_str).encode('utf-8', errors='replace')
+    pdf_data = pdf_str.encode('latin-1')
     pdf_bytes = io.BytesIO(pdf_data)
     pdf_bytes.seek(0)
     return pdf_bytes
@@ -905,38 +1176,387 @@ def _score_by_keywords(text, domain):
 
 
 def compute_ats_score(text, domain=None):
-    """Compute a heuristic ATS score (0-100).
+    """Compute a comprehensive ATS score (0-100).
 
-    Factors:
-    - presence of contact info
-    - keyword match for domain
-    - presence of skills section
-    - reasonable length
+    Scoring breakdown:
+    - Contact Information (15 points): email, phone, location
+    - Professional Summary (10 points): presence and quality
+    - Skills Section (10 points): clear skills section
+    - Work Experience (15 points): structured with dates and bullets
+    - Education (10 points): degree and institution
+    - Keywords (20 points): domain-specific keywords
+    - Action Verbs (8 points): strong action verbs in experience
+    - Quantifiable Achievements (7 points): numbers/metrics
+    - Formatting (5 points): proper structure and sections
+    - Length (5 points): appropriate length (300-1200 words)
     """
     score = 0
     text_lower = text.lower()
-    # contact info
+    
+    # 1. Contact Information (15 points)
+    contact_score = 0
     if re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", text_lower):
-        score += 20
+        contact_score += 7
     if re.search(r"\+?\d[\d \-()]{7,}\d", text_lower):
-        score += 10
-
-    # keyword match
+        contact_score += 5
+    if re.search(r"\b(city|state|country|location)\b.*?[,\n]", text_lower):
+        contact_score += 3
+    score += contact_score
+    
+    # 2. Professional Summary (10 points)
+    summary_keywords = r"\b(summary|objective|profile|about)\b"
+    if re.search(summary_keywords, text_lower):
+        summary_match = re.search(rf"{summary_keywords}[:\s]*([^\n]*(?:\n[^\n]*)?)", text_lower, re.IGNORECASE)
+        if summary_match and len(summary_match.group(1).split()) > 15:
+            score += 10
+        else:
+            score += 5
+    
+    # 3. Skills Section (10 points)
+    if re.search(r"\b(skills|competencies|expertise)\b", text_lower):
+        skills_section = re.search(r"\b(skills|competencies)\b[^\n]*\n([^\n]*(?:\n[^\n]*){1,10})", text_lower, re.IGNORECASE)
+        if skills_section:
+            skills_text = skills_section.group(2)
+            skill_count = len(re.findall(r"[,•\-]|\n", skills_text))
+            if skill_count >= 5:
+                score += 10
+            else:
+                score += 5
+    
+    # 4. Work Experience (15 points)
+    experience_keywords = r"\b(experience|employment|work history)\b"
+    if re.search(experience_keywords, text_lower):
+        exp_score = 5
+        # Check for dates
+        if re.search(r"(20|19)\d{2}\s*[-–]\s*(20|19)?\d{0,4}|present|current", text_lower):
+            exp_score += 5
+        # Check for bullet points
+        bullet_count = len(re.findall(r"^\s*[-•*]\s+", text, re.MULTILINE))
+        if bullet_count >= 3:
+            exp_score += 5
+        score += exp_score
+    
+    # 5. Education (10 points)
+    education_keywords = r"\b(education|academic|degree|university|college)\b"
+    if re.search(education_keywords, text_lower):
+        edu_score = 5
+        # Check for degree keywords
+        if re.search(r"\b(bachelor|master|phd|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.|diploma)\b", text_lower):
+            edu_score += 5
+        score += edu_score
+    
+    # 6. Domain Keywords (20 points)
     kw_score, missing, found = _score_by_keywords(text, domain)
-    score += int(30 * kw_score)
-
-    # skills section
-    if re.search(r"\bskills\b", text_lower):
-        score += 15
-
-    # reasonable length
+    score += int(20 * kw_score)
+    
+    # 7. Action Verbs (8 points)
+    action_verb_count = 0
+    for verb in ACTION_VERBS:
+        if verb in text_lower:
+            action_verb_count += 1
+    action_score = min(8, action_verb_count)
+    score += action_score
+    
+    # 8. Quantifiable Achievements (7 points)
+    # Look for numbers, percentages, metrics
+    metrics_pattern = r"\d+[%+]|\$\d+|\d+\s*(users|clients|customers|projects|team|members|revenue|sales|growth)"
+    metrics_count = len(re.findall(metrics_pattern, text_lower))
+    score += min(7, metrics_count * 2)
+    
+    # 9. Formatting (5 points)
+    # Check for proper section structure
+    section_count = sum(1 for kw in ["summary", "experience", "education", "skills"] if kw in text_lower)
+    score += min(5, section_count)
+    
+    # 10. Length (5 points)
     words = len(re.findall(r"\w+", text))
-    if 200 <= words <= 1200:
-        score += 15
-    elif words < 200:
+    if 300 <= words <= 1200:
         score += 5
-
+    elif 200 <= words < 300 or 1200 < words <= 1500:
+        score += 3
+    elif words >= 150:
+        score += 1
+    
     return min(100, score), missing, found
+
+
+def analyze_ats_score_detailed(text, domain=None):
+    """Optimized ATS analysis with comprehensive scoring.
+    
+    Returns dict with:
+    - overall_score: 0-100
+    - breakdown: dict of category scores
+    - missing_elements: list of what's missing
+    - recommendations: list of improvement suggestions
+    - missing_keywords: keywords to add for domain
+    - found_keywords: keywords already present
+    - strengths: list of CV strengths
+    - category_scores: normalized scores by category
+    """
+    text_lower = text.lower()
+    breakdown = {}
+    missing_elements = []
+    recommendations = []
+    
+    # Precompile patterns for performance
+    email_pattern = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+    phone_pattern = re.compile(r"\+?\d[\d \-()]{7,}\d")
+    location_pattern = re.compile(r"\b(city|state|country|location|address)\b", re.I)
+    date_pattern = re.compile(r"(20|19)\d{2}\s*[-–]\s*(20|19)?\d{0,4}|present|current", re.I)
+    
+    # Contact Information (15 points)
+    contact_score = 0
+    has_email = email_pattern.search(text_lower)
+    has_phone = phone_pattern.search(text_lower)
+    has_location = location_pattern.search(text_lower)
+    
+    if has_email: 
+        contact_score += 7
+    else: 
+        missing_elements.append("Email address")
+        recommendations.append("⚠️ Add your professional email address")
+    
+    if has_phone: 
+        contact_score += 5
+    else: 
+        missing_elements.append("Phone number")
+        recommendations.append("📞 Include contact phone number")
+    
+    if has_location: 
+        contact_score += 3
+    else: 
+        recommendations.append("📍 Add your location (city/country)")
+    
+    breakdown["Contact Information"] = contact_score
+    
+    # Professional Summary (12 points)
+    summary_score = 0
+    summary_pattern = re.compile(r"\b(summary|objective|profile|about|professional\s+summary)\b[:\s]*(.{50,500})", re.I | re.DOTALL)
+    summary_match = summary_pattern.search(text)
+    
+    if summary_match:
+        summary_text = summary_match.group(2)
+        word_count = len(summary_text.split())
+        if word_count >= 30:
+            summary_score = 12
+        elif word_count >= 15:
+            summary_score = 8
+            recommendations.append("💡 Expand professional summary to 30-50 words")
+        else:
+            summary_score = 4
+            recommendations.append("📝 Professional summary is too brief - aim for 30-50 words")
+    else:
+        missing_elements.append("Professional Summary")
+        recommendations.append("🎯 Add a professional summary highlighting your key strengths and career goals")
+    
+    breakdown["Professional Summary"] = summary_score
+    
+    # Skills (15 points)
+    skills_score = 0
+    skills_pattern = re.compile(r"\b(skills|competencies|expertise|technical\s+skills|core\s+competencies)\b", re.I)
+    has_skills = skills_pattern.search(text_lower)
+    
+    if has_skills:
+        # Count skills by looking for delimiters and keywords
+        skill_delimiters = len(re.findall(r"[,•\-\|]", text))
+        technical_terms = len(re.findall(r"\b(python|java|javascript|sql|aws|docker|react|node|api|database|cloud|agile|scrum)\b", text_lower))
+        
+        total_skill_indicators = skill_delimiters + technical_terms
+        
+        if total_skill_indicators >= 12:
+            skills_score = 15
+        elif total_skill_indicators >= 8:
+            skills_score = 12
+        elif total_skill_indicators >= 5:
+            skills_score = 8
+            recommendations.append("💼 Add more technical and soft skills (aim for 10-15)")
+        else:
+            skills_score = 4
+            recommendations.append("📊 Skills section needs expansion with relevant keywords")
+    else:
+        missing_elements.append("Skills Section")
+        recommendations.append("⚡ Create a dedicated Skills section with 10-15 relevant skills")
+    
+    breakdown["Skills"] = skills_score
+    
+    # Work Experience (20 points)
+    exp_score = 0
+    exp_pattern = re.compile(r"\b(experience|employment|work\s+history|professional\s+experience|career)\b", re.I)
+    has_experience = exp_pattern.search(text_lower)
+    
+    if has_experience:
+        exp_score = 6
+        
+        # Check for dates
+        dates_found = date_pattern.findall(text)
+        if len(dates_found) >= 2:
+            exp_score += 5
+        elif len(dates_found) >= 1:
+            exp_score += 3
+            recommendations.append("📅 Add dates to all work experience entries")
+        else:
+            recommendations.append("⏰ Include employment dates for all positions")
+        
+        # Check for bullet points (achievements)
+        bullet_count = len(re.findall(r"^\s*[-•*]\s+", text, re.MULTILINE))
+        if bullet_count >= 6:
+            exp_score += 6
+        elif bullet_count >= 3:
+            exp_score += 4
+            recommendations.append("✨ Add more bullet points describing achievements")
+        else:
+            exp_score += 1
+            recommendations.append("🔸 Use bullet points to highlight key accomplishments")
+        
+        # Check for job titles and company names
+        job_indicators = len(re.findall(r"\b(manager|developer|engineer|analyst|coordinator|specialist|director|lead|senior|junior)\b", text_lower))
+        if job_indicators >= 2:
+            exp_score += 3
+    else:
+        missing_elements.append("Work Experience")
+        recommendations.append("💼 Add Work Experience section with job titles, companies, and achievements")
+    
+    breakdown["Work Experience"] = exp_score
+    
+    # Education (12 points)
+    edu_score = 0
+    edu_pattern = re.compile(r"\b(education|academic|qualification|degree|university|college|institute)\b", re.I)
+    has_education = edu_pattern.search(text_lower)
+    
+    if has_education:
+        edu_score = 6
+        
+        # Check for degree type
+        degree_pattern = re.compile(r"\b(bachelor|master|phd|doctorate|b\.?s\.?c?|m\.?s\.?c?|b\.?a\.|m\.?a\.|diploma|associate)\b", re.I)
+        if degree_pattern.search(text_lower):
+            edu_score += 4
+        else:
+            recommendations.append("🎓 Specify your degree type (e.g., Bachelor of Science in Computer Science)")
+        
+        # Check for institution names
+        if re.search(r"\b(university|college|institute|school)\b", text_lower):
+            edu_score += 2
+    else:
+        missing_elements.append("Education")
+        recommendations.append("🎓 Add Education section with degree, institution, and graduation year")
+    
+    breakdown["Education"] = edu_score
+    
+    # Domain Keywords (15 points)
+    kw_score, missing_kw, found_kw = _score_by_keywords(text, domain)
+    breakdown["Domain Keywords"] = int(15 * kw_score)
+    if len(missing_kw) > 0:
+        recommendations.append(f"🔑 Add relevant keywords: {', '.join(missing_kw[:5])}")
+    elif kw_score < 0.5:
+        recommendations.append("🔍 Include more industry-specific keywords and technologies")
+    
+    # Action Verbs (10 points)
+    action_count = sum(1 for verb in ACTION_VERBS if f" {verb} " in f" {text_lower} " or f" {verb}ed " in f" {text_lower} ")
+    action_score = min(10, int(action_count * 1.5))
+    breakdown["Action Verbs"] = action_score
+    
+    if action_count < 3:
+        recommendations.append("💪 Use more strong action verbs (achieved, led, developed, managed, implemented)")
+    elif action_count < 6:
+        recommendations.append("💡 Add more action verbs to strengthen impact statements")
+    
+    # Quantifiable Achievements (10 points)
+    metrics_pattern = re.compile(r"\d+[%+]|\$\d+k?m?|\d+\s*(users|clients|customers|projects|team|members|employees|revenue|sales|growth|increase|decrease|reduction|improvement)", re.I)
+    metrics_matches = metrics_pattern.findall(text_lower)
+    metrics_count = len(metrics_matches)
+    
+    achievement_score = min(10, metrics_count * 2)
+    breakdown["Quantifiable Achievements"] = achievement_score
+    
+    if metrics_count == 0:
+        recommendations.append("📊 Add quantifiable achievements with numbers/percentages (e.g., 'Increased sales by 25%')")
+    elif metrics_count < 3:
+        recommendations.append("📈 Include more metrics to demonstrate measurable impact")
+    
+    # Document Structure (6 points)
+    section_keywords = ["summary", "objective", "experience", "employment", "education", "skills", "projects", "certifications"]
+    section_count = sum(1 for kw in section_keywords if kw in text_lower)
+    
+    structure_score = min(6, int(section_count * 1.2))
+    breakdown["Document Structure"] = structure_score
+    
+    if section_count < 4:
+        recommendations.append("📋 Add more standard sections (Summary, Skills, Experience, Education, Projects)")
+    
+    # Formatting & Length (7 points)
+    words = len(re.findall(r"\w+", text))
+    length_score = 0
+    
+    if 400 <= words <= 800:
+        length_score = 7
+    elif 300 <= words < 400 or 800 < words <= 1000:
+        length_score = 5
+        if words < 400:
+            recommendations.append("📝 Add more detail - optimal length is 400-800 words")
+    elif 200 <= words < 300:
+        length_score = 3
+        recommendations.append("📄 CV is too brief - expand with more details (aim for 400-800 words)")
+    elif words > 1000:
+        length_score = 4
+        recommendations.append("✂️ Consider condensing to 1-2 pages for better ATS readability")
+    else:
+        length_score = 1
+        recommendations.append("⚠️ CV is too short - add substantial content")
+    
+    breakdown["Formatting & Length"] = length_score
+    
+    overall_score = sum(breakdown.values())
+    
+    # Generate strengths list based on scores
+    strengths = []
+    if breakdown.get("Contact Information", 0) >= 13:
+        strengths.append("✅ Complete and professional contact details")
+    if breakdown.get("Professional Summary", 0) >= 10:
+        strengths.append("✅ Strong and compelling professional summary")
+    if breakdown.get("Skills", 0) >= 12:
+        strengths.append("✅ Comprehensive skills section with relevant keywords")
+    if breakdown.get("Work Experience", 0) >= 16:
+        strengths.append("✅ Well-documented work experience with clear achievements")
+    if breakdown.get("Education", 0) >= 10:
+        strengths.append("✅ Complete educational background")
+    if breakdown.get("Quantifiable Achievements", 0) >= 6:
+        strengths.append("✅ Strong use of metrics and quantifiable results")
+    if breakdown.get("Action Verbs", 0) >= 7:
+        strengths.append("✅ Effective use of action verbs and impact statements")
+    if breakdown.get("Domain Keywords", 0) >= 10:
+        strengths.append("✅ Good keyword optimization for ATS systems")
+        
+    # Priority recommendations based on score tiers
+    priority_recs = []
+    if overall_score < 50:
+        priority_recs.append("🎯 URGENT: CV needs major improvements to pass ATS screening")
+        priority_recs.append("🎯 Focus on: Complete sections, add keywords, include achievements with metrics")
+    elif overall_score < 70:
+        priority_recs.append("⚡ IMPORTANT: Enhance CV to improve ATS ranking")
+        priority_recs.append("💡 Focus on: More keywords, quantifiable achievements, and detailed experience")
+    elif overall_score < 85:
+        priority_recs.append("✨ Good foundation - refine details for maximum impact")
+    
+    # Calculate category scores (for frontend visualization)
+    category_scores = {
+        "contact": int((breakdown.get("Contact Information", 0) / 15) * 100),
+        "content": int(((breakdown.get("Professional Summary", 0) + breakdown.get("Work Experience", 0)) / 32) * 100),
+        "keywords": int(((breakdown.get("Skills", 0) + breakdown.get("Domain Keywords", 0)) / 30) * 100),
+        "impact": int(((breakdown.get("Action Verbs", 0) + breakdown.get("Quantifiable Achievements", 0)) / 20) * 100),
+        "structure": int(((breakdown.get("Document Structure", 0) + breakdown.get("Formatting & Length", 0)) / 13) * 100),
+    }
+    
+    return {
+        "overall_score": min(100, overall_score),
+        "breakdown": breakdown,
+        "category_scores": category_scores,
+        "missing_elements": missing_elements,
+        "recommendations": priority_recs + recommendations,
+        "strengths": strengths,
+        "missing_keywords": missing_kw if domain else [],
+        "found_keywords": found_kw if domain else [],
+        "grade": "Excellent" if overall_score >= 85 else "Good" if overall_score >= 70 else "Fair" if overall_score >= 50 else "Needs Improvement"
+    }
 
 
 def extract_sections(text):
@@ -2044,6 +2664,9 @@ def build_structured_cv_payload(structured: Dict[str, object]) -> Dict[str, obje
     structured = structured or {}
 
     contact = structured.get("contact_information") if isinstance(structured.get("contact_information"), dict) else {}
+    logger.info(f"🔍 Building structured payload - contact_information: {contact}")
+    logger.info(f"🔍 Raw name value: '{contact.get('name')}', Raw email: '{contact.get('email')}'")
+    
     contact_payload = {
         "name": _clean_text(contact.get("name")),
         "email": _clean_text(contact.get("email")),
@@ -2096,88 +2719,125 @@ def build_structured_cv_payload(structured: Dict[str, object]) -> Dict[str, obje
 
     return structured_payload
 def optimize_cv_with_gemini(cv_text, job_domain=None):
-    """Attempt to use Gemini to generate a structured JSON output for the optimized CV.
+    """Generate ATS-optimized CV using Gemini AI with proper keywords and formatting.
 
-    If AI is not available or JSON parsing fails, raise an exception so callers can fallback.
+    This is called when ATS score < 75. Generates a professionally formatted CV
+    with domain-specific keywords, action verbs, and proper structure.
     """
     model = get_generative_model()
     if not model:
         raise RuntimeError("AI not configured")
 
+    # Get domain-specific keywords to inject
+    domain_keywords = DOMAIN_KEYWORDS.get(job_domain.lower().replace(" ", "_"), []) if job_domain else []
+    keywords_hint = f"\n\nIMPORTANT: Integrate these domain-specific keywords naturally: {', '.join(domain_keywords[:15])}" if domain_keywords else ""
+
     prompt = f"""
-    Act as a world-class CV parser + CV writer. 
-    The CV generated above is not suitable for job applications. I want you to fully fix, clean, and professionally reformat it into a standard ATS-friendly CV. Follow these strict rules:
+    Act as an expert ATS CV optimizer and professional resume writer.
+    
+    Your task: Transform this CV into a TOP-TIER, ATS-optimized resume that will score 85+ on ATS systems.
+    
+    Target Domain/Role: {job_domain or 'General Professional'}
+    {keywords_hint}
 
-    Target Domain: {job_domain or 'General'}
+    CRITICAL REQUIREMENTS:
 
-    1. Clean & Correct Content
-    - Remove all duplicated sections.
-    - Remove symbols like ?, broken formatting, unclear spacing, or repeated words.
-    - Correct grammar, structure, and clarity.
-    - Ensure technical skills are grouped properly.
-    - Add missing punctuation and remove incomplete sentences.
+    1. **Content Quality**
+       - Remove ALL duplicates, broken formatting, unclear text
+       - Fix grammar, punctuation, and sentence structure
+       - Use STRONG action verbs: Led, Developed, Implemented, Managed, Optimized, Increased, Reduced, Built, Designed, Launched
+       - Add quantifiable achievements with numbers/percentages wherever possible
+       - Make every bullet point impactful and results-oriented
 
-    2. Structure the CV Properly
-    Create the CV in this exact order:
-    - Header (Name, Email, Phone, LinkedIn, GitHub, Location)
-    - Professional Summary (Strong, 3-4 lines)
-    - Skills (Categorized: Languages, Frameworks, Tools, etc.)
-    - Work Experience (Role, Company, Dates, Location, Impactful Bullet Points)
-    - Projects (Name, Tech Stack, Description, Impact)
-    - Education
-    - Certifications
-    - Achievements
-    - Languages
-    - Interests (Optional)
+    2. **ATS-Friendly Structure** (EXACT ORDER):
+       ```
+       [FULL NAME]
+       Email: email@example.com | Phone: +1-XXX-XXX-XXXX | Location: City, Country
+       LinkedIn: url | GitHub: url (if available)
+       
+       PROFESSIONAL SUMMARY
+       3-4 powerful sentences highlighting key strengths, years of experience, and core expertise.
+       Must include relevant keywords for the target domain.
+       
+       TECHNICAL SKILLS
+       • Programming Languages: [list]
+       • Frameworks & Libraries: [list]
+       • Tools & Platforms: [list]
+       • Databases: [list]
+       • Cloud & DevOps: [list]
+       
+       PROFESSIONAL EXPERIENCE
+       [Job Title] | [Company Name] | [Start Date] - [End Date]
+       • [Achievement with metric/number]
+       • [Achievement with action verb]
+       • [Technical implementation detail]
+       (3-5 bullets per role)
+       
+       PROJECTS (if applicable)
+       [Project Name] | [Tech Stack]
+       • [What you built and impact]
+       • [Measurable result or scale]
+       
+       EDUCATION
+       [Degree] in [Field] — [University Name], [Year]
+       
+       CERTIFICATIONS (if applicable)
+       • [Certification Name] — [Issuer], [Year]
+       
+       ACHIEVEMENTS & AWARDS (if applicable)
+       • [Achievement description]
+       ```
 
-    3. Make It ATS-Friendly
-    - Use clean bullet points.
-    - Avoid tables, emojis, images, or fancy symbols.
-    - Ensure consistent formatting and standardized headers.
+    3. **Formatting Rules**
+       - Use ONLY plain text formatting (no markdown)
+       - Clear section headers (ALL CAPS or Title Case)
+       - Consistent bullet points (•, -, or *)
+       - NO tables, columns, graphics, or special characters
+       - Proper spacing between sections
+       - 1-2 pages maximum (400-800 words)
 
-    4. Improve Quality
-    - Rewrite the Professional Summary to sound strong, clear, and industry-ready.
-    - Use strong action verbs.
-    - Quantify achievements (metrics, %) where possible.
+    4. **Keyword Optimization**
+       - Naturally integrate domain-specific keywords throughout
+       - Include industry-standard terms and technologies
+       - Mirror job posting language where applicable
+       - Ensure keywords appear in context, not stuffed
 
-    5. Output Requirements
-    - Return ONLY the final CV text.
-    - Structure it clearly with headers.
+    5. **Quality Checklist**
+       ✓ Contact information complete
+       ✓ Professional summary with keywords
+       ✓ Skills categorized clearly
+       ✓ Experience with dates and metrics
+       ✓ Action verbs in every bullet
+       ✓ Quantifiable achievements
+       ✓ Education included
+       ✓ No spelling/grammar errors
+       ✓ ATS-friendly format
 
     ===============================
-    ### JSON RESPONSE STRUCTURE
+    ### JSON OUTPUT
     ===============================
-    Return a SINGLE JSON object with the following structure:
+    Return ONLY this JSON structure:
     {{
-      "optimized_text": "The full text of the optimized CV structure above.",
+      "optimized_text": "The complete optimized CV text as a single string following the structure above",
       "sections": {{
+        "contact": "Name and contact details",
         "summary": "Professional summary text",
-        "skills": ["List of skills"],
-        "experience": ["List of experience entries"],
-        "education": ["List of education entries"],
-        "projects": ["List of projects"]
+        "skills": "Skills section text",
+        "experience": "Work experience section text",
+        "education": "Education section text",
+        "projects": "Projects section text (if any)"
       }},
       "suggestions": [
-        {{ "category": "Content", "message": "Suggestion 1" }},
-        {{ "category": "Formatting", "message": "Suggestion 2" }}
+        {{"category": "Improvement", "message": "What was improved"}},
+        {{"category": "Keywords", "message": "Keywords added: X, Y, Z"}},
+        {{"category": "Achievements", "message": "Quantified achievements in role X"}}
       ],
-      "ats_score": 85,
-      "recommended_keywords": ["keyword1", "keyword2"],
-      "found_keywords": ["keyword1", "keyword2"],
-      "structured_cv": {{
-         "personal_info": {{ "name": "...", "email": "...", "phone": "...", "location": "...", "linkedin": "..." }},
-         "professional_summary": "...",
-         "skills": {{ "technical": [], "soft": [], "tools": [] }},
-         "work_experience": [ {{ "role": "...", "company": "...", "duration": "...", "details": [] }} ],
-         "projects": [ {{ "name": "...", "description": "...", "technologies": [] }} ],
-         "education": [ {{ "degree": "...", "institution": "...", "year": "..." }} ],
-         "certifications": [],
-         "achievements": [],
-         "languages": []
-      }}
+      "keywords_added": ["keyword1", "keyword2", "keyword3"],
+      "action_verbs_used": ["Led", "Developed", "Implemented"],
+      "estimated_ats_score": 85
     }}
 
-    Input CV:
+    INPUT CV TO OPTIMIZE:
     {cv_text}
     """
 
@@ -2186,10 +2846,14 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
         raise RuntimeError("AI generation failed after retries")
 
     try:
-        return json.loads(response.text)
+        result = json.loads(response.text)
+        # Ensure we have the required fields
+        if not result.get("optimized_text"):
+            raise ValueError("Missing optimized_text in response")
+        return result
     except Exception as e:
         logger.error("Failed to parse Gemini JSON response: %s", e)
-        # Fallback to manual extraction if JSON mode failed (unlikely but safe)
+        # Fallback to manual extraction if JSON mode failed
         content = response.text
         start = content.find('{')
         end = content.rfind('}')
@@ -2286,13 +2950,13 @@ def optimize_cv_with_openai(cv_text: str, job_domain: Optional[str] = None) -> D
             skills = ai_data['skills']
             if isinstance(skills, dict):
                 if skills.get('technical'):
-                    optimized_lines.append(f"**Technical:** {', '.join(skills['technical'])}")
+                    optimized_lines.append(f"Technical: {', '.join(skills['technical'])}")
                 if skills.get('frameworks'):
-                    optimized_lines.append(f"**Frameworks:** {', '.join(skills['frameworks'])}")
+                    optimized_lines.append(f"Frameworks: {', '.join(skills['frameworks'])}")
                 if skills.get('tools'):
-                    optimized_lines.append(f"**Tools:** {', '.join(skills['tools'])}")
+                    optimized_lines.append(f"Tools: {', '.join(skills['tools'])}")
                 if skills.get('soft'):
-                    optimized_lines.append(f"**Soft Skills:** {', '.join(skills['soft'])}")
+                    optimized_lines.append(f"Soft Skills: {', '.join(skills['soft'])}")
             optimized_lines.append("")
         
         # Work Experience
@@ -2464,29 +3128,50 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
     Returns dict with keys: optimized_text, sections, template_data, suggestions,
     ats_score, recommended_keywords, found_keywords
     """
+    logger.info(f"Starting CV optimization (use_ai={use_ai}, job_domain={job_domain})")
+    logger.info(f"CV text length: {len(cv_text) if cv_text else 0} characters")
+    
+    # Log CV content preview for debugging
+    if cv_text:
+        preview = cv_text[:500].replace('\n', ' ')
+        logger.debug(f"CV content preview: {preview}...")
+    
     ai_data: Dict[str, object] = {}
     if use_ai:
         # Try OpenAI first (best quality)
         if AI_PARSER_AVAILABLE:
             try:
+                logger.info("Attempting CV optimization with OpenAI GPT-4...")
                 ai_data = optimize_cv_with_openai(cv_text, job_domain=job_domain) or {}
                 if ai_data and isinstance(ai_data, dict) and ai_data.get("ai_enhanced"):
-                    logger.info("Successfully optimized CV with OpenAI GPT-4")
+                    logger.info("✓ Successfully optimized CV with OpenAI GPT-4")
+                    # Log extracted fields
+                    if "structured" in ai_data:
+                        struct = ai_data["structured"]
+                        logger.info(f"  - Contact: {struct.get('contact_information', {}).get('name', 'N/A')}")
+                        logger.info(f"  - Skills: {len(struct.get('skills', {}).get('all', []))} total")
+                        logger.info(f"  - Experience entries: {len(struct.get('work_experience', []))}")
                 else:
+                    logger.warning("OpenAI returned data but not marked as ai_enhanced")
                     ai_data = {}
             except Exception as exc:
-                logger.warning("OpenAI optimization failed, trying Gemini: %s", exc)
+                logger.warning(f"✗ OpenAI optimization failed: {exc}, trying Gemini")
                 ai_data = {}
+        else:
+            logger.info("AI Parser not available, skipping OpenAI")
         
         # Fall back to Gemini if OpenAI didn't work
         if not ai_data:
             try:
+                logger.info("Attempting CV optimization with Google Gemini...")
                 ai_data = optimize_cv_with_gemini(cv_text, job_domain=job_domain) or {}
                 if not isinstance(ai_data, dict):
                     logger.warning("Gemini returned non-dict response, ignoring AI output")
                     ai_data = {}
+                else:
+                    logger.info("✓ Successfully optimized CV with Gemini")
             except Exception as exc:
-                logger.warning("Gemini optimization unavailable, falling back to rule-based: %s", exc)
+                logger.warning(f"✗ Gemini optimization unavailable: {exc}, falling back to rule-based")
                 ai_data = {}
 
     rule_based = optimize_cv_rule_based(cv_text, job_domain)
@@ -2569,5 +3254,90 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
             )
             merged["suggestions"] = [json.loads(item) for item in encoded]
 
+    # Validate and log structured payload quality
+    if "structured" in merged:
+        _validate_structured_payload(merged["structured"])
+    
+    logger.info("CV optimization complete")
     return merged
+
+
+def _validate_structured_payload(structured: Dict[str, Any]) -> None:
+    """Validate and log quality of structured CV data."""
+    if not structured:
+        logger.warning("⚠ Structured payload is empty!")
+        return
+    
+    # Check contact information
+    contact = structured.get("contact_information", {})
+    if isinstance(contact, dict):
+        name = contact.get("name", "").strip()
+        email = contact.get("email", "").strip()
+        phone = contact.get("phone", "").strip()
+        
+        logger.info(f"Contact Info - Name: {'✓' if name else '✗'}, Email: {'✓' if email else '✗'}, Phone: {'✓' if phone else '✗'}")
+        
+        if not name:
+            logger.warning("⚠ Name not extracted!")
+        if not email and not phone:
+            logger.warning("⚠ No contact info (email/phone) extracted!")
+    else:
+        logger.warning("⚠ Contact information is not a dict!")
+    
+    # Check skills
+    skills = structured.get("skills", {})
+    if isinstance(skills, dict):
+        all_skills = skills.get("all", [])
+        technical = skills.get("technical", [])
+        logger.info(f"Skills - Total: {len(all_skills)}, Technical: {len(technical)}")
+        
+        if not all_skills:
+            logger.warning("⚠ No skills extracted!")
+    else:
+        logger.warning("⚠ Skills is not a dict!")
+    
+    # Check experience
+    experience = structured.get("work_experience", [])
+    if isinstance(experience, list):
+        logger.info(f"Experience - {len(experience)} entries")
+        if not experience:
+            logger.warning("⚠ No work experience extracted!")
+    else:
+        logger.warning("⚠ Work experience is not a list!")
+    
+    # Check education
+    education = structured.get("education", [])
+    if isinstance(education, list):
+        logger.info(f"Education - {len(education)} entries")
+        if not education:
+            logger.warning("⚠ No education extracted!")
+    else:
+        logger.warning("⚠ Education is not a list!")
+    
+    # Calculate completeness score
+    critical_fields = 0
+    total_critical = 6
+    
+    if contact.get("name"):
+        critical_fields += 1
+    if contact.get("email") or contact.get("phone"):
+        critical_fields += 1
+    if skills.get("all"):
+        critical_fields += 1
+    if experience:
+        critical_fields += 1
+    if education:
+        critical_fields += 1
+    if structured.get("professional_summary"):
+        critical_fields += 1
+    
+    completeness = (critical_fields / total_critical) * 100
+    logger.info(f"📊 Extraction completeness: {completeness:.0f}% ({critical_fields}/{total_critical} critical fields)")
+    
+    if completeness < 50:
+        logger.error(f"❌ Extraction quality is poor! Only {completeness:.0f}% complete")
+    elif completeness < 80:
+        logger.warning(f"⚠ Extraction quality is moderate: {completeness:.0f}% complete")
+    else:
+        logger.info(f"✓ Extraction quality is good: {completeness:.0f}% complete")
 
