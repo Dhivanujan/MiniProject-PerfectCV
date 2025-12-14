@@ -73,13 +73,22 @@ class EntityExtractor:
         # Extract name FIRST before spaCy (which might pick up wrong entities)
         entities['name'] = self._extract_name_from_top(text)
         
+        # Tech terms blacklist to avoid misidentification
+        TECH_BLACKLIST = {
+            'spring boot', 'react', 'angular', 'vue', 'node', 'nodejs', 'java', 
+            'python', 'javascript', 'typescript', 'spring', 'django', 'flask',
+            'docker', 'kubernetes', 'aws', 'azure', 'mongodb', 'mysql', 'postgresql',
+            'redis', 'kafka', 'jenkins', 'github', 'gitlab', 'express', 'fastapi'
+        }
+        
         # Extract entities using spaCy if available
         if self.nlp:
             doc = self.nlp(text)
             
             # Only use spaCy for name if we didn't find it already
             if not entities['name']:
-                persons = [ent.text for ent in doc.ents if ent.label_ == 'PERSON']
+                persons = [ent.text for ent in doc.ents if ent.label_ == 'PERSON' 
+                          and ent.text.lower() not in TECH_BLACKLIST]
                 if persons:
                     entities['name'] = persons[0]
             
@@ -90,7 +99,8 @@ class EntityExtractor:
             
             # Extract locations from spaCy if not found yet
             if not entities['location']:
-                locations = [ent.text for ent in doc.ents if ent.label_ in ('GPE', 'LOC')]
+                locations = [ent.text for ent in doc.ents if ent.label_ in ('GPE', 'LOC')
+                            and ent.text.lower() not in TECH_BLACKLIST]
                 if locations:
                     entities['location'] = locations[0]
             
@@ -285,6 +295,13 @@ class EntityExtractor:
         Extract name from the top of CV.
         Assumes name is in the first few non-empty lines before contact info.
         """
+        # Tech terms that are NOT names
+        TECH_TERMS = {
+            'spring boot', 'react', 'angular', 'vue', 'node', 'nodejs', 'java', 
+            'python', 'javascript', 'typescript', 'spring', 'django', 'flask',
+            'docker', 'kubernetes', 'aws', 'azure', 'git', 'github', 'gitlab'
+        }
+        
         lines = text.strip().split('\n')
         
         # Look for name in first 15 lines, but before any section headers
@@ -299,7 +316,9 @@ class EntityExtractor:
                 if clean_line and not EntityExtractor._is_section_header(clean_line):
                     words = clean_line.split()
                     if 1 <= len(words) <= 4 and sum(c.isalpha() or c.isspace() for c in clean_line) / max(len(clean_line), 1) > 0.7:
-                        return clean_line
+                        # Check against tech terms
+                        if clean_line.lower() not in TECH_TERMS:
+                            return clean_line
                 continue
             
             # Skip empty lines
@@ -323,8 +342,8 @@ class EntityExtractor:
                     # Check if all words are capitalized or it's a single capitalized word
                     cap_words = [w for w in words if w and w[0].isupper()]
                     if len(cap_words) >= len(words) * 0.7:  # At least 70% capitalized
-                        # Exclude section headers
-                        if not EntityExtractor._is_section_header(line):
+                        # Exclude section headers and tech terms
+                        if not EntityExtractor._is_section_header(line) and line.lower() not in TECH_TERMS:
                             logger.info(f"Found name from top: {line}")
                             return line
         
