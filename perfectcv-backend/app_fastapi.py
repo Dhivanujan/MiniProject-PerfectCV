@@ -61,14 +61,17 @@ async def root():
     return {
         "message": "PerfectCV API",
         "version": "1.0.0",
+        "authentication": "JWT Bearer Token",
         "endpoints": {
             "authentication": {
-                "login": "/auth/login",
-                "register": "/auth/register",
-                "forgot_password": "/auth/forgot-password",
-                "verify_code": "/auth/verify-code",
-                "reset_password": "/auth/reset-password",
-                "logout": "/auth/logout"
+                "login": "POST /auth/login - Get JWT tokens",
+                "register": "POST /auth/register - Register and get JWT tokens",
+                "refresh": "POST /auth/refresh - Refresh access token",
+                "me": "GET /auth/me - Get current user (requires JWT)",
+                "forgot_password": "POST /auth/forgot-password",
+                "verify_code": "POST /auth/verify-code",
+                "reset_password": "POST /auth/reset-password",
+                "logout": "POST /auth/logout"
             },
             "cv": {
                 "generation": "/api/cv/generate-cv",
@@ -82,6 +85,7 @@ async def root():
             }
         },
         "features": {
+            "jwt_authentication": "Secure JWT-based authentication with access and refresh tokens",
             "cv_extraction": "Extract structured data from PDF/DOCX resumes",
             "cv_scoring": "Score CVs from 0-100 based on completeness and quality",
             "ats_analysis": "Analyze ATS compatibility and get optimization tips",
@@ -89,7 +93,8 @@ async def root():
             "ai_enhancement": "Improve CV content using AI",
             "pdf_generation": "Generate professional PDFs from CV data",
             "field_prediction": "Predict career field from skills and experience"
-        }
+        },
+        "documentation": "/docs"
     }
 
 @app.get("/health")
@@ -110,6 +115,13 @@ async def health():
 @app.on_event("startup")
 async def startup_event():
     """Initialize connections on startup"""
+    # Initialize JWT configuration
+    from app.auth.jwt_handler import JWTConfig
+    JWTConfig.initialize(Config.JWT_SECRET_KEY)
+    JWTConfig.ALGORITHM = Config.JWT_ALGORITHM
+    JWTConfig.ACCESS_TOKEN_EXPIRE_MINUTES = Config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    JWTConfig.REFRESH_TOKEN_EXPIRE_DAYS = Config.JWT_REFRESH_TOKEN_EXPIRE_DAYS
+    logger.info("JWT authentication initialized")
     logger.info("Initializing MongoDB connection...")
     try:
         db = get_mongo_db()
