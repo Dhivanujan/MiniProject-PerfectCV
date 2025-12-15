@@ -2021,8 +2021,7 @@ export default function Dashboard({ user }) {
         message="We are about to provide you with personalized guidance to support your career growth based on the information you upload.
 
 Please note that this analysis is intended as guidance only and should not be fully relied upon for career decisions. Use it as a reference alongside your own judgment and professional advice."
-        confirmText="Continue"
-        cancelText="Cancel"
+        confirmText="I Understood"
       />
     </div>
   );

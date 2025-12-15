@@ -64,19 +64,12 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 p-6 pt-0">
-          <button
-            onClick={onClose}
-            className="flex-1 px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 
-              text-gray-800 dark:text-gray-200 rounded-lg font-semibold transition-colors"
-          >
-            {cancelText}
-          </button>
+        <div className="flex justify-center p-6 pt-0">
           <button
             onClick={onConfirm}
-            className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 
+            className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 
               hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900 
-              text-white rounded-lg font-semibold transition-all shadow-sm hover:shadow-md"
+              text-white rounded-lg font-bold transition-all shadow-sm hover:shadow-md text-base"
             autoFocus
           >
             {confirmText}
