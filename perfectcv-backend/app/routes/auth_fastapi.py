@@ -1,14 +1,21 @@
 """
-FastAPI Authentication Routes
-Handles user registration, login, password reset
+FastAPI Authentication Routes with JWT
+Handles user registration, login, password reset with JWT tokens
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
 import random
 from pymongo.database import Database
+from app.auth.jwt_handler import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    get_password_hash,
+    get_current_user,
+    get_current_active_user
+)
 
 router = APIRouter()
 
@@ -42,10 +49,19 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     username: Optional[str] = None
 
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
 class AuthResponse(BaseModel):
     success: bool
     message: str
     user: Optional[UserResponse] = None
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: Optional[str] = "bearer"
 
 # Dependency to get MongoDB instance
 def get_db() -> Database:
@@ -55,22 +71,26 @@ def get_db() -> Database:
 @router.post("/login", response_model=AuthResponse)
 async def login(request: LoginRequest, db: Database = Depends(get_db)):
     """
-    User login endpoint
+    User login endpoint - Returns JWT tokens
     """
     try:
-        user = db.users.find_one({'email': request.email})
+        # Authenticate user
+        user = authenticate_user(db, request.email, request.password)
         
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid email or password",
+                headers={"WWW-Authenticate": "Bearer"},
             )
         
-        if not check_password_hash(user['password'], request.password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
-            )
+        # Create JWT tokens
+        access_token = create_access_token(
+            data={"sub": str(user['_id']), "email": user['email']}
+        )
+        refresh_token = create_refresh_token(
+            data={"sub": str(user['_id']), "email": user['email']}
+        )
         
         user_public = UserResponse(
             id=str(user.get('_id')),
@@ -82,7 +102,10 @@ async def login(request: LoginRequest, db: Database = Depends(get_db)):
         return AuthResponse(
             success=True,
             message="Logged in successfully",
-            user=user_public
+            user=user_public,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer"
         )
     
     except HTTPException:
@@ -96,7 +119,7 @@ async def login(request: LoginRequest, db: Database = Depends(get_db)):
 @router.post("/register", response_model=AuthResponse)
 async def register(request: RegisterRequest, db: Database = Depends(get_db)):
     """
-    User registration endpoint
+    User registration endpoint - Returns JWT tokens
     """
     try:
         # Check if user already exists
@@ -107,14 +130,15 @@ async def register(request: RegisterRequest, db: Database = Depends(get_db)):
                 detail="Email already registered"
             )
         
-        # Hash password
-        hashed_password = generate_password_hash(request.password)
+        # Hash password using JWT handler
+        hashed_password = get_password_hash(request.password)
         
         # Create user document
         user_doc = {
             'email': request.email,
             'password': hashed_password,
-            'created_at': datetime.utcnow()
+            'created_at': datetime.utcnow(),
+            'disabled': False
         }
         
         # Add optional fields
@@ -128,6 +152,14 @@ async def register(request: RegisterRequest, db: Database = Depends(get_db)):
         # Insert user
         result = db.users.insert_one(user_doc)
         
+        # Create JWT tokens
+        access_token = create_access_token(
+            data={"sub": str(result.inserted_id), "email": request.email}
+        )
+        refresh_token = create_refresh_token(
+            data={"sub": str(result.inserted_id), "email": request.email}
+        )
+        
         user_public = UserResponse(
             id=str(result.inserted_id),
             email=request.email,
@@ -138,7 +170,10 @@ async def register(request: RegisterRequest, db: Database = Depends(get_db)):
         return AuthResponse(
             success=True,
             message="Registered successfully",
-            user=user_public
+            user=user_public,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer"
         )
     
     except HTTPException:
@@ -269,8 +304,8 @@ async def reset_password(request: ResetPasswordRequest, db: Database = Depends(g
                 detail="Code has expired"
             )
         
-        # Update password
-        hashed_password = generate_password_hash(request.new_password)
+        # Update password using JWT handler
+        hashed_password = get_password_hash(request.new_password)
         db.users.update_one(
             {'email': request.email},
             {'$set': {'password': hashed_password}}
@@ -298,9 +333,83 @@ async def reset_password(request: ResetPasswordRequest, db: Database = Depends(g
 @router.post("/logout")
 async def logout():
     """
-    User logout endpoint
+    User logout endpoint (client should discard tokens)
     """
     return {
         "success": True,
         "message": "Logged out successfully"
     }
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(current_user: dict = Depends(get_current_active_user)):
+    """
+    Get current authenticated user information
+    """
+    return UserResponse(
+        id=current_user['id'],
+        email=current_user['email'],
+        full_name=current_user.get('full_name'),
+        username=current_user.get('username')
+    )
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_access_token(request: RefreshTokenRequest, db: Database = Depends(get_db)):
+    """
+    Refresh access token using refresh token
+    """
+    try:
+        from app.auth.jwt_handler import verify_token
+        from bson import ObjectId
+        
+        # Verify refresh token
+        payload = verify_token(request.refresh_token)
+        
+        # Check token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        user_id = payload.get("sub")
+        
+        # Get user from database
+        user = db.users.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        # Create new tokens
+        access_token = create_access_token(
+            data={"sub": str(user['_id']), "email": user['email']}
+        )
+        refresh_token = create_refresh_token(
+            data={"sub": str(user['_id']), "email": user['email']}
+        )
+        
+        user_public = UserResponse(
+            id=str(user['_id']),
+            email=user['email'],
+            full_name=user.get('full_name'),
+            username=user.get('username')
+        )
+        
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            user=user_public
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server error: {str(e)}"
+        )

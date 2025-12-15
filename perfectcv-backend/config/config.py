@@ -12,7 +12,11 @@ else:
         load_dotenv(parent_env)
 
 class Config:
-    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', os.getenv('SECRET_KEY', 'jwt-secret-key-change-in-production'))
+    JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '1440'))  # 24 hours
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv('JWT_REFRESH_TOKEN_EXPIRE_DAYS', '30'))  # 30 days
     
     # MongoDB configuration with timeout handling
     # If MongoDB Atlas (mongodb+srv://) times out, fallback to local
