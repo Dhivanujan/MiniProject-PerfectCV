@@ -85,7 +85,7 @@ class CVGenerationService:
     
     def generate_cv_pdf(self, 
                        cv_data: Dict, 
-                       template_name: str = "professional.html") -> bytes:
+                       template_name: str = "cv_template.html") -> bytes:
         """
         Generate CV PDF from data and template.
         

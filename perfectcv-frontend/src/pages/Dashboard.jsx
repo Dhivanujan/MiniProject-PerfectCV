@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
+import CVAnalysisPanel from "../components/CVAnalysisPanel";
 import {
   FaUpload,
   FaDownload,
@@ -750,6 +751,8 @@ export default function Dashboard({ user }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState("newest");
   const [chatbotCV, setChatbotCV] = useState(null);
+  const [analysisFile, setAnalysisFile] = useState(null);
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);
 
   // Utility: truncate long filenames
   const truncateFilename = (filename = "", maxLen = 30) => {
@@ -1928,20 +1931,40 @@ export default function Dashboard({ user }) {
                     </div>
                   </div>
 
-                  <div className="flex gap-3 pt-5 border-t border-gray-100 dark:border-gray-800 mt-auto">
+                  <div className="flex flex-col gap-2 pt-5 border-t border-gray-100 dark:border-gray-800 mt-auto">
                     <button
-                      onClick={() => handleDownload(file._id, file.filename)}
-                      className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
+                      onClick={async () => {
+                        try {
+                          const res = await api.get(`/api/download/${file._id}`, {
+                            responseType: "blob",
+                          });
+                          const fileUrl = window.URL.createObjectURL(new Blob([res.data]));
+                          setAnalysisFile({ url: fileUrl, name: file.filename, _id: file._id });
+                          setShowAnalysisPanel(true);
+                        } catch (err) {
+                          console.error("Error loading file for analysis:", err);
+                          alert("Failed to load file for analysis");
+                        }
+                      }}
+                      className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900 text-white px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm hover:shadow-md"
                     >
-                      <FaDownload className="text-gray-400 group-hover/btn:text-indigo-500 transition-colors" /> Download
+                      <FaChartLine /> Analyze CV
                     </button>
-                    <button
-                      onClick={() => handleDelete(file._id)}
-                      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
-                      aria-label="Delete file"
-                    >
-                      <FaTrash className="text-gray-400 group-hover/btn:text-red-500 transition-colors" />
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDownload(file._id, file.filename)}
+                        className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
+                      >
+                        <FaDownload className="text-gray-400 group-hover/btn:text-indigo-500 transition-colors" /> Download
+                      </button>
+                      <button
+                        onClick={() => handleDelete(file._id)}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
+                        aria-label="Delete file"
+                      >
+                        <FaTrash className="text-gray-400 group-hover/btn:text-red-500 transition-colors" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1957,6 +1980,20 @@ export default function Dashboard({ user }) {
           <p className="text-xs text-gray-500 mt-2">Craft your perfect resume with AI-powered insights</p>
         </div>
       </footer>
+
+      {/* CV Analysis Panel */}
+      {showAnalysisPanel && analysisFile && (
+        <CVAnalysisPanel
+          file={analysisFile.url}
+          onClose={() => {
+            setShowAnalysisPanel(false);
+            setAnalysisFile(null);
+            if (analysisFile.url) {
+              window.URL.revokeObjectURL(analysisFile.url);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

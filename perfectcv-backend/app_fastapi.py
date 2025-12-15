@@ -75,8 +75,20 @@ async def root():
                 "extraction": "/api/cv/extract-cv",
                 "improvement": "/api/cv/improve-cv",
                 "pdf_from_json": "/api/cv/generate-pdf-from-json",
+                "analysis": "/api/cv/analyze-cv",
+                "recommendations": "/api/cv/get-recommendations",
+                "courses_by_field": "/api/cv/courses/{field}",
                 "health": "/api/cv/health"
             }
+        },
+        "features": {
+            "cv_extraction": "Extract structured data from PDF/DOCX resumes",
+            "cv_scoring": "Score CVs from 0-100 based on completeness and quality",
+            "ats_analysis": "Analyze ATS compatibility and get optimization tips",
+            "course_recommendations": "Get personalized learning resources based on career field",
+            "ai_enhancement": "Improve CV content using AI",
+            "pdf_generation": "Generate professional PDFs from CV data",
+            "field_prediction": "Predict career field from skills and experience"
         }
     }
 
