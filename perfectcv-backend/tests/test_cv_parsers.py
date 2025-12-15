@@ -1,3 +1,39 @@
+import unittest
+
+class TestAIUtilsJsonCleaning(unittest.TestCase):
+    def test_clean_json_response_strips_code_fence(self):
+        from app.utils.ai_utils import clean_json_response
+
+        raw = """```json\n{\n  \"a\": 1\n}\n```"""
+        cleaned = clean_json_response(raw)
+        self.assertEqual(cleaned.strip(), '{\n  "a": 1\n}')
+
+
+class TestAnalyzeCVFallback(unittest.TestCase):
+    def test_analyze_cv_returns_none_without_providers(self):
+        """If neither Gemini nor Groq/OpenAI are configured, analyze_cv should return None (not crash)."""
+        import os
+        from app.utils import ai_utils
+
+        # Remove keys if present
+        old_google = os.environ.pop("GOOGLE_API_KEY", None)
+        old_api = os.environ.pop("API_KEY", None)
+        old_groq = os.environ.pop("GROQ_API_KEY", None)
+        old_openai = os.environ.pop("OPENAI_API_KEY", None)
+
+        try:
+            result = ai_utils.analyze_cv("John Doe\nEmail: john@example.com\nSkills: Python")
+            self.assertTrue(result is None or isinstance(result, dict))
+        finally:
+            # Restore env
+            if old_google is not None:
+                os.environ["GOOGLE_API_KEY"] = old_google
+            if old_api is not None:
+                os.environ["API_KEY"] = old_api
+            if old_groq is not None:
+                os.environ["GROQ_API_KEY"] = old_groq
+            if old_openai is not None:
+                os.environ["OPENAI_API_KEY"] = old_openai
 import pytest
 from app.utils import cv_utils
 

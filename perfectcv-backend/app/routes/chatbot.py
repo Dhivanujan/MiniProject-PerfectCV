@@ -603,8 +603,28 @@ def handle_extraction(cv_text: str, question: str) -> Dict:
             else:
                 return {"answer": "I couldn't extract complete personal info. Ensure your CV includes contact details."}
         if 'skill' in q or 'skills' in q:
-            analysis = analyze_cv_comprehensively(cv_text)
-            skills = analysis.get('skills') if isinstance(analysis, dict) else None
+            analysis = analyze_cv(cv_text)
+            skills_out = []
+            if isinstance(analysis, dict):
+                parsed = analysis.get("parsed_data") or {}
+                skills_obj = parsed.get("skills") if isinstance(parsed, dict) else None
+                if isinstance(skills_obj, dict):
+                    for _, values in skills_obj.items():
+                        if isinstance(values, list):
+                            skills_out.extend([str(v).strip() for v in values if str(v).strip()])
+                elif isinstance(skills_obj, list):
+                    skills_out.extend([str(v).strip() for v in skills_obj if str(v).strip()])
+
+            # De-dupe while preserving order
+            seen = set()
+            skills = []
+            for s in skills_out:
+                key = s.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                skills.append(s)
+
             if skills:
                 return {"answer": "**Skills Found in Your CV:**\n\n" + "\n".join(f"• {s}" for s in skills), "skills": skills}
             else:

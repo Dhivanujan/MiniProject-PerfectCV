@@ -7,6 +7,19 @@ import time
 import random
 from typing import Iterable, List, Optional, Dict, Any
 
+# Optional Groq/OpenAI fallbacks (used when Gemini is not configured)
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except Exception:
+    GROQ_AVAILABLE = False
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except Exception:
+    OPENAI_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # Prefer fast, affordable models first; fall back to any model that supports generateContent
@@ -173,13 +186,111 @@ def clean_json_response(text):
     return text.strip()
 
 
+_GROQ_CLIENT: Optional["Groq"] = None
+_OPENAI_CLIENT: Optional["OpenAI"] = None
+
+
+def _get_groq_client() -> Optional["Groq"]:
+    global _GROQ_CLIENT
+    if not GROQ_AVAILABLE:
+        return None
+    api_key = getattr(Config, "GROQ_API_KEY", None)
+    if not api_key:
+        return None
+    if _GROQ_CLIENT is None:
+        try:
+            _GROQ_CLIENT = Groq(api_key=api_key)
+        except Exception:
+            logger.exception("Failed to initialize Groq client")
+            _GROQ_CLIENT = None
+    return _GROQ_CLIENT
+
+
+def _get_openai_client() -> Optional["OpenAI"]:
+    global _OPENAI_CLIENT
+    if not OPENAI_AVAILABLE:
+        return None
+    api_key = getattr(Config, "OPENAI_API_KEY", None)
+    if not api_key:
+        return None
+    if _OPENAI_CLIENT is None:
+        try:
+            _OPENAI_CLIENT = OpenAI(api_key=api_key)
+        except Exception:
+            logger.exception("Failed to initialize OpenAI client")
+            _OPENAI_CLIENT = None
+    return _OPENAI_CLIENT
+
+
+def _generate_json_response(prompt: str, *, temperature: float = 0.1, max_tokens: int = 2500) -> Optional[Dict[str, Any]]:
+    """Generate a JSON object from the prompt, using Gemini then Groq then OpenAI.
+
+    Returns a dict or None.
+    """
+    # 1) Gemini (native JSON mime type)
+    try:
+        model = get_generative_model()
+        if model:
+            response = generate_with_retry(
+                model,
+                prompt,
+                generation_config={"response_mime_type": "application/json"},
+            )
+            if response and getattr(response, "text", None):
+                text = clean_json_response(response.text)
+                parsed = json.loads(text)
+                return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        logger.debug("Gemini JSON generation failed; trying fallbacks", exc_info=True)
+
+    # 2) Groq
+    groq_client = _get_groq_client()
+    if groq_client:
+        for model_name in ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"):
+            try:
+                resp = groq_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                )
+                content = resp.choices[0].message.content
+                parsed = json.loads(clean_json_response(content))
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                logger.debug("Groq model %s failed for JSON; trying next", model_name, exc_info=True)
+
+    # 3) OpenAI
+    openai_client = _get_openai_client()
+    if openai_client:
+        for model_name in ("gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-4-turbo-preview"):
+            try:
+                resp = openai_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "Return ONLY valid JSON. No markdown."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                )
+                content = resp.choices[0].message.content
+                parsed = json.loads(clean_json_response(content))
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                logger.debug("OpenAI model %s failed for JSON; trying next", model_name, exc_info=True)
+
+    return None
+
+
 def structure_cv_sections(cv_text):
     """Extract and structure key sections from CV text."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for structure_cv_sections")
-            return None
         prompt = f"""Given the following CV text, identify and structure its key sections. 
         Format the response as a JSON object with these sections (if present):
         - personal_info: Basic information like name, contact details
@@ -196,14 +307,8 @@ def structure_cv_sections(cv_text):
         CV TEXT:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        # Ensure response is valid JSON
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Generated CV structure is not valid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error in structuring CV: %s", e)
@@ -213,10 +318,6 @@ def structure_cv_sections(cv_text):
 def extract_ats_keywords(cv_text):
     """Extract important keywords and phrases for ATS optimization."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for extract_ats_keywords")
-            return None
         prompt = f"""Analyze this CV text and extract key ATS-relevant keywords and phrases.
         Format the response as a JSON object with these categories:
         1. Technical skills: Programming languages, tools, frameworks
@@ -228,14 +329,8 @@ def extract_ats_keywords(cv_text):
         CV TEXT:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        # Ensure response is valid JSON
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Generated ATS keywords are not valid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error extracting ATS keywords: %s", e)
@@ -285,10 +380,6 @@ def analyze_cv_content(cv_text, question):
 def extract_personal_info(cv_text):
     """Extract personal information from CV."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for extract_personal_info")
-            return None
         prompt = f"""Extract personal information from this CV and return as JSON.
         Include: name, email, phone, location, linkedin, github, website (if available).
         Return ONLY valid JSON, no additional text.
@@ -296,13 +387,8 @@ def extract_personal_info(cv_text):
         CV TEXT:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Personal info extraction returned invalid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error extracting personal info: %s", e)
@@ -312,10 +398,6 @@ def extract_personal_info(cv_text):
 def detect_missing_sections(cv_text):
     """Detect missing sections and elements in CV."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for detect_missing_sections")
-            return None
         prompt = f"""Analyze this CV and identify missing elements. Return as JSON with these keys:
         - missing_sections: array of missing standard sections (e.g., "Summary", "Skills", "Projects", "Achievements")
         - missing_professional_elements: array of objects with "issue" and "suggestion" 
@@ -328,13 +410,8 @@ def detect_missing_sections(cv_text):
         CV TEXT:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Missing sections detection returned invalid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error detecting missing sections: %s", e)
@@ -409,10 +486,6 @@ def suggest_achievements(cv_text, role_context=""):
 def check_ats_compatibility(cv_text, job_description=""):
     """Check ATS compatibility and suggest improvements."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for check_ats_compatibility")
-            return None
         prompt = f"""Analyze this CV for ATS (Applicant Tracking System) compatibility.
         Return as JSON with these keys:
         - ats_score: number 0-100
@@ -428,13 +501,8 @@ def check_ats_compatibility(cv_text, job_description=""):
         CV TEXT:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("ATS check returned invalid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error checking ATS compatibility: %s", e)
@@ -444,10 +512,6 @@ def check_ats_compatibility(cv_text, job_description=""):
 def suggest_keywords_for_role(role, cv_text):
     """Suggest keywords to add based on target role."""
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for suggest_keywords_for_role")
-            return None
         prompt = f"""Suggest relevant keywords and skills for a {role} position.
         Compare with the current CV and identify gaps.
         Return as JSON with these keys:
@@ -462,13 +526,8 @@ def suggest_keywords_for_role(role, cv_text):
         Current CV:
         {cv_text}
         """
-        
-        response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-        try:
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.warning("Keyword suggestions returned invalid JSON")
-            return None
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error suggesting keywords: %s", e)
@@ -552,11 +611,6 @@ def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
     Returns structured JSON containing parsed data and analysis.
     """
     try:
-        model = get_generative_model()
-        if not model:
-            logger.warning("No Gemini model available for analyze_cv")
-            return None
-            
         prompt = f"""
         Act as a world-class CV parser. Your task is to extract structured data AND analyze the CV quality with extreme precision.
         
@@ -603,13 +657,8 @@ def analyze_cv(cv_text: str) -> Optional[Dict[str, Any]]:
             }}
         }}
         """
-        
-        response = generate_with_retry(model, prompt, generation_config={"response_mime_type": "application/json"})
-        if not response:
-            return None
-            
-        text = clean_json_response(response.text)
-        return json.loads(text)
+
+        return _generate_json_response(prompt)
             
     except Exception as e:
         logger.exception("Error in analyze_cv: %s", e)

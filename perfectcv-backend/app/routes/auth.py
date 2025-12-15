@@ -16,16 +16,26 @@ def login():
     try:
         data = request.get_json()
         if not data:
+            current_app.logger.warning('Login attempt with no JSON data')
             return jsonify({'success': False, 'error': 'Invalid JSON data'}), 400
             
         email = data.get('email')
         password = data.get('password')
         
+        current_app.logger.info(f'Login attempt for email: {email}')
+        
         if not email or not password:
+            current_app.logger.warning('Login attempt with missing email or password')
             return jsonify({'success': False, 'error': 'Email and password are required'}), 400
         
         user = current_app.mongo.db.users.find_one({'email': email})
+        
+        if not user:
+            current_app.logger.warning(f'User not found: {email}')
+            return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+        
         if user and check_password_hash(user['password'], password):
+            current_app.logger.info(f'✓ Login successful for: {email}')
             user_obj = User(user)
             login_user(user_obj)
             # Return a minimal user representation to the frontend
@@ -37,6 +47,7 @@ def login():
             }
             return jsonify({'success': True, 'message': 'Logged in successfully', 'user': user_public})
         
+        current_app.logger.warning(f'✗ Invalid password for: {email}')
         return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
     except Exception as e:
         current_app.logger.exception('Error during user login')

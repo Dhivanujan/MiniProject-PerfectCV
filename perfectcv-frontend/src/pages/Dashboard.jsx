@@ -19,6 +19,16 @@ import {
   FaClipboardCheck,
   FaRobot,
   FaComments,
+  FaUser,
+  FaEnvelope,
+  FaPhone,
+  FaMapMarkerAlt,
+  FaGraduationCap,
+  FaCode,
+  FaCertificate,
+  FaTrophy,
+  FaLanguage,
+  FaProjectDiagram,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
@@ -70,6 +80,653 @@ const parseFilePayload = (payload) => {
 const CARD_SURFACE =
   "bg-white dark:bg-[#1E1E2F] border border-gray-100 dark:border-gray-800 rounded-2xl hover:shadow-md transition-all duration-300";
 const PANEL_SURFACE = `${CARD_SURFACE} shadow-lg transition-all duration-500`;
+
+// Helper function to safely parse JSON-like strings
+const parseContentSafely = (content) => {
+  if (!content) return null;
+  if (typeof content !== 'string') return content;
+  
+  // If it doesn't look like JSON, return as-is
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return content;
+  }
+  
+  try {
+    // Try multiple parsing strategies
+    
+    // Strategy 1: Replace single quotes with double quotes
+    let jsonStr = content.replace(/'/g, '"');
+    
+    // Strategy 2: Handle Python None, True, False
+    jsonStr = jsonStr.replace(/\bNone\b/g, 'null');
+    jsonStr = jsonStr.replace(/\bTrue\b/g, 'true');
+    jsonStr = jsonStr.replace(/\bFalse\b/g, 'false');
+    
+    // Strategy 3: Fix trailing commas
+    jsonStr = jsonStr.replace(/,(\s*[}\]])/g, '$1');
+    
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    // If parsing fails, return original content
+    return content;
+  }
+};
+
+// Component to render Skills section
+const SkillsRenderer = ({ content }) => {
+  const skillsData = parseContentSafely(content);
+  
+  if (!skillsData || typeof skillsData !== 'object') {
+    // If it's a plain string with skills, try to display it nicely
+    if (typeof content === 'string' && content.trim()) {
+      const skills = content.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+      if (skills.length > 0) {
+        return (
+          <div className="flex flex-wrap gap-2">
+            {skills.map((skill, idx) => (
+              <span 
+                key={idx}
+                className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    }
+    return <div className="text-sm text-gray-600 dark:text-gray-400">{content}</div>;
+  }
+
+  const categories = Object.entries(skillsData).filter(([key, value]) => 
+    Array.isArray(value) && value.length > 0
+  );
+
+  if (categories.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No skills listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {categories.map(([category, skills]) => (
+        <div key={category}>
+          <h5 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 capitalize mb-2">
+            {category.replace('_', ' ')} Skills
+          </h5>
+          <div className="flex flex-wrap gap-2">
+            {skills.map((skill, idx) => {
+              // Remove bullet points from skill names
+              const cleanSkill = skill.replace(/^[•\-]\s*/, '').trim();
+              return (
+                <span 
+                  key={idx}
+                  className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                >
+                  {cleanSkill}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Work Experience section
+const WorkExperienceRenderer = ({ content }) => {
+  let experienceData = parseContentSafely(content);
+  
+  if (!experienceData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No work experience listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(experienceData)) {
+    experienceData = [experienceData];
+  }
+
+  // Filter out invalid entries
+  experienceData = experienceData.filter(job => {
+    if (typeof job === 'string') return false;
+    if (!job || typeof job !== 'object') return false;
+    // Must have at least title or company
+    return job.title || job.position || job.company;
+  });
+
+  if (experienceData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No work experience listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {experienceData.map((job, idx) => (
+        <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-2">
+            <div>
+              <h5 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                {job.title || job.position || 'Position'}
+              </h5>
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                {job.company || 'Company'}
+              </p>
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              {job.dates || job.start_date || job.date || ''}
+              {job.is_current && ' - Present'}
+            </div>
+          </div>
+          {job.location && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">📍 {job.location}</p>
+          )}
+          {job.description && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+              {typeof job.description === 'string' ? (
+                job.description.split('\n').map((line, i) => {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith('-') || trimmed.startsWith('•')) {
+                    return (
+                      <div key={i} className="flex gap-2 mb-1">
+                        <span className="text-indigo-500">•</span>
+                        <span>{trimmed.replace(/^[-•]\s*/, '')}</span>
+                      </div>
+                    );
+                  }
+                  return trimmed ? <p key={i} className="mb-1">{trimmed}</p> : null;
+                })
+              ) : Array.isArray(job.description) ? (
+                job.description.map((point, i) => (
+                  <div key={i} className="flex gap-2 mb-1">
+                    <span className="text-indigo-500">•</span>
+                    <span>{point}</span>
+                  </div>
+                ))
+              ) : null}
+            </div>
+          )}
+          {job.achievements && Array.isArray(job.achievements) && job.achievements.length > 0 && (
+            <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+              {job.achievements.map((achievement, i) => (
+                <div key={i} className="flex gap-2 mb-1">
+                  <span className="text-indigo-500">•</span>
+                  <span>{achievement}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Education section
+const EducationRenderer = ({ content }) => {
+  let educationData = parseContentSafely(content);
+  
+  if (!educationData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No education listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(educationData)) {
+    educationData = [educationData];
+  }
+
+  // Filter out invalid/incomplete entries (like standalone "GPA:", "3.8/", etc.)
+  educationData = educationData.filter(edu => {
+    if (typeof edu === 'string') return false; // Skip raw strings
+    if (!edu || typeof edu !== 'object') return false;
+    // Must have at least degree or institution
+    return edu.degree || edu.institution || edu.school;
+  });
+
+  if (educationData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No education listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {educationData.map((edu, idx) => (
+        <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+            <div>
+              <h5 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                {edu.degree || 'Degree'}
+                {edu.field && ` in ${edu.field}`}
+              </h5>
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                {edu.institution || edu.school || 'Institution'}
+              </p>
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              {edu.graduation_date || edu.year || edu.date || ''}
+            </div>
+          </div>
+          {edu.location && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">📍 {edu.location}</p>
+          )}
+          {edu.gpa && (
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">GPA: {edu.gpa}</p>
+          )}
+          {edu.honors && edu.honors.length > 0 && (
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              🏆 {Array.isArray(edu.honors) ? edu.honors.join(', ') : edu.honors}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Component to render Certifications section
+const CertificationsRenderer = ({ content }) => {
+  let certData = parseContentSafely(content);
+  
+  if (!certData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No certifications listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(certData)) {
+    // If it's a plain string, try to split by newlines
+    if (typeof certData === 'string') {
+      const items = certData.split('\n').map(s => s.trim()).filter(s => s);
+      if (items.length > 0) {
+        certData = items.map(item => ({ name: item }));
+      } else {
+        certData = [certData];
+      }
+    } else {
+      certData = [certData];
+    }
+  }
+
+  // Filter out invalid entries
+  certData = certData.filter(cert => {
+    if (typeof cert === 'string') return cert.trim().length > 0;
+    if (!cert || typeof cert !== 'object') return false;
+    return cert.name || cert.title;
+  });
+
+  return (
+    <div className="space-y-3">
+      {certData.map((cert, idx) => {
+        // Handle string items
+        if (typeof cert === 'string') {
+          return (
+            <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+              <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {cert}
+              </h5>
+            </div>
+          );
+        }
+        
+        // Handle object items
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {cert.name || cert.title || 'Certification'}
+                </h5>
+                {(cert.issuer || cert.organization) && (
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    {cert.issuer || cert.organization}
+                  </p>
+                )}
+              </div>
+              {cert.date && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {cert.date}
+                </span>
+              )}
+            </div>
+            {cert.credential_id && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                ID: {cert.credential_id}
+              </p>
+            )}
+            {cert.url && (
+              <a 
+                href={cert.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-1 inline-block"
+              >
+                View credential →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Main render function for CV sections
+const renderSectionContent = (key, content) => {
+  if (!content) return null;
+
+  // Debug logging
+  console.log(`🔍 Rendering section "${key}":`, {
+    contentType: typeof content,
+    isArray: Array.isArray(content),
+    contentPreview: typeof content === 'string' ? content.substring(0, 100) : JSON.stringify(content).substring(0, 100)
+  });
+
+  const lowerKey = key.toLowerCase();
+  
+  if (lowerKey.includes('skill')) {
+    return <SkillsRenderer content={content} />;
+  } else if (lowerKey.includes('experience') || lowerKey.includes('work')) {
+    return <WorkExperienceRenderer content={content} />;
+  } else if (lowerKey.includes('education')) {
+    return <EducationRenderer content={content} />;
+  } else if (lowerKey.includes('certification')) {
+    return <CertificationsRenderer content={content} />;
+  } else if (lowerKey.includes('personal') || lowerKey.includes('contact')) {
+    // For personal information, try to parse and display nicely
+    const data = parseContentSafely(content);
+    if (typeof data === 'object' && data !== null) {
+      return (
+        <div className="space-y-2 text-sm">
+          {data.name && <p><span className="font-semibold">Name:</span> {data.name}</p>}
+          {data.email && <p><span className="font-semibold">Email:</span> {data.email}</p>}
+          {data.phone && <p><span className="font-semibold">Phone:</span> {data.phone}</p>}
+          {data.location && <p><span className="font-semibold">Location:</span> {data.location}</p>}
+          {data.website && (
+            <p>
+              <span className="font-semibold">Website:</span>{' '}
+              <a href={data.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                {data.website}
+              </a>
+            </p>
+          )}
+          {data.linkedin && (
+            <p>
+              <span className="font-semibold">LinkedIn:</span>{' '}
+              <a href={data.linkedin} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                {data.linkedin}
+              </a>
+            </p>
+          )}
+        </div>
+      );
+    }
+  }
+  
+  // Default: display as text
+  return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+};
+
+// Enhanced CV Content Renderer with Icons and Better Formatting
+const EnhancedCVRenderer = ({ content }) => {
+  if (!content || !content.trim()) {
+    return <p className="text-gray-500 dark:text-gray-400 italic">No content available</p>;
+  }
+
+  const lines = content.split('\n');
+  const sections = [];
+  let currentSection = null;
+  let currentContent = [];
+
+  // Parse content into sections
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    
+    // Detect section headers (ALL CAPS or starts with #, but not contact info)
+    const isAllCaps = trimmed && trimmed === trimmed.toUpperCase();
+    const hasContactMarkers = trimmed.includes('@') || trimmed.includes('+') || /\d{3}/.test(trimmed);
+    const isMarkdownHeader = line.startsWith('##') || line.startsWith('###');
+    const isLikelyHeader = (isAllCaps && trimmed.length > 3 && !hasContactMarkers) || isMarkdownHeader;
+    
+    if (isLikelyHeader) {
+      // Save previous section
+      if (currentSection) {
+        sections.push({ title: currentSection, content: currentContent.join('\n') });
+      }
+      // Start new section
+      currentSection = trimmed.replace(/^#+\s*/, '');
+      currentContent = [];
+    } else if (trimmed) {
+      currentContent.push(line);
+    }
+  });
+  
+  // Add last section
+  if (currentSection) {
+    sections.push({ title: currentSection, content: currentContent.join('\n') });
+  }
+
+  // If no sections detected, treat first few lines as header and rest as content
+  if (sections.length === 0) {
+    const headerLines = lines.slice(0, 5).filter(l => l.trim());
+    const bodyLines = lines.slice(5);
+    sections.push({ title: 'HEADER', content: headerLines.join('\n'), isHeader: true });
+    sections.push({ title: 'CONTENT', content: bodyLines.join('\n') });
+  }
+
+  const getSectionIcon = (title) => {
+    const titleLower = title.toLowerCase();
+    if (titleLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+    if (titleLower.includes('experience') || titleLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+    if (titleLower.includes('skill')) return <FaCode className="text-green-500" />;
+    if (titleLower.includes('profile') || titleLower.includes('summary')) return <FaUser className="text-indigo-500" />;
+    if (titleLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
+    if (titleLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
+    if (titleLower.includes('achievement') || titleLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+    if (titleLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+    return <FaFileAlt className="text-gray-500" />;
+  };
+
+  return (
+    <div className="space-y-4">
+      {sections.map((section, idx) => {
+        if (section.isHeader) {
+          // Render header section with contact info styling
+          const headerLines = section.content.split('\n').filter(l => l.trim());
+          let nameShown = false;
+          let titleShown = false;
+          
+          return (
+            <div key={idx} className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-6 rounded-xl border-l-4 border-indigo-500 shadow-sm">
+              {headerLines.map((line, i) => {
+                const trimmed = line.trim();
+                
+                // Skip empty
+                if (!trimmed) return null;
+                
+                // Detect contact info
+                const hasEmail = trimmed.includes('@');
+                const hasPhone = trimmed.includes('+') || /\d{3}[\s\-]\d{3}[\s\-]\d{4}/.test(trimmed);
+                
+                // Name (first non-contact line)
+                if (!nameShown && !hasEmail && !hasPhone && trimmed.length < 50) {
+                  nameShown = true;
+                  return (
+                    <div key={i} className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
+                        <FaUser className="text-indigo-600 dark:text-indigo-400 text-xl" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{trimmed}</h2>
+                    </div>
+                  );
+                }
+                
+                // Job Title (second non-contact line)
+                if (nameShown && !titleShown && !hasEmail && !hasPhone && trimmed.length < 80) {
+                  titleShown = true;
+                  return (
+                    <p key={i} className="text-lg text-indigo-600 dark:text-indigo-400 font-medium mb-3 ml-14">
+                      {trimmed}
+                    </p>
+                  );
+                }
+                
+                // Email
+                if (hasEmail) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaEnvelope className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                // Phone
+                if (hasPhone) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaPhone className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                // Location (non-contact line after name/title)
+                if (nameShown && titleShown) {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
+                      <FaMapMarkerAlt className="text-indigo-500" />
+                      <span>{trimmed}</span>
+                    </div>
+                  );
+                }
+                
+                return null;
+              })}
+            </div>
+          );
+        }
+
+        // Special handling for Skills section
+        const isSkillsSection = section.title.toLowerCase().includes('skill');
+        
+        // Regular section - group lines intelligently
+        const contentLines = section.content.split('\n').filter(l => l.trim());
+        
+        // If it's skills section, render as tags
+        if (isSkillsSection) {
+          const skills = contentLines.map(line => line.trim().replace(/^[-•]\s*/, '')).filter(s => s);
+          return (
+            <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+              <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                  {getSectionIcon(section.title)}
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                  {section.title}
+                </h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {skills.map((skill, i) => (
+                  <span 
+                    key={i}
+                    className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        
+        const groupedContent = [];
+        let currentParagraph = [];
+        
+        contentLines.forEach((line, i) => {
+          const trimmed = line.trim();
+          
+          // Bullet point - flush paragraph and add bullet
+          if (trimmed.startsWith('-') || trimmed.startsWith('•')) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'bullet', text: trimmed.replace(/^[-•]\s*/, '') });
+          }
+          // Heading indicator (ends with : or all caps short line)
+          else if ((trimmed.endsWith(':') && trimmed.length < 50) || 
+                   (trimmed === trimmed.toUpperCase() && trimmed.length > 2 && trimmed.length < 50 && !/\d/.test(trimmed))) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'heading', text: trimmed });
+          }
+          // Date range
+          else if (/\d{4}\s*-\s*\d{4}|\d{4}\s*-\s*Present/i.test(trimmed)) {
+            if (currentParagraph.length > 0) {
+              groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+              currentParagraph = [];
+            }
+            groupedContent.push({ type: 'date', text: trimmed });
+          }
+          // Regular text - accumulate into paragraph
+          else {
+            currentParagraph.push(trimmed);
+          }
+        });
+        
+        // Flush remaining paragraph
+        if (currentParagraph.length > 0) {
+          groupedContent.push({ type: 'paragraph', text: currentParagraph.join(' ') });
+        }
+        
+        return (
+          <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+            <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                {getSectionIcon(section.title)}
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                {section.title}
+              </h3>
+            </div>
+            <div className="space-y-3">
+              {groupedContent.map((item, i) => {
+                if (item.type === 'bullet') {
+                  return (
+                    <div key={i} className="flex gap-3 items-start">
+                      <span className="text-indigo-500 mt-1">•</span>
+                      <span className="text-gray-700 dark:text-gray-300 flex-1">{item.text}</span>
+                    </div>
+                  );
+                }
+                if (item.type === 'heading') {
+                  return (
+                    <p key={i} className="text-sm font-semibold text-gray-900 dark:text-white mt-4 mb-2">
+                      {item.text}
+                    </p>
+                  );
+                }
+                if (item.type === 'date') {
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                      <FaClock className="text-gray-400" />
+                      <span>{item.text}</span>
+                    </div>
+                  );
+                }
+                // Regular paragraph
+                return (
+                  <p key={i} className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {item.text}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
@@ -206,11 +863,75 @@ export default function Dashboard({ user }) {
       // Let axios set the Content-Type including the boundary for multipart
       const res = await api.post("/api/upload-cv", formData);
       // backend now returns structured fields
-      setOptimizedCV(res.data.optimized_text || res.data.optimized_cv || "");
+      let optimizedContent = res.data.optimized_text || res.data.optimized_cv || "";
+      
+      // If optimized content is too short or missing, try to build from structured data
+      if ((!optimizedContent || optimizedContent.trim().length < 100) && res.data.structured_cv) {
+        const structured = res.data.structured_cv;
+        const parts = [];
+        
+        // Build readable text from structured data
+        if (structured.name) parts.push(`# ${structured.name}\n`);
+        if (structured.contact) parts.push(`${structured.contact}\n`);
+        if (structured.summary) parts.push(`\n## Professional Summary\n${structured.summary}\n`);
+        if (structured.skills && Array.isArray(structured.skills) && structured.skills.length > 0) {
+          parts.push(`\n## Skills\n${structured.skills.map(s => `- ${s}`).join('\n')}\n`);
+        }
+        if (structured.experience && Array.isArray(structured.experience) && structured.experience.length > 0) {
+          parts.push(`\n## Work Experience\n`);
+          structured.experience.forEach(exp => {
+            parts.push(`\n### ${exp.title || exp.role || 'Position'}`);
+            if (exp.company) parts.push(` at ${exp.company}`);
+            if (exp.dates || exp.years) parts.push(` | ${exp.dates || exp.years}`);
+            parts.push('\n');
+            if (exp.description) parts.push(`${exp.description}\n`);
+            if (exp.points && Array.isArray(exp.points)) {
+              exp.points.forEach(point => parts.push(`- ${point}\n`));
+            }
+          });
+        }
+        if (structured.education && Array.isArray(structured.education) && structured.education.length > 0) {
+          parts.push(`\n## Education\n`);
+          structured.education.forEach(edu => {
+            parts.push(`\n### ${edu.degree || 'Degree'}\n`);
+            if (edu.school || edu.institution) parts.push(`${edu.school || edu.institution}\n`);
+            if (edu.year) parts.push(`${edu.year}\n`);
+          });
+        }
+        if (structured.projects && Array.isArray(structured.projects) && structured.projects.length > 0) {
+          parts.push(`\n## Projects\n`);
+          structured.projects.forEach(proj => {
+            parts.push(`\n### ${proj.name || 'Project'}\n`);
+            if (proj.desc || proj.description) parts.push(`${proj.desc || proj.description}\n`);
+            if (proj.technologies && Array.isArray(proj.technologies)) {
+              parts.push(`Technologies: ${proj.technologies.join(', ')}\n`);
+            }
+          });
+        }
+        
+        if (parts.length > 0) {
+          optimizedContent = parts.join('');
+        }
+      }
+      
+      setOptimizedCV(optimizedContent);
       setSuggestions(res.data.suggestions || []);
       // prefer grouped suggestions if provided
       setGroupedSuggestions(res.data.grouped_suggestions || {});
-      setOrderedSections(res.data.ordered_sections || []);
+      
+      // Debug: Log ordered sections data
+      const orderedSectionsData = res.data.ordered_sections || [];
+      console.log('📊 Received ordered_sections from backend:', orderedSectionsData);
+      if (orderedSectionsData.length > 0) {
+        console.log('📝 First section sample:', {
+          key: orderedSectionsData[0].key,
+          label: orderedSectionsData[0].label,
+          contentType: typeof orderedSectionsData[0].content,
+          contentPreview: JSON.stringify(orderedSectionsData[0].content).substring(0, 100)
+        });
+      }
+      
+      setOrderedSections(orderedSectionsData);
       setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
@@ -256,16 +977,71 @@ export default function Dashboard({ user }) {
       const res = await api.get(`/api/download/${fileId}`, {
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement("a");
       link.href = url;
+      link.setAttribute("download", filename || "CV_Download.pdf");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      // Show success message
+      console.log(`✅ Downloaded: ${filename}`);
+    } catch (err) {
+      console.error("Download error:", err);
+      alert("Download failed! Please try again.");
+    }
+  };
+
+  const handleDownloadOptimizedCV = async () => {
+    if (!optimizedCV && !templateData) {
+      alert("No optimized CV available to download.");
+      return;
+    }
+
+    try {
+      const payload = {
+        structured_cv: templateData,
+        optimized_text: optimizedCV,
+        template_data: templateData,
+        filename: lastUploadedFilename || "Optimized_CV.pdf",
+      };
+
+      console.log("Sending download request with payload:", {
+        hasStructuredCV: !!templateData,
+        hasOptimizedText: !!optimizedCV,
+        filename: payload.filename
+      });
+
+      const res = await api.post("/api/download-optimized-cv", payload, {
+        responseType: "blob",
+      });
+
+      // Check if we got an error response as JSON
+      if (res.data.type === 'application/json') {
+        const text = await res.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.message || "Download failed");
+      }
+
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement("a");
+      link.href = url;
+      const filename = lastUploadedFilename 
+        ? `${lastUploadedFilename.replace(/\.[^/.]+$/, "")}_Optimized.pdf`
+        : "Optimized_CV.pdf";
       link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+
+      console.log(`✅ Downloaded optimized CV: ${filename}`);
     } catch (err) {
-      console.error(err);
-      alert("Download failed!");
+      console.error("Download optimized CV error:", err);
+      const errorMsg = err.response?.data?.message || err.message || "Failed to download optimized CV";
+      alert(`Download failed: ${errorMsg}\n\nPlease try again or use the 'Download from Library' button.`);
     }
   };
 
@@ -717,101 +1493,189 @@ export default function Dashboard({ user }) {
               border border-green-200 dark:border-green-700/50 p-6 
               rounded-2xl shadow-md mb-6 text-gray-800 dark:text-gray-200"
             >
-              <div className="flex items-start justify-between gap-6">
-                <div className="flex-1">
+              <div className="flex flex-col lg:flex-row items-start gap-6">
+                <div className="flex-1 w-full">
                   <h3 className="text-2xl font-bold mb-4 text-green-800 dark:text-green-400 flex items-center gap-2">
                     <FaCheckCircle className="text-xl" /> Optimized CV
                   </h3>
-                  <div className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-green-100 dark:border-green-800/50">
+                  <div className="bg-white dark:bg-gray-900/50 p-5 rounded-lg border border-green-100 dark:border-green-800/50 shadow-sm">
                     {/* Toggle between raw optimized text and organized preview */}
-                    <div className="flex items-center justify-end mb-2">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CV Content</span>
                       <button
                         onClick={() => setExpandedPreview(!expandedPreview)}
-                        className="text-xs px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-200"
+                        className="text-xs px-4 py-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 transition-colors font-medium"
                       >
-                        {expandedPreview ? "Show Raw" : "Show Preview"}
+                        {expandedPreview ? "📄 Raw Text" : "👁 Preview"}
                       </button>
                     </div>
 
                     {!expandedPreview ? (
-                      <pre className="whitespace-pre-wrap max-h-96 overflow-auto font-mono text-sm leading-relaxed">
-                        {optimizedCV}
-                      </pre>
+                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                        <EnhancedCVRenderer content={optimizedCV} />
+                      </div>
                     ) : (
-                      <div className="max-h-96 overflow-auto">
+                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
                         ) : orderedSections && orderedSections.length > 0 ? (
-                          <div className="space-y-4 text-sm text-gray-800 dark:text-gray-200">
-                            {orderedSections.map((section) => (
-                              <div key={section.key} className="border-l-4 border-indigo-400 pl-3">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                                  <span>&mdash; {section.label} &mdash;</span>
-                                </p>
-                                <div className="mt-1 whitespace-pre-wrap leading-relaxed">
-                                  {section.content}
+                          <div className="space-y-4">
+                            {orderedSections.map((section) => {
+                              const getSectionIcon = (key) => {
+                                const keyLower = key.toLowerCase();
+                                if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500 text-lg" />;
+                                if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500 text-lg" />;
+                                if (keyLower.includes('skill')) return <FaCode className="text-green-500 text-lg" />;
+                                if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500 text-lg" />;
+                                if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500 text-lg" />;
+                                if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500 text-lg" />;
+                                if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500 text-lg" />;
+                                if (keyLower.includes('language')) return <FaLanguage className="text-pink-500 text-lg" />;
+                                if (keyLower.includes('summary') || keyLower.includes('objective') || keyLower.includes('profile')) return <FaUser className="text-indigo-500 text-lg" />;
+                                return <FaFileAlt className="text-gray-500 text-lg" />;
+                              };
+
+                              return (
+                                <div key={section.key} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+                                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+                                    <div className="p-2 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-lg">
+                                      {getSectionIcon(section.key)}
+                                    </div>
+                                    <h4 className="text-base font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                                      {section.label}
+                                    </h4>
+                                  </div>
+                                  <div className="text-sm leading-relaxed">
+                                    {renderSectionContent(section.key, parseContentSafely(section.content))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-500">No structured preview available.</p>
+                          <div className="flex flex-col items-center justify-center p-8 text-center">
+                            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3">
+                              <FaFileAlt className="text-gray-400 text-2xl" />
+                            </div>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">No structured preview available</p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Use Raw Text view to see content</p>
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-5 border border-green-100 dark:border-green-800/50 min-w-max">
-                  <div className="flex items-center justify-center gap-2 mb-3">
-                    <FaStar className="text-yellow-500" />
-                    <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                      ATS Score
-                    </span>
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[280px]">
+                  <div className="text-center mb-5">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <FaStar className="text-yellow-500 text-lg" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                        ATS Score
+                      </span>
+                    </div>
+                    <div className="relative w-32 h-32 mx-auto mb-3">
+                      <svg className="transform -rotate-90 w-32 h-32">
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          className="text-gray-200 dark:text-gray-700"
+                        />
+                        <circle
+                          cx="64"
+                          cy="64"
+                          r="56"
+                          stroke="currentColor"
+                          strokeWidth="8"
+                          fill="transparent"
+                          strokeDasharray={`${2 * Math.PI * 56}`}
+                          strokeDashoffset={`${2 * Math.PI * 56 * (1 - (atsScore || 0) / 100)}`}
+                          className={`transition-all duration-500 ${
+                            (atsScore || 0) >= 70 
+                              ? 'text-green-500' 
+                              : (atsScore || 0) >= 50 
+                              ? 'text-yellow-500' 
+                              : 'text-red-500'
+                          }`}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className={`text-3xl font-bold ${
+                          (atsScore || 0) >= 70 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : (atsScore || 0) >= 50 
+                            ? 'text-yellow-600 dark:text-yellow-400' 
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {atsScore ?? "--"}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {(atsScore || 0) >= 70 
+                        ? '✅ Excellent score!' 
+                        : (atsScore || 0) >= 50 
+                        ? '⚠️ Good, can improve' 
+                        : '❌ Needs optimization'}
+                    </p>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-3">
-                    <div
-                      className={`bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, atsScore || 0))}%`,
-                      }}
-                    />
-                  </div>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400 text-center">{atsScore ?? "N/A"}<span className="text-sm">/100</span></p>
                   {recommendedKeywords.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-green-100 dark:border-green-800/50">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Key Words</p>
-                      <div className="flex flex-wrap gap-1">
-                        {recommendedKeywords.slice(0, 5).map((kw, i) => (
-                          <span key={i} className="bg-green-100 dark:bg-green-800/40 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
+                    <div className="mb-4 pb-4 border-b border-green-100 dark:border-green-800/50">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Recommended Keywords</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {recommendedKeywords.slice(0, 6).map((kw, i) => (
+                          <span key={i} className="bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg font-medium border border-green-200 dark:border-green-700">
                             {kw}
                           </span>
                         ))}
                       </div>
+                      {recommendedKeywords.length > 6 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{recommendedKeywords.length - 6} more</p>
+                      )}
                     </div>
                   )}
                   {foundKeywords && foundKeywords.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-green-50 dark:border-green-900/20">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">Found Keywords</p>
-                      <div className="flex flex-wrap gap-1">
-                        {foundKeywords.slice(0, 8).map((kw, i) => (
-                          <span key={i} className="bg-gray-100 dark:bg-gray-800/30 text-gray-700 dark:text-gray-200 text-xs px-2 py-1 rounded-full">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Found Keywords</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {foundKeywords.slice(0, 10).map((kw, i) => (
+                          <span key={i} className="bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-200 text-xs px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700">
                             {kw}
                           </span>
                         ))}
                       </div>
+                      {foundKeywords.length > 10 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{foundKeywords.length - 10} more</p>
+                      )}
                     </div>
                   )}
+                  <button
+                    onClick={handleDownloadOptimizedCV}
+                    className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-800 dark:hover:to-purple-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                  >
+                    <FaDownload className="text-base" /> Download Optimized PDF
+                  </button>
                   {lastUploadedFileId && (
                     <button
                       onClick={() =>
                         handleDownload(
                           lastUploadedFileId,
-                          lastUploadedFilename || "optimized_cv.pdf"
+                          lastUploadedFilename?.replace(/\.[^/.]+$/, "_ATS_Optimized.pdf") || "CV_ATS_Optimized.pdf"
                         )
                       }
-                      className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-3 py-2 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2"
+                      className="mt-2 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
                     >
-                      <FaDownload className="text-sm" /> Download PDF
+                      <FaDownload className="text-sm" /> Download from Library
                     </button>
                   )}
                 </div>
@@ -820,22 +1684,37 @@ export default function Dashboard({ user }) {
 
             {/* Structured sections preview */}
             {orderedSections && orderedSections.length > 0 && (
-              <div className="grid md:grid-cols-2 gap-4 mb-6">
-                {orderedSections.map(({ key, label, content }) => (
-                  content ? (
-                    <div
-                      key={key}
-                      className="bg-white dark:bg-gray-900/50 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all"
-                    >
-                      <h4 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3 capitalize text-sm">
-                        {label}
-                      </h4>
-                      <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 overflow-hidden">
-                        {content}
+              <div className="mt-6">
+                <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
+                  <FaFileAlt className="text-indigo-500" />
+                  CV Sections Overview
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {orderedSections.map(({ key, label, content }) => {
+                    return content ? (
+                      <div
+                        key={key}
+                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all group"
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full group-hover:h-8 transition-all"></div>
+                          <h4 className="font-bold text-indigo-600 dark:text-indigo-400 text-sm uppercase tracking-wide">
+                            {label}
+                          </h4>
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-[8] overflow-hidden leading-relaxed">
+                          {renderSectionContent(key, content)}
+                        </div>
+                        <button
+                          onClick={() => setExpandedPreview(true)}
+                          className="mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                        >
+                          View full section →
+                        </button>
                       </div>
-                    </div>
-                  ) : null
-                ))}
+                    ) : null;
+                  })}
+                </div>
               </div>
             )}
 

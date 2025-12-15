@@ -79,6 +79,11 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv("MAIL")
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
 
+# Register Blueprints
+app.mongo = mongo  # Make mongo accessible via current_app.mongo in blueprints
+from app.routes.auth import auth as auth_blueprint
+app.register_blueprint(auth_blueprint, url_prefix='/auth')
+
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx'}
 
 # -------------------- Forms --------------------
@@ -271,6 +276,7 @@ def logout():
 @app.route('/forgot_password', methods=['POST'])
 @app.route('/api/forgot-password', methods=['POST'])
 @app.route('/api/forgot_password', methods=['POST'])
+@app.route('/auth/forgot-password', methods=['POST'])
 def forgot_password():
     try:
         data = request.json
@@ -310,6 +316,7 @@ def forgot_password():
 @app.route('/reset-password/<token>', methods=['POST'])
 @app.route('/api/reset_password/<token>', methods=['POST'])
 @app.route('/api/reset-password/<token>', methods=['POST'])
+@app.route('/auth/reset-password/<token>', methods=['POST'])
 def reset_password(token):
     try:
         email = serializer.loads(token, salt="password-reset-salt", max_age=3600)
@@ -455,6 +462,20 @@ def api_logout():
     logout_user()
     return jsonify({"success": True, "message": "Logged out successfully"})
 
+# Add /auth routes that mirror /api routes for frontend compatibility
+@app.route('/auth/register', methods=['POST'])
+def auth_register():
+    return api_register()
+
+@app.route('/auth/login', methods=['POST'])
+def auth_login():
+    return api_login()
+
+@app.route('/auth/logout', methods=['POST'])
+@login_required
+def auth_logout():
+    return api_logout()
+
 @app.route('/api/current-user')
 def api_current_user():
     if current_user.is_authenticated:
@@ -472,10 +493,98 @@ def api_upload_cv():
     if file and allowed_file(file.filename):
         filename = secure_filename(f"{current_user.id}_{file.filename}")
         file_bytes = file.read()
-        cv_text = extract_text_from_any(file_bytes, file.filename)
+        
+        # Modern extraction with fallback
+        from app.utils.modern_extractor import extract_pdf_modern
+        try:
+            extraction_result = extract_pdf_modern(file_bytes)
+            cv_text = extraction_result.text
+            extraction_metadata = extraction_result.to_dict()
+            current_app.logger.info(f"✨ Modern extraction: {extraction_result.method.value}")
+        except Exception as e:
+            current_app.logger.warning(f"Modern extraction failed: {e}")
+            cv_text = extract_text_from_any(file_bytes, file.filename)
+            extraction_metadata = {}
 
         job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 1: EXTRACT CONTACT INFO (ALWAYS RUNS)
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.cv_utils import (
+            extract_contact_info_basic, 
+            needs_ai_extraction, 
+            validate_contact_info
+        )
+        from app.services.cv_ai_service import extract_contact_with_ai
+        
+        # Basic extraction
+        contact_info = extract_contact_info_basic(cv_text)
+        current_app.logger.info(f"📧 Basic extraction: name={contact_info.get('name')}, email={contact_info.get('email')}")
+        
+        # Validate completeness
+        validation = validate_contact_info(contact_info)
+        current_app.logger.info(f"✓ Contact validation: {validation['score']:.0f}% complete")
+        
+        # AI fallback if needed
+        if needs_ai_extraction(contact_info):
+            current_app.logger.info("🤖 Triggering AI fallback")
+            ai_contact = extract_contact_with_ai(cv_text)
+            if ai_contact:
+                for field in ['name', 'email', 'phone', 'linkedin', 'github']:
+                    if not contact_info.get(field) and ai_contact.get(field):
+                        contact_info[field] = ai_contact[field]
+        
+        final_validation = validate_contact_info(contact_info)
+        current_app.logger.info(f"✅ Final: {final_validation['score']:.0f}% complete")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 2: FORMAT WITH MODERN PRESENTATION
+        # ═══════════════════════════════════════════════════════════════
+        from app.utils.cv_utils import format_extracted_text_with_sections, build_standardized_sections
+        from app.utils.modern_formatter import format_cv_modern
+        
+        structured_data = build_standardized_sections(cv_text)
+        formatted_result = format_extracted_text_with_sections(cv_text)
+        formatted_text = formatted_result['formatted_text']
+        text_sections = formatted_result['sections']
+        section_order = formatted_result['section_order']
+        
+        # Modern formatting
+        modern_formatted = {'text': '', 'html': '', 'markdown': ''}
+        try:
+            cv_display_data = {
+                'name': contact_info.get('name', ''),
+                'all enhanced data into result
+        if result:
+            result['contact_info'] = contact_info
+            result['contact_validation'] = final_validation
+            result['formatted_text'] = formatted_text
+            result['text_sections'] = text_sections
+            result['section_order'] = section_order
+            result['modern_formatted'] = modern_formatted
+            result['extraction_metadata'] = extraction_metadataet('certifications', []),
+            }
+            modern_formatted['text'] = format_cv_modern(cv_display_data, 'text')
+            modern_formatted['html'] = format_cv_modern(cv_display_data, 'html')
+            modern_formatted['markdown'] = format_cv_modern(cv_display_data, 'markdown')
+        except Exception as e:
+            current_app.logger.warning(f"Modern formatting failed: {e}")
+        
+        current_app.logger.info(f"📋 Formatted text into {len(section_order)} sections")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 3: OPTIMIZE CV
+        # ═══════════════════════════════════════════════════════════════
         result = optimize_cv(cv_text, job_domain=job_domain, use_ai=True)
+        
+        # Inject contact info and formatted text into result
+        if result:
+            result['contact_info'] = contact_info
+            result['contact_validation'] = final_validation
+            result['formatted_text'] = formatted_text
+            result['text_sections'] = text_sections
+            result['section_order'] = section_order
 
         if not isinstance(result, dict):
             current_app.logger.warning('optimize_cv returned non-dict result; using safe defaults')
@@ -483,7 +592,8 @@ def api_upload_cv():
 
         optimized_cv = result.get('optimized_text') or result.get('optimized_cv') or cv_text
         optimized_ats_cv = result.get('optimized_ats_cv') or optimized_cv
-        template_data = result.get('template_data') or {}
+        # Get template_data - use extracted or structured_cv as source for normalization
+        raw_template_data = result.get('template_data') or result.get('extracted') or result.get('structured_cv') or {}
         suggestions = result.get('suggestions') or []
 
         grouped = {}
@@ -508,7 +618,13 @@ def api_upload_cv():
         recommended_keywords = result.get('recommended_keywords', [])
         found_keywords = result.get('found_keywords', [])
         extracted_text = result.get('extracted_text') or cv_text
-        structured_payload = structured_cv if isinstance(structured_cv, dict) else {}
+        structured_payload = structured_cv if isinstance(structuredLegacy formatted text
+            "text_sections": result.get('text_sections', {}),  # Individual sections
+            "section_order": result.get('section_order', []),  # Section display order
+            "modern_formatted": result.get('modern_formatted', {}),  # Modern Rich-formatted outputs
+            "extraction_metadata": result.get('extraction_metadata', {}),  # Extraction quality metrics
+        from app.utils.cv_template_mapper import normalize_cv_for_template
+        template_data = normalize_cv_for_template(raw_template_data) if raw_template_data else {}
 
         try:
             pdf_bytes = generate_pdf(optimized_ats_cv)
@@ -525,8 +641,13 @@ def api_upload_cv():
             "optimized_text": optimized_ats_cv,
             "optimized_cv": optimized_ats_cv,
             "optimized_ats_cv": optimized_ats_cv,
-            "extracted": result.get('extracted') or template_data,
+            "extracted": result.get('extracted') or raw_template_data,
             "extracted_text": extracted_text,
+            "formatted_text": result.get('formatted_text', ''),  # Text with clear section headers
+            "text_sections": result.get('text_sections', {}),  # Individual sections
+            "section_order": result.get('section_order', []),  # Section display order
+            "contact_info": result.get('contact_info', {}),  # Extracted contact information
+            "contact_validation": result.get('contact_validation', {}),  # Validation results
             "sections": sections,
             "ordered_sections": ordered_sections,
             "structured_sections": structured_sections,

@@ -11,36 +11,86 @@ logger = logging.getLogger(__name__)
 
 # Global variable to cache the model
 _nlp = None
+_spacy_warning_shown = False  # Track if we've already shown the warning
 
-def load_spacy_model():
-    """Load the spaCy model, downloading it if necessary (not possible in this env, but good practice)."""
-    global _nlp
+
+def get_nlp():
+    """Get spaCy NLP instance with safe lazy loading.
+    
+    Returns spaCy nlp object or None if unavailable.
+    This is the recommended way to access spaCy in the codebase.
+    """
+    global _nlp, _spacy_warning_shown
+    
+    # Check if spaCy is installed
     if spacy is None:
-        logger.warning("Spacy not installed. NLP features will be disabled.")
+        if not _spacy_warning_shown:
+            logger.warning("⚠ spaCy not installed. NLP features disabled. Install with: pip install spacy && python -m spacy download en_core_web_sm")
+            _spacy_warning_shown = True
         return None
-
+    
+    # Return cached model if available
     if _nlp is not None:
         return _nlp
     
+    # Try to load the model
     try:
         _nlp = spacy.load("en_core_web_sm")
-        logger.info("Loaded en_core_web_sm model.")
+        logger.info("✓ Loaded spaCy model: en_core_web_sm")
+        return _nlp
     except OSError:
-        logger.warning("Spacy model 'en_core_web_sm' not found. Please run `python -m spacy download en_core_web_sm`.")
+        # Model not downloaded
+        if not _spacy_warning_shown:
+            logger.warning("⚠ spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
+            _spacy_warning_shown = True
         try:
-            # Fallback to a blank English model if the specific one isn't found
+            # Fallback to blank model (no entity recognition, but doesn't crash)
             _nlp = spacy.blank("en")
+            logger.info("✓ Using blank spaCy model (limited features)")
+            return _nlp
         except Exception:
-            _nlp = None
+            return None
     except Exception as e:
-        logger.error(f"Failed to load spacy: {e}")
-        _nlp = None
+        if not _spacy_warning_shown:
+            logger.error(f"❌ Failed to load spaCy: {e}")
+            _spacy_warning_shown = True
+        return None
+
+
+def is_spacy_available() -> bool:
+    """Check if spaCy is available without loading it.
     
-    return _nlp
+    Returns:
+        True if spaCy can be used, False otherwise
+    """
+    return spacy is not None
+
+
+def load_spacy_model():
+    """Load the spaCy model, downloading it if necessary (not possible in this env, but good practice).
+    
+    DEPRECATED: Use get_nlp() instead for safer loading.
+    """
+    return get_nlp()
 
 def extract_entities(text: str) -> Dict[str, List[str]]:
     """Extract named entities like PERSON, ORG, GPE, DATE."""
     nlp = load_spacy_model()
+    
+    # Blacklist of tech terms that spaCy might misidentify as entities
+    TECH_BLACKLIST = {
+        'spring boot', 'react', 'angular', 'vue', 'node', 'nodejs', 'java', 
+        'python', 'javascript', 'typescript', 'spring', 'django', 'flask',
+        'docker', 'kubernetes', 'aws', 'azure', 'mongodb', 'mysql', 'postgresql',
+        'redis', 'kafka', 'jenkins', 'github', 'gitlab', 'jira', 'confluence',
+        'tensorflow', 'pytorch', 'keras', 'pandas', 'numpy', 'scikit', 'opencv',
+        'express', 'fastapi', 'laravel', 'symfony', 'rails', 'ruby', 'php',
+        'c++', 'c#', 'golang', 'rust', 'kotlin', 'swift', 'objective-c',
+        'android', 'ios', 'linux', 'windows', 'macos', 'ubuntu', 'centos',
+        'git', 'svn', 'html', 'css', 'sass', 'scss', 'webpack', 'babel',
+        'jquery', 'bootstrap', 'tailwind', 'material', 'figma', 'sketch',
+        'postman', 'swagger', 'graphql', 'rest', 'api', 'json', 'xml'
+    }
     
     entities = {
         "PERSON": [],
@@ -57,7 +107,15 @@ def extract_entities(text: str) -> Dict[str, List[str]]:
         doc = nlp(text)
         for ent in doc.ents:
             if ent.label_ in entities:
-                entities[ent.label_].append(ent.text)
+                ent_text = ent.text.strip()
+                ent_lower = ent_text.lower()
+                
+                # Filter out tech terms from PERSON and GPE entities
+                if ent.label_ in ('PERSON', 'GPE') and ent_lower in TECH_BLACKLIST:
+                    logger.debug(f"Filtering tech term from {ent.label_}: '{ent_text}'")
+                    continue
+                
+                entities[ent.label_].append(ent_text)
     except Exception as e:
         logger.warning(f"NLP entity extraction failed: {e}")
             
