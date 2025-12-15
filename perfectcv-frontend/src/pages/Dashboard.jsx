@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api";
 import Navbar from "../components/Navbar";
 import CVAnalysisPanel from "../components/CVAnalysisPanel";
+import ConfirmationModal from "../components/ConfirmationModal";
 import {
   FaUpload,
   FaDownload,
@@ -753,6 +754,8 @@ export default function Dashboard({ user }) {
   const [chatbotCV, setChatbotCV] = useState(null);
   const [analysisFile, setAnalysisFile] = useState(null);
   const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [pendingUploadEvent, setPendingUploadEvent] = useState(null);
 
   // Utility: truncate long filenames
   const truncateFilename = (filename = "", maxLen = 30) => {
@@ -853,9 +856,20 @@ export default function Dashboard({ user }) {
     }
   };
 
-  const handleUpload = async (e) => {
+  const handleUploadConfirmation = (e) => {
     e.preventDefault();
     if (!selectedFile) return alert("Select a file first!");
+    
+    // Store the event and show confirmation modal
+    setPendingUploadEvent(e);
+    setShowConfirmationModal(true);
+  };
+
+  const proceedWithUpload = async () => {
+    // Close modal
+    setShowConfirmationModal(false);
+    
+    // Proceed with upload
     setLoading(true);
     try {
       const formData = new FormData();
@@ -1325,7 +1339,7 @@ export default function Dashboard({ user }) {
             <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
               <FaUpload className="text-xl" /> Upload & Optimize CV
             </h2>
-            <form onSubmit={handleUpload} className="space-y-6">
+            <form onSubmit={handleUploadConfirmation} className="space-y-6">
               <div className="grid gap-6 w-full lg:grid-cols-12 items-stretch">
                 <label
                   onDragEnter={handleDragEnter}
@@ -1994,6 +2008,22 @@ export default function Dashboard({ user }) {
           }}
         />
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmationModal}
+        onClose={() => {
+          setShowConfirmationModal(false);
+          setPendingUploadEvent(null);
+        }}
+        onConfirm={proceedWithUpload}
+        title="Before We Proceed"
+        message="We are about to provide you with personalized guidance to support your career growth based on the information you upload.
+
+Please note that this analysis is intended as guidance only and should not be fully relied upon for career decisions. Use it as a reference alongside your own judgment and professional advice."
+        confirmText="Continue"
+        cancelText="Cancel"
+      />
     </div>
   );
 }
