@@ -1184,9 +1184,15 @@ def _generate_pdf_fallback(text):
                 pdf.multi_cell(get_width(indent), 8, f"{bullet} {safe_text}")
             else:
                 pdf.multi_cell(get_width(), 8, line)
-    # Use 'S' to get PDF as string and encode to bytes (avoid passing BytesIO to FPDF.output)
-    pdf_str = pdf.output(dest='S')
-    pdf_data = pdf_str.encode('latin-1')
+    # Use 'S' to get PDF as bytes (FPDF2 returns bytes directly)
+    pdf_output = pdf.output(dest='S')
+    
+    # Handle both old FPDF (returns str) and FPDF2 (returns bytes)
+    if isinstance(pdf_output, str):
+        pdf_data = pdf_output.encode('latin-1')
+    else:
+        pdf_data = pdf_output  # Already bytes
+    
     pdf_bytes = io.BytesIO(pdf_data)
     pdf_bytes.seek(0)
     return pdf_bytes
