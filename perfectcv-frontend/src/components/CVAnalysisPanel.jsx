@@ -59,8 +59,8 @@ const CVAnalysisPanel = ({ file, onClose }) => {
 
   const getCandidateLevelBadge = (level) => {
     const badges = {
-      'Junior': { color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', icon: '🌱' },
-      'Mid-Level': { color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', icon: '🚀' },
+      'Junior': { color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400', icon: '🌱' },
+      'Mid-Level': { color: 'bg-sage-100 text-sage-700 dark:bg-sage-900/30 dark:text-sage-400', icon: '🚀' },
       'Senior': { color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', icon: '⭐' },
       'Expert': { color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', icon: '🏆' }
     };
@@ -78,7 +78,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="text-center">
-            <FaSpinner className="animate-spin text-indigo-600 dark:text-indigo-400 text-5xl mx-auto mb-4" />
+            <FaSpinner className="animate-spin text-sage-600 dark:text-sage-400 text-5xl mx-auto mb-4" />
             <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
               Analyzing Your CV
             </h3>
@@ -103,7 +103,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
             <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
             <button
               onClick={onClose}
-              className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+              className="px-6 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors"
             >
               Close
             </button>
@@ -129,7 +129,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
             <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
-              <FaChartLine className="text-indigo-600 dark:text-indigo-400" />
+              <FaChartLine className="text-sage-600 dark:text-sage-400" />
               CV Analysis Report
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
@@ -145,7 +145,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
         </div>
 
         {/* Score Overview - Always Visible */}
-        <div className="p-6 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 border-b border-gray-200 dark:border-gray-700">
+        <div className="p-6 bg-gradient-to-br from-sage-50 to-green-50 dark:from-sage-900/20 dark:to-green-900/20 border-b border-gray-200 dark:border-gray-700">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Overall Score */}
             <div className={`${getScoreBgColor(analysis.analysis?.score || 0)} rounded-xl p-6 border`}>
@@ -179,7 +179,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
             <div className="bg-white dark:bg-gray-700/50 rounded-xl p-6 border border-gray-200 dark:border-gray-600">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Career Field</span>
-                <FaBriefcase className="text-indigo-600 dark:text-indigo-400" />
+                <FaBriefcase className="text-sage-600 dark:text-sage-400" />
               </div>
               <div className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">
                 {analysis.analysis?.predicted_field || 'General'}
@@ -201,7 +201,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-colors border-b-2 whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    ? 'border-sage-600 text-sage-600 dark:text-sage-400'
                     : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                 }`}
               >
@@ -230,13 +230,13 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
                           {key.replace(/_/g, ' ')}
                         </span>
-                        <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                        <span className="text-sm font-bold text-sage-600 dark:text-sage-400">
                           {value} pts
                         </span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                         <div
-                          className="bg-indigo-600 dark:bg-indigo-500 h-2 rounded-full transition-all"
+                          className="bg-sage-600 dark:bg-sage-500 h-2 rounded-full transition-all"
                           style={{ width: `${(value / 20) * 100}%` }}
                         ></div>
                       </div>
@@ -291,7 +291,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                     {analysis.analysis.recommended_skills.slice(0, 20).map((skill, idx) => (
                       <span
                         key={idx}
-                        className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg text-sm font-medium border border-indigo-200 dark:border-indigo-700"
+                        className="px-3 py-1.5 bg-sage-50 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 rounded-lg text-sm font-medium border border-sage-200 dark:border-sage-700"
                       >
                         {skill}
                       </span>
@@ -308,12 +308,12 @@ const CVAnalysisPanel = ({ file, onClose }) => {
               {/* ATS Suggestions */}
               <div>
                 <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                  <FaRobot className="text-indigo-600 dark:text-indigo-400" />
+                  <FaRobot className="text-sage-600 dark:text-sage-400" />
                   ATS Optimization Suggestions
                 </h3>
                 <div className="space-y-3">
                   {analysis.ats?.suggestions?.map((suggestion, idx) => (
-                    <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                    <div key={idx} className="bg-sage-50 dark:bg-sage-900/20 border border-sage-200 dark:border-sage-700 rounded-lg p-4">
                       <p className="text-sm text-gray-700 dark:text-gray-300">{suggestion}</p>
                     </div>
                   )) || <p className="text-sm text-gray-500 dark:text-gray-400">No suggestions available</p>}
@@ -336,7 +336,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                         <ul className="space-y-1">
                           {(Array.isArray(tips) ? tips : [tips]).map((tip, idx) => (
                             <li key={idx} className="text-sm text-gray-700 dark:text-gray-300 flex gap-2">
-                              <span className="text-indigo-500">•</span>
+                              <span className="text-sage-500">•</span>
                               <span>{tip}</span>
                             </li>
                           ))}
@@ -354,7 +354,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
             <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                  <FaGraduationCap className="text-purple-600 dark:text-purple-400" />
+                  <FaGraduationCap className="text-sage-600 dark:text-sage-400" />
                   Recommended Learning Resources
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
@@ -362,10 +362,10 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {analysis.learning_resources?.map((course, idx) => (
-                    <div key={idx} className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-200 dark:border-purple-700 rounded-xl p-4 hover:shadow-lg transition-all">
+                    <div key={idx} className="bg-gradient-to-br from-sage-50 to-green-50 dark:from-sage-900/20 dark:to-green-900/20 border border-sage-200 dark:border-sage-700 rounded-xl p-4 hover:shadow-lg transition-all">
                       <div className="flex items-start gap-3">
-                        <div className="p-2 bg-purple-100 dark:bg-purple-800 rounded-lg">
-                          <FaBookOpen className="text-purple-600 dark:text-purple-400" />
+                        <div className="p-2 bg-sage-100 dark:bg-sage-800 rounded-lg">
+                          <FaBookOpen className="text-sage-600 dark:text-sage-400" />
                         </div>
                         <div className="flex-1">
                           <h4 className="font-bold text-gray-800 dark:text-gray-100 mb-1">
@@ -379,7 +379,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
                               href={course.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                              className="text-xs text-sage-600 dark:text-sage-400 hover:underline font-medium"
                             >
                               View Course →
                             </a>
@@ -423,7 +423,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
           </div>
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded-lg transition-colors font-semibold"
+            className="px-6 py-2 bg-sage-600 hover:bg-sage-700 dark:bg-sage-700 dark:hover:bg-sage-600 text-white rounded-lg transition-colors font-semibold"
           >
             Close
           </button>
