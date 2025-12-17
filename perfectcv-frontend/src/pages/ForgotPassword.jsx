@@ -92,7 +92,7 @@ function ForgotPassword() {
               type="email"
               id="email"
               placeholder="Enter your email"
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500 transition-all duration-300"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -113,7 +113,7 @@ function ForgotPassword() {
               type="text"
               id="code"
               placeholder="Enter the code sent to your email"
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500 transition-all duration-300"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
               maxLength={6}
@@ -139,7 +139,7 @@ function ForgotPassword() {
                 type="password"
                 id="newPassword"
                 placeholder="Enter new password"
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500 transition-all duration-300"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
@@ -157,7 +157,7 @@ function ForgotPassword() {
                 type="password"
                 id="confirmPassword"
                 placeholder="Confirm new password"
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all duration-300"
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-700/70 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500 transition-all duration-300"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
@@ -173,13 +173,13 @@ function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-gray-900 dark:to-gray-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sage-100 to-green-100 dark:from-gray-900 dark:to-gray-800 p-4">
       <div className="w-full max-w-md">
         <form
           onSubmit={handleSubmit}
           className="bg-white/30 dark:bg-gray-800/30 backdrop-blur-md rounded-3xl p-8 shadow-2xl"
         >
-          <h2 className="text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 mb-6 text-center">
+          <h2 className="text-3xl font-extrabold text-sage-600 dark:text-sage-400 mb-6 text-center">
             {step === "email"
               ? "Forgot Password"
               : step === "verify"
@@ -204,7 +204,7 @@ function ForgotPassword() {
 
           <button
             type="submit"
-            className="w-full py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white font-semibold shadow-lg transition-all duration-300"
+            className="w-full py-3 rounded-lg bg-gradient-to-r from-sage-500 to-green-500 hover:from-sage-600 hover:to-green-600 text-white font-semibold shadow-lg transition-all duration-300"
           >
             {step === "email"
               ? "Send Code"
@@ -217,7 +217,7 @@ function ForgotPassword() {
             <button
               type="button"
               onClick={() => navigate("/login")}
-              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+              className="text-sm text-sage-600 dark:text-sage-400 hover:underline"
             >
               Back to Login
             </button>

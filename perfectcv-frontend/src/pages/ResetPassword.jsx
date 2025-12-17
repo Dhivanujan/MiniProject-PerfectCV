@@ -57,7 +57,7 @@ function ResetPassword() {
         onSubmit={handleSubmit}
         className="bg-white/90 dark:bg-gray-800/80 backdrop-blur-md p-8 rounded-3xl shadow-lg w-96 flex flex-col"
       >
-        <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-4 text-center">
+        <h2 className="text-2xl font-bold text-sage-600 dark:text-sage-400 mb-4 text-center">
           Reset Password
         </h2>
 
@@ -65,7 +65,7 @@ function ResetPassword() {
           <div
             className={`mb-4 p-3 rounded text-sm text-center font-medium ${
               flashMessage.type === "success"
-                ? "text-blue-800 bg-blue-100 dark:text-blue-300 dark:bg-blue-900"
+                ? "text-green-800 bg-green-100 dark:text-green-300 dark:bg-green-900"
                 : "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900"
             }`}
           >
@@ -83,7 +83,7 @@ function ResetPassword() {
           type="password"
           id="password"
           placeholder="New Password"
-          className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 w-full p-3 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+          className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 w-full p-3 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-sage-500 transition"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -99,7 +99,7 @@ function ResetPassword() {
           type="password"
           id="confirmPassword"
           placeholder="Confirm Password"
-          className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 w-full p-3 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+          className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 w-full p-3 rounded mb-4 focus:outline-none focus:ring-2 focus:ring-sage-500 transition"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
@@ -107,7 +107,7 @@ function ResetPassword() {
 
         <button
           type="submit"
-          className="bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white w-full py-2 rounded transition-all duration-300 font-semibold"
+          className="bg-sage-500 hover:bg-sage-600 dark:bg-sage-600 dark:hover:bg-sage-500 text-white w-full py-2 rounded transition-all duration-300 font-semibold"
         >
           Reset Password
         </button>
@@ -116,7 +116,7 @@ function ResetPassword() {
           Remember your password?{" "}
           <a
             href="/login"
-            className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+            className="text-sage-600 dark:text-sage-400 font-medium hover:underline"
           >
             Login
           </a>
