@@ -80,7 +80,7 @@ export default function Contact() {
               onChange={handleChange}
               required
               placeholder="Enter your name"
-              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500"
             />
           </div>
 
@@ -95,7 +95,7 @@ export default function Contact() {
               onChange={handleChange}
               required
               placeholder="example@domain.com"
-              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500"
             />
           </div>
 
@@ -110,13 +110,13 @@ export default function Contact() {
               onChange={handleChange}
               required
               placeholder="Type your message here..."
-              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-300 dark:border-gray-600 bg-transparent rounded-lg px-4 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-sage-500"
             ></textarea>
           </div>
 
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-lg font-medium hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-md"
+            className="w-full bg-gradient-to-r from-sage-600 to-sage-800 text-white py-2 px-4 rounded-lg font-medium hover:from-sage-700 hover:to-sage-900 transition-all duration-300 shadow-md"
           >
             Send Message
           </button>
@@ -126,7 +126,7 @@ export default function Contact() {
               role="alert"
               className={`mt-3 p-3 rounded text-sm text-center font-medium transition-colors duration-300 ${
                 alert.type === "success"
-                  ? "text-blue-800 bg-blue-100 dark:text-blue-300 dark:bg-blue-900"
+                  ? "text-sage-800 bg-sage-100 dark:text-sage-300 dark:bg-sage-900"
                   : "text-red-800 bg-red-100 dark:text-red-300 dark:bg-red-900"
               } relative`}
             >
@@ -152,17 +152,17 @@ export default function Contact() {
           className="flex flex-col justify-center space-y-6 md:pl-6"
         >
           <ContactInfo
-            icon={<FaEnvelope className="text-indigo-500 text-2xl" />}
+            icon={<FaEnvelope className="text-sage-500 text-2xl" />}
             title="Email"
             info="support@perfectcv.com"
           />
           <ContactInfo
-            icon={<FaPhoneAlt className="text-indigo-500 text-2xl" />}
+            icon={<FaPhoneAlt className="text-sage-500 text-2xl" />}
             title="Phone"
             info="+94 77 123 4567"
           />
           <ContactInfo
-            icon={<FaMapMarkerAlt className="text-indigo-500 text-2xl" />}
+            icon={<FaMapMarkerAlt className="text-sage-500 text-2xl" />}
             title="Address"
             info="Colombo, Sri Lanka"
           />

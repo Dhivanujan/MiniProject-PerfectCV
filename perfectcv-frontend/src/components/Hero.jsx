@@ -18,7 +18,7 @@ export default function Hero() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.8 }}
-          className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-tight"
+          className="bg-gradient-to-r from-sage-600 to-sage-800 bg-clip-text text-transparent font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-tight"
         >
           Create the <br className="hidden sm:block" /> Perfect CV in Minutes
         </motion.h1>
@@ -28,7 +28,7 @@ export default function Hero() {
           transition={{ delay: 0.4, duration: 0.8 }}
           className="text-gray-700 max-w-md text-base sm:text-lg leading-relaxed dark:text-gray-100"
         >
-          Build <span className="font-semibold text-indigo-600">professional, ATS-friendly</span> resumes in minutes. 
+          Build <span className="font-semibold text-sage-600">professional, ATS-friendly</span> resumes in minutes. 
           Stand out, impress recruiters, and land your dream job effortlessly.
         </motion.p>
         <motion.div 
@@ -39,13 +39,13 @@ export default function Hero() {
         >
           <Link
             to="/register"
-            className="bg-indigo-600 text-white px-8 py-3 rounded-full text-sm sm:text-base font-medium shadow-lg hover:bg-indigo-700 hover:shadow-xl transition transform hover:-translate-y-1"
+            className="bg-sage-600 text-white px-8 py-3 rounded-full text-sm sm:text-base font-medium shadow-lg hover:bg-sage-700 hover:shadow-xl transition transform hover:-translate-y-1"
           >
             🚀 Get Started
           </Link>
           <Link
             to="/login"
-            className="bg-white border border-indigo-600 text-indigo-600 px-8 py-3 rounded-full text-sm sm:text-base font-medium shadow hover:shadow-md hover:bg-indigo-50 transition transform hover:-translate-y-1"
+            className="bg-white border border-sage-600 text-sage-600 px-8 py-3 rounded-full text-sm sm:text-base font-medium shadow hover:shadow-md hover:bg-sage-50 transition transform hover:-translate-y-1"
           >
             🔑 Login
           </Link>
@@ -67,7 +67,7 @@ export default function Hero() {
             src={heroImage}
             alt="PerfectCV Hero Image"
           />
-          <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600/20 via-purple-600/20 to-transparent rounded-3xl pointer-events-none"></div>
+          <div className="absolute inset-0 bg-gradient-to-tr from-sage-600/20 via-sage-400/20 to-transparent rounded-3xl pointer-events-none"></div>
         </div>
       </motion.div>
     </main>
