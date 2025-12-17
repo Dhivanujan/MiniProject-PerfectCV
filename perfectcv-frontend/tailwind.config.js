@@ -8,43 +8,43 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Professional Purple/Violet Theme
+        // Professional Teal/Cyan Theme
         primary: {
-          50: '#FAF5FF',   // Very light purple
-          100: '#F3E8FF',
-          200: '#E9D5FF',
-          300: '#D8B4FE',
-          400: '#C084FC',  // Bright purple
-          500: '#A855F7',  // Main purple
-          600: '#9333EA',  // Deep purple
-          700: '#7E22CE',  // Rich purple
-          800: '#6B21A8',
-          900: '#581C87',
+          50: '#F0FAFA',   // Very light teal
+          100: '#E0F5F5',
+          200: '#C2EBEB',
+          300: '#99DEDE',
+          400: '#2BC0C0',  // Bright cyan
+          500: '#0E9EA3',  // Main teal
+          600: '#0D7E82',  // Medium teal
+          700: '#0D5859',  // Dark teal
+          800: '#0A4445',
+          900: '#083536',
         },
         accent: {
-          50: '#FDF4FF',
-          100: '#FAE8FF',
-          200: '#F5D0FE',
-          300: '#F0ABFC',
-          400: '#E879F9',  // Bright fuchsia
-          500: '#D946EF',
-          600: '#C026D3',
-          700: '#A21CAF',
-          800: '#86198F',
-          900: '#701A75',
+          50: '#F0FDFD',
+          100: '#CCFBFB',
+          200: '#99F7F7',
+          300: '#5EEFF0',
+          400: '#2BC0C0',  // Bright turquoise
+          500: '#17A2A2',
+          600: '#0E9EA3',
+          700: '#0D7E82',
+          800: '#0A5F62',
+          900: '#084B4D',
         },
         // Keep for backward compatibility
         sage: {
-          50: '#FAF5FF',
-          100: '#F3E8FF',
-          200: '#E9D5FF',
-          300: '#D8B4FE',
-          400: '#C084FC',
-          500: '#A855F7',
-          600: '#9333EA',
-          700: '#7E22CE',
-          800: '#6B21A8',
-          900: '#581C87',
+          50: '#F0FAFA',
+          100: '#E0F5F5',
+          200: '#C2EBEB',
+          300: '#99DEDE',
+          400: '#2BC0C0',
+          500: '#0E9EA3',
+          600: '#0D7E82',
+          700: '#0D5859',
+          800: '#0A4445',
+          900: '#083536',
         },
       },
     },
