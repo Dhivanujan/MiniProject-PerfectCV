@@ -94,11 +94,11 @@ function Register() {
           rounded-2xl shadow-lg hover:shadow-2xl transition-all
           p-8 flex flex-col items-center"
         >
-          <h2 className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400">
+          <h2 className="text-4xl font-extrabold text-sage-600 dark:text-sage-400">
             Create Account
           </h2>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-3 mb-6 text-center">
-            Join <span className="font-semibold text-indigo-500">PerfectCV</span> and start crafting your perfect resume.
+            Join <span className="font-semibold text-sage-500">PerfectCV</span> and start crafting your perfect resume.
           </p>
 
           {/* Flash Messages */}
@@ -133,7 +133,7 @@ function Register() {
               key={name}
               className="w-full mt-3 h-12 border border-gray-300 dark:border-gray-600 
               rounded-full flex items-center px-5 transition-all 
-              focus-within:ring-2 focus-within:ring-indigo-400 dark:focus-within:ring-indigo-500"
+              focus-within:ring-2 focus-within:ring-sage-400 dark:focus-within:ring-sage-500"
             >
               <input
                 type={type}
@@ -155,8 +155,8 @@ function Register() {
             className={`mt-8 w-full h-11 rounded-full font-semibold text-white transition-all 
               ${
                 isSubmitting
-                  ? "bg-indigo-300 cursor-not-allowed"
-                  : "bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700"
+                  ? "bg-sage-300 cursor-not-allowed"
+                  : "bg-sage-500 hover:bg-sage-600 dark:bg-sage-600 dark:hover:bg-sage-700"
               }`}
           >
             {isSubmitting ? "Creating Account..." : "Sign Up"}
@@ -167,7 +167,7 @@ function Register() {
             Already have an account?{" "}
             <Link
               to="/login"
-              className="text-indigo-500 dark:text-indigo-400 hover:underline font-medium"
+              className="text-sage-500 dark:text-sage-400 hover:underline font-medium"
             >
               Log In
             </Link>
