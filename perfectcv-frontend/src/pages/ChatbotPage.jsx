@@ -96,13 +96,13 @@ const formatTimestamp = (iso) => {
 const KeywordPills = ({ title, items = [] }) => {
   if (!items.length) return null;
   return (
-    <div className="bg-white/70 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/40 rounded-xl p-3 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300 flex items-center gap-2"><FaTags />{title}</p>
+    <div className="bg-white/70 dark:bg-gray-800/60 border border-sage-100 dark:border-sage-900/40 rounded-xl p-3 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-sage-600 dark:text-sage-300 flex items-center gap-2"><FaTags />{title}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {items.slice(0, 10).map((keyword, idx) => (
           <span
             key={`${keyword}-${idx}`}
-            className="px-2.5 py-1 text-xs font-medium bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 rounded-full"
+            className="px-2.5 py-1 text-xs font-medium bg-sage-50 dark:bg-sage-900/40 text-sage-700 dark:text-sage-200 rounded-full"
           >
             {keyword}
           </span>
@@ -157,8 +157,8 @@ const MetadataCards = ({ metadata }) => {
       )}
 
       {keywords && (
-        <div className="rounded-2xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-900/10 p-4 shadow-sm space-y-3">
-          <p className="text-sm font-semibold text-blue-700 dark:text-blue-200 flex items-center gap-2">
+        <div className="rounded-2xl border border-sage-200 dark:border-sage-900/40 bg-sage-50/70 dark:bg-sage-900/10 p-4 shadow-sm space-y-3">
+          <p className="text-sm font-semibold text-sage-700 dark:text-sage-200 flex items-center gap-2">
             <FaLightbulb className="text-amber-400" /> Suggested Keywords
           </p>
           {keywords.priority_additions && (
@@ -168,7 +168,7 @@ const MetadataCards = ({ metadata }) => {
             <KeywordPills title="Additional Ideas" items={keywords.suggested_keywords} />
           )}
           {keywords.existing_keywords && (
-            <div className="bg-white/60 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/30 rounded-xl p-3">
+            <div className="bg-white/60 dark:bg-gray-800/60 border border-sage-100 dark:border-sage-900/30 rounded-xl p-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">Already in your CV</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {keywords.existing_keywords.slice(0, 12).map((item, idx) => (
@@ -183,14 +183,14 @@ const MetadataCards = ({ metadata }) => {
       )}
 
       {improvedContent && (
-        <div className="rounded-2xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/70 dark:bg-purple-900/20 p-4 shadow-sm">
-          <p className="text-sm font-semibold text-purple-700 dark:text-purple-200 flex items-center gap-2">
+        <div className="rounded-2xl border border-sage-200 dark:border-sage-900/40 bg-sage-50/70 dark:bg-sage-900/20 p-4 shadow-sm">
+          <p className="text-sm font-semibold text-sage-700 dark:text-sage-200 flex items-center gap-2">
             <FaMagic /> Preview of improvements
           </p>
-          <div className="mt-3 text-sm text-purple-900 dark:text-purple-100 bg-white/70 dark:bg-gray-900/50 border border-purple-100 dark:border-purple-800/40 rounded-xl p-3 max-h-56 overflow-y-auto">
+          <div className="mt-3 text-sm text-sage-900 dark:text-sage-100 bg-white/70 dark:bg-gray-900/50 border border-sage-100 dark:border-sage-800/40 rounded-xl p-3 max-h-56 overflow-y-auto">
             <FormattedText text={improvedContent.length > 1200 ? `${improvedContent.slice(0, 1200)}...` : improvedContent} />
           </div>
-          <p className="mt-2 text-xs text-purple-600 dark:text-purple-200">Download the improved CV to see the full version.</p>
+          <p className="mt-2 text-xs text-sage-600 dark:text-sage-200">Download the improved CV to see the full version.</p>
         </div>
       )}
     </div>
@@ -204,7 +204,7 @@ const ChatMessage = ({ message }) => {
 
   return (
     <div className={`flex items-start gap-3 animate-slide-in ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      <div className={`${isUser ? "bg-gradient-to-br from-green-500 to-emerald-500" : "bg-gradient-to-br from-blue-500 to-purple-600"} w-11 h-11 text-white flex items-center justify-center rounded-2xl shadow-lg flex-shrink-0`}>
+      <div className={`${isUser ? "bg-gradient-to-br from-green-500 to-emerald-500" : "bg-gradient-to-br from-sage-500 to-sage-700"} w-11 h-11 text-white flex items-center justify-center rounded-2xl shadow-lg flex-shrink-0`}>
         {isUser ? <FaUserCircle className="text-xl" /> : <FaRobot className="text-xl" />}
       </div>
 
@@ -212,7 +212,7 @@ const ChatMessage = ({ message }) => {
         <div
           className={`p-4 rounded-3xl shadow-lg border transition-all duration-200 hover:shadow-xl ${
             isUser
-              ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-400"
+              ? "bg-gradient-to-br from-sage-500 to-sage-600 text-white border-sage-400"
               : "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white"
           }`}
         >
@@ -438,17 +438,17 @@ export default function ChatbotPage() {
   const isSendDisabled = !hasCv || isBotTyping || !message.trim();
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-sage-50 via-green-50 to-emerald-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden">
       {/* Header with animated gradient */}
       <div className="flex-shrink-0 backdrop-blur-md bg-white/70 dark:bg-gray-900/70 border-b border-gray-200 dark:border-gray-700 shadow-sm">
         <div className="px-6 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
+              <div className="w-10 h-10 bg-gradient-to-br from-sage-500 to-sage-700 rounded-xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
                 <span className="text-xl">🤖</span>
               </div>
               <div>
-                <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-sage-600 to-sage-700 bg-clip-text text-transparent">
                   PerfectCV AI Assistant
                 </h1>
                 <p className="text-xs text-gray-600 dark:text-gray-400">Your intelligent CV enhancement partner</p>
@@ -457,7 +457,7 @@ export default function ChatbotPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/dashboard')}
-                className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
+                className="px-4 py-2 bg-gradient-to-r from-sage-500 to-sage-700 hover:from-sage-600 hover:to-sage-800 text-white rounded-lg flex items-center gap-2 transition-all duration-300 shadow-md hover:shadow-lg text-sm font-semibold"
               >
                 <FaRobot />
                 <span className="hidden md:inline">Dashboard</span>
@@ -490,7 +490,7 @@ export default function ChatbotPage() {
           <div className="md:w-64 flex-shrink-0">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-3 border border-gray-200 dark:border-gray-700 h-full overflow-y-auto">
               <h2 className="text-sm font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-1.5">
-                <FaUpload className="text-blue-500 text-xs" />
+                <FaUpload className="text-sage-500 text-xs" />
                 Upload CV
               </h2>
               
@@ -500,7 +500,7 @@ export default function ChatbotPage() {
                     ? 'border-gray-400 bg-gray-50 dark:bg-gray-700/50' 
                     : hasCv
                       ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
-                      : 'border-blue-400 hover:border-blue-500 hover:bg-blue-50 dark:border-blue-600 dark:hover:bg-blue-900/20'
+                      : 'border-sage-400 hover:border-sage-500 hover:bg-sage-50 dark:border-sage-600 dark:hover:bg-sage-900/20'
                 }`}
               >
                 <input 
@@ -515,7 +515,7 @@ export default function ChatbotPage() {
                 ) : hasCv ? (
                   <div className="text-2xl mb-1">✅</div>
                 ) : (
-                  <FaUpload className="text-2xl mb-1 text-blue-500" />
+                  <FaUpload className="text-2xl mb-1 text-sage-500" />
                 )}
                 <span className="text-center text-xs font-medium text-gray-600 dark:text-gray-300">
                   {isUploading 
@@ -536,7 +536,7 @@ export default function ChatbotPage() {
                   className={`mt-2 w-full p-2 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 text-sm font-semibold
                     ${isUploading 
                       ? 'bg-gray-400 cursor-wait' 
-                      : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'} text-white`}
+                      : 'bg-gradient-to-r from-sage-500 to-sage-700 hover:from-sage-600 hover:to-sage-800'} text-white`}
                 >
                   {isUploading ? <FaSpinner className="animate-spin text-xs" /> : <FaUpload className="text-xs" />}
                   <span>{isUploading ? "Processing..." : "Analyze"}</span>
@@ -544,7 +544,7 @@ export default function ChatbotPage() {
               )}
 
               {hasCv && (
-                <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                <div className="mt-4 p-3 bg-gradient-to-r from-sage-50 to-green-50 dark:from-sage-900/20 dark:to-sage-800/20 rounded-xl border border-sage-200 dark:border-sage-800">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">✨ Ready to assist!</p>
                   <p className="text-xs text-gray-600 dark:text-gray-400">Your CV has been analyzed. Ask me anything or use quick actions.</p>
                 </div>
@@ -578,16 +578,16 @@ export default function ChatbotPage() {
                   <span
                     className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
                       chatHistory.length
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+                        ? "bg-sage-100 text-sage-700 dark:bg-sage-900/30 dark:text-sage-200"
                         : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
                     }`}
                   >
-                    <FaRobot className={chatHistory.length ? "text-blue-500" : "text-gray-500"} />
+                    <FaRobot className={chatHistory.length ? "text-sage-500" : "text-gray-500"} />
                     Conversation {chatHistory.length ? "active" : "pending"}
                   </span>
                   {hasGeneratedCv && (
-                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
-                      <FaMagic className="text-purple-500" />
+                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-sage-100 text-sage-700 dark:bg-sage-900/40 dark:text-sage-200">
+                      <FaMagic className="text-sage-500" />
                       Improved CV ready
                     </span>
                   )}
@@ -602,7 +602,7 @@ export default function ChatbotPage() {
                       <button
                         key={action.label}
                         onClick={() => handleQuickAction(action.query)}
-                        className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-medium transition-all hover:bg-blue-500 hover:text-white"
+                        className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-medium transition-all hover:bg-sage-500 hover:text-white"
                         disabled={isBotTyping}
                       >
                         {action.label}
@@ -640,13 +640,13 @@ export default function ChatbotPage() {
 
                 {isBotTyping && (
                   <div className="flex items-start gap-3 animate-slide-in">
-                    <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center rounded-2xl shadow-lg">
+                    <div className="w-11 h-11 bg-gradient-to-br from-sage-500 to-sage-700 text-white flex items-center justify-center rounded-2xl shadow-lg">
                       <FaRobot className="text-xl" />
                     </div>
                     <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-5 py-4 rounded-3xl flex gap-2 shadow-lg">
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></span>
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></span>
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }}></span>
+                      <span className="w-2 h-2 bg-sage-500 rounded-full animate-bounce"></span>
+                      <span className="w-2 h-2 bg-sage-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></span>
+                      <span className="w-2 h-2 bg-sage-500 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }}></span>
                     </div>
                   </div>
                 )}
@@ -659,7 +659,7 @@ export default function ChatbotPage() {
                   <textarea
                     ref={messageInputRef}
                     rows={1}
-                    className="flex-1 resize-none p-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-all text-sm leading-relaxed max-h-32"
+                    className="flex-1 resize-none p-2.5 rounded-xl border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent placeholder-gray-400 transition-all text-sm leading-relaxed max-h-32"
                     placeholder={hasCv ? "Ask about your CV..." : "Upload your CV to start chatting"}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
@@ -677,7 +677,7 @@ export default function ChatbotPage() {
                     className={`p-2.5 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSendDisabled
                         ? "bg-gray-400"
-                        : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                        : "bg-gradient-to-r from-sage-500 to-sage-700 hover:from-sage-600 hover:to-sage-800"
                     } text-white`}
                   >
                     {isBotTyping ? <FaSpinner className="animate-spin text-lg" /> : <FaPaperPlane className="text-lg" />}

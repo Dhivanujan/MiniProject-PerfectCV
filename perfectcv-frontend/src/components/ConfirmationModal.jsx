@@ -40,8 +40,8 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-              <FaExclamationCircle className="text-indigo-600 dark:text-indigo-400 text-xl" />
+            <div className="p-2 bg-sage-100 dark:bg-sage-900/30 rounded-lg">
+              <FaExclamationCircle className="text-sage-600 dark:text-sage-400 text-xl" />
             </div>
             <h3 id="modal-title" className="text-xl font-bold text-gray-900 dark:text-gray-100">
               {title}
@@ -67,8 +67,8 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
         <div className="flex justify-center p-6 pt-0">
           <button
             onClick={onConfirm}
-            className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 
-              hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900 
+            className="w-full px-6 py-3 bg-gradient-to-r from-sage-600 to-sage-800 dark:from-sage-700 dark:to-sage-900 
+              hover:from-sage-700 hover:to-sage-900 dark:hover:from-sage-800 dark:hover:to-slate-700 
               text-white rounded-lg font-bold transition-all shadow-sm hover:shadow-md text-base"
             autoFocus
           >

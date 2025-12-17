@@ -67,7 +67,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
         {/* Logo */}
         <Link
           to="/"
-          className="text-2xl font-bold text-indigo-600 dark:text-indigo-400"
+          className="text-2xl font-bold text-sage-600 dark:text-sage-400"
         >
           PerfectCV
         </Link>
@@ -82,13 +82,13 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                   onClick={(e) => handleScrollTo(e, link.id)}
                   className={`relative px-2 py-1 font-medium transition duration-300 group ${
                     location.pathname === "/" && activeSection === link.id
-                      ? "text-indigo-600 dark:text-indigo-400"
-                      : "text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400"
+                      ? "text-sage-600 dark:text-sage-400"
+                      : "text-gray-700 dark:text-gray-200 hover:text-sage-600 dark:hover:text-sage-400"
                   }`}
                 >
                   {link.label}
                   <span
-                    className={`absolute left-0 -bottom-1 h-0.5 bg-indigo-600 dark:bg-indigo-400 transition-all duration-500 ease-in-out transform origin-left ${
+                    className={`absolute left-0 -bottom-1 h-0.5 bg-sage-600 dark:bg-sage-400 transition-all duration-500 ease-in-out transform origin-left ${
                       location.pathname === "/" && activeSection === link.id
                         ? "scale-x-100 opacity-100"
                         : "group-hover:scale-x-100 group-hover:opacity-100 scale-x-0 opacity-0"
@@ -99,13 +99,13 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
 
               <Link
                 to="/login"
-                className="px-4 py-1 border border-indigo-600 text-indigo-600 rounded hover:bg-indigo-50 dark:hover:bg-indigo-800 dark:hover:text-white transition"
+                className="px-4 py-1 border border-sage-600 text-sage-600 rounded hover:bg-sage-50 dark:hover:bg-sage-800 dark:hover:text-white transition"
               >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="px-4 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+                className="px-4 py-1 bg-sage-600 text-white rounded hover:bg-sage-700 transition"
               >
                 Sign Up
               </Link>
@@ -134,7 +134,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
               ) : (
                 <Link
                   to="/chatbot"
-                  className="flex items-center gap-1 text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                  className="flex items-center gap-1 text-gray-700 dark:text-gray-200 hover:text-sage-600 dark:hover:text-sage-400 transition"
                 >
                   <FaRobot /> Chatbot
                 </Link>
@@ -147,7 +147,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
               </button>
               <button
                 onClick={toggleDarkMode}
-                className="text-gray-700 dark:text-gray-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                className="text-gray-700 dark:text-gray-200 hover:text-sage-600 dark:hover:text-sage-400 transition"
                 title="Toggle Dark/Light Mode"
               >
                 {darkMode ? <FaSun /> : <FaMoon />}
@@ -220,17 +220,17 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                   onClick={(e) => handleScrollTo(e, link.id)}
                   className={`block w-full text-left px-4 py-2 transition ${
                     activeSection === link.id
-                      ? "text-indigo-600 dark:text-indigo-400 font-semibold"
-                      : "text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800"
+                      ? "text-sage-600 dark:text-sage-400 font-semibold"
+                      : "text-gray-700 dark:text-gray-200 hover:bg-sage-50 dark:hover:bg-gray-800"
                   }`}
                 >
                   {link.label}
                 </button>
               ))}
-              <Link to="/login" onClick={() => setMenuOpen(false)} className="block px-4 py-2 text-indigo-600 border border-indigo-600 rounded hover:bg-indigo-50 dark:hover:bg-indigo-800 dark:hover:text-white transition">
+              <Link to="/login" onClick={() => setMenuOpen(false)} className="block px-4 py-2 text-sage-600 border border-sage-600 rounded hover:bg-sage-50 dark:hover:bg-sage-800 dark:hover:text-white transition">
                 Login
               </Link>
-              <Link to="/register" onClick={() => setMenuOpen(false)} className="block px-4 py-2 mt-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+              <Link to="/register" onClick={() => setMenuOpen(false)} className="block px-4 py-2 mt-1 bg-sage-600 text-white rounded hover:bg-sage-700 transition">
                 Sign Up
               </Link>
             </>
@@ -244,7 +244,7 @@ export default function Navbar({ user, onLogout, darkMode, toggleDarkMode }) {
                   Dashboard
                 </Link>
               ) : (
-                <Link to="/chatbot" onClick={() => setMenuOpen(false)} className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-gray-800 transition">
+                <Link to="/chatbot" onClick={() => setMenuOpen(false)} className="flex items-center gap-1 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-sage-50 dark:hover:bg-gray-800 transition">
                   <FaRobot /> Chatbot
                 </Link>
               )}

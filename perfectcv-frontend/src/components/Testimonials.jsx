@@ -27,7 +27,7 @@ export default function Testimonials() {
       className="fade-in mt-20 px-6 sm:px-10 max-w-6xl mx-auto text-center"
     >
       <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-10">
-        What Our <span className="text-indigo-600 dark:text-indigo-400">Users Say</span>
+        What Our <span className="text-sage-600 dark:text-sage-400">Users Say</span>
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -43,13 +43,13 @@ export default function Testimonials() {
               ease: "easeOut",
             }}
             className="group bg-white dark:bg-gray-800 rounded-xl border border-transparent 
-                       shadow-sm hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-200/40 
-                       dark:hover:shadow-indigo-900/40 p-6 transition-all duration-300"
+                       shadow-sm hover:border-sage-400 hover:shadow-md hover:shadow-sage-200/40 
+                       dark:hover:shadow-sage-900/40 p-6 transition-all duration-300"
           >
             <p className="text-gray-600 dark:text-gray-300 italic mb-4 leading-relaxed">
-              “{t.text}”
+              "{t.text}"
             </p>
-            <h4 className="font-semibold text-indigo-600 dark:text-indigo-400 transition-colors duration-300">
+            <h4 className="font-semibold text-sage-600 dark:text-sage-400 transition-colors duration-300">
               {t.name}
             </h4>
             <p className="text-sm text-gray-500 dark:text-gray-400">{t.role}</p>

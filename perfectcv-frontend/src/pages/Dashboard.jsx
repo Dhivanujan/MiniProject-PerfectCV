@@ -129,7 +129,7 @@ const SkillsRenderer = ({ content }) => {
             {skills.map((skill, idx) => (
               <span 
                 key={idx}
-                className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                className="text-xs px-3 py-1.5 bg-sage-50 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 rounded-lg border border-sage-200 dark:border-sage-700"
               >
                 {skill}
               </span>
@@ -153,7 +153,7 @@ const SkillsRenderer = ({ content }) => {
     <div className="space-y-4">
       {categories.map(([category, skills]) => (
         <div key={category}>
-          <h5 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 capitalize mb-2">
+          <h5 className="text-sm font-semibold text-sage-700 dark:text-sage-300 capitalize mb-2">
             {category.replace('_', ' ')} Skills
           </h5>
           <div className="flex flex-wrap gap-2">
@@ -163,7 +163,7 @@ const SkillsRenderer = ({ content }) => {
               return (
                 <span 
                   key={idx}
-                  className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                  className="text-xs px-3 py-1.5 bg-sage-50 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 rounded-lg border border-sage-200 dark:border-sage-700"
                 >
                   {cleanSkill}
                 </span>
@@ -210,7 +210,7 @@ const WorkExperienceRenderer = ({ content }) => {
               <h5 className="text-base font-bold text-gray-900 dark:text-gray-100">
                 {job.title || job.position || 'Position'}
               </h5>
-              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+              <p className="text-sm font-medium text-sage-600 dark:text-sage-400">
                 {job.company || 'Company'}
               </p>
             </div>
@@ -230,7 +230,7 @@ const WorkExperienceRenderer = ({ content }) => {
                   if (trimmed.startsWith('-') || trimmed.startsWith('•')) {
                     return (
                       <div key={i} className="flex gap-2 mb-1">
-                        <span className="text-indigo-500">•</span>
+                        <span className="text-sage-500">•</span>
                         <span>{trimmed.replace(/^[-•]\s*/, '')}</span>
                       </div>
                     );
@@ -240,7 +240,7 @@ const WorkExperienceRenderer = ({ content }) => {
               ) : Array.isArray(job.description) ? (
                 job.description.map((point, i) => (
                   <div key={i} className="flex gap-2 mb-1">
-                    <span className="text-indigo-500">•</span>
+                    <span className="text-sage-500">•</span>
                     <span>{point}</span>
                   </div>
                 ))
@@ -251,7 +251,7 @@ const WorkExperienceRenderer = ({ content }) => {
             <div className="text-sm text-gray-700 dark:text-gray-300 mt-2">
               {job.achievements.map((achievement, i) => (
                 <div key={i} className="flex gap-2 mb-1">
-                  <span className="text-indigo-500">•</span>
+                  <span className="text-sage-500">•</span>
                   <span>{achievement}</span>
                 </div>
               ))}
@@ -298,7 +298,7 @@ const EducationRenderer = ({ content }) => {
                 {edu.degree || 'Degree'}
                 {edu.field && ` in ${edu.field}`}
               </h5>
-              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+              <p className="text-sm font-medium text-sage-600 dark:text-sage-400">
                 {edu.institution || edu.school || 'Institution'}
               </p>
             </div>
@@ -376,7 +376,7 @@ const CertificationsRenderer = ({ content }) => {
                   {cert.name || cert.title || 'Certification'}
                 </h5>
                 {(cert.issuer || cert.organization) && (
-                  <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                  <p className="text-xs text-sage-600 dark:text-sage-400 mt-0.5">
                     {cert.issuer || cert.organization}
                   </p>
                 )}
@@ -397,7 +397,7 @@ const CertificationsRenderer = ({ content }) => {
                 href={cert.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline mt-1 inline-block"
+                className="text-xs text-sage-600 dark:text-sage-400 hover:underline mt-1 inline-block"
               >
                 View credential →
               </a>
@@ -443,7 +443,7 @@ const renderSectionContent = (key, content) => {
           {data.website && (
             <p>
               <span className="font-semibold">Website:</span>{' '}
-              <a href={data.website} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+              <a href={data.website} target="_blank" rel="noopener noreferrer" className="text-sage-600 dark:text-sage-400 hover:underline">
                 {data.website}
               </a>
             </p>
@@ -451,7 +451,7 @@ const renderSectionContent = (key, content) => {
           {data.linkedin && (
             <p>
               <span className="font-semibold">LinkedIn:</span>{' '}
-              <a href={data.linkedin} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+              <a href={data.linkedin} target="_blank" rel="noopener noreferrer" className="text-sage-600 dark:text-sage-400 hover:underline">
                 {data.linkedin}
               </a>
             </p>
@@ -535,7 +535,7 @@ const EnhancedCVRenderer = ({ content }) => {
           let titleShown = false;
           
           return (
-            <div key={idx} className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 p-6 rounded-xl border-l-4 border-indigo-500 shadow-sm">
+            <div key={idx} className="bg-gradient-to-r from-sage-50 to-emerald-50 dark:from-sage-900/20 dark:to-emerald-900/20 p-6 rounded-xl border-l-4 border-sage-500 shadow-sm">
               {headerLines.map((line, i) => {
                 const trimmed = line.trim();
                 
@@ -563,7 +563,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 if (nameShown && !titleShown && !hasEmail && !hasPhone && trimmed.length < 80) {
                   titleShown = true;
                   return (
-                    <p key={i} className="text-lg text-indigo-600 dark:text-indigo-400 font-medium mb-3 ml-14">
+                    <p key={i} className="text-lg text-sage-600 dark:text-sage-400 font-medium mb-3 ml-14">
                       {trimmed}
                     </p>
                   );
@@ -573,7 +573,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 if (hasEmail) {
                   return (
                     <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
-                      <FaEnvelope className="text-indigo-500" />
+                      <FaEnvelope className="text-sage-500" />
                       <span>{trimmed}</span>
                     </div>
                   );
@@ -583,7 +583,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 if (hasPhone) {
                   return (
                     <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
-                      <FaPhone className="text-indigo-500" />
+                      <FaPhone className="text-sage-500" />
                       <span>{trimmed}</span>
                     </div>
                   );
@@ -593,7 +593,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 if (nameShown && titleShown) {
                   return (
                     <div key={i} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 mb-2">
-                      <FaMapMarkerAlt className="text-indigo-500" />
+                      <FaMapMarkerAlt className="text-sage-500" />
                       <span>{trimmed}</span>
                     </div>
                   );
@@ -615,7 +615,7 @@ const EnhancedCVRenderer = ({ content }) => {
         if (isSkillsSection) {
           const skills = contentLines.map(line => line.trim().replace(/^[-•]\s*/, '')).filter(s => s);
           return (
-            <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
+            <div key={idx} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-sage-300 dark:hover:border-sage-600 transition-all shadow-sm">
               <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
                 <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
                   {getSectionIcon(section.title)}
@@ -628,7 +628,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 {skills.map((skill, i) => (
                   <span 
                     key={i}
-                    className="text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-700"
+                    className="text-xs px-3 py-1.5 bg-sage-50 dark:bg-sage-900/30 text-sage-700 dark:text-sage-300 rounded-lg border border-sage-200 dark:border-sage-700"
                   >
                     {skill}
                   </span>
@@ -695,7 +695,7 @@ const EnhancedCVRenderer = ({ content }) => {
                 if (item.type === 'bullet') {
                   return (
                     <div key={i} className="flex gap-3 items-start">
-                      <span className="text-indigo-500 mt-1">•</span>
+                      <span className="text-sage-500 mt-1">•</span>
                       <span className="text-gray-700 dark:text-gray-300 flex-1">{item.text}</span>
                     </div>
                   );
@@ -1193,7 +1193,7 @@ export default function Dashboard({ user }) {
 
       {/* Header with professional styling */}
       <header
-        className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 dark:from-indigo-900 dark:via-purple-900 dark:to-pink-900
+        className="bg-gradient-to-br from-sage-600 via-emerald-600 to-teal-600 dark:from-sage-900 dark:via-emerald-900 dark:to-teal-900
         text-white pt-12 pb-16 relative z-0 transition-colors duration-500"
       >
         <div className="max-w-6xl mx-auto px-4">
@@ -1233,8 +1233,8 @@ export default function Dashboard({ user }) {
         <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4 mb-10">
           <div className={`${CARD_SURFACE} p-6 shadow-sm h-full flex flex-col justify-between`}>
             <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl">
-                <FaFileAlt className="text-indigo-500 text-xl" />
+              <div className="p-3 bg-sage-50 dark:bg-sage-900/30 rounded-xl">
+                <FaFileAlt className="text-sage-500 text-xl" />
               </div>
               <span className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">Total Uploads</span>
             </div>
@@ -1299,7 +1299,7 @@ export default function Dashboard({ user }) {
             <div className={`${CARD_SURFACE} p-6 shadow-md border-2 border-blue-200 dark:border-blue-800`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
+                  <div className="p-4 bg-gradient-to-br from-blue-500 to-sage-600 rounded-xl">
                     <FaRobot className="text-white text-2xl" />
                   </div>
                   <div>
@@ -1317,7 +1317,7 @@ export default function Dashboard({ user }) {
                 </div>
                 <button
                   onClick={() => navigate('/chatbot')}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
+                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-sage-600 hover:from-blue-600 hover:to-sage-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
                 >
                   <FaComments />
                   Open Chat
@@ -1336,7 +1336,7 @@ export default function Dashboard({ user }) {
         {/* Upload & Activity */}
         <section className="grid gap-6 lg:grid-cols-3 mb-8">
           <div className={`${PANEL_SURFACE} p-8 lg:col-span-2`}>
-            <h2 className="text-2xl font-bold mb-6 text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
+            <h2 className="text-2xl font-bold mb-6 text-sage-600 dark:text-sage-400 flex items-center gap-3">
               <FaUpload className="text-xl" /> Upload & Optimize CV
             </h2>
             <form onSubmit={handleUploadConfirmation} className="space-y-6">
@@ -1349,8 +1349,8 @@ export default function Dashboard({ user }) {
                   className={`lg:col-span-7 border-dashed border-2 
                   ${
                     dragActive
-                      ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/40"
-                      : "border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500"
+                      ? "border-sage-500 bg-sage-50 dark:bg-sage-900/40"
+                      : "border-gray-300 dark:border-gray-600 hover:border-sage-400 dark:hover:border-sage-500"
                   } p-8 rounded-xl text-center cursor-pointer transition-all duration-200 flex flex-col justify-center min-h-[240px]`}
                   role="button"
                   tabIndex={0}
@@ -1361,8 +1361,8 @@ export default function Dashboard({ user }) {
                   }}
                 >
                   <div className="text-gray-600 dark:text-gray-300">
-                    <div className="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/50 rounded-full flex items-center justify-center">
-                      <FaUpload className="text-2xl text-indigo-600 dark:text-indigo-400" />
+                    <div className="w-16 h-16 mx-auto mb-4 bg-sage-100 dark:bg-sage-900/50 rounded-full flex items-center justify-center">
+                      <FaUpload className="text-2xl text-sage-600 dark:text-sage-400" />
                     </div>
                     <div className="font-semibold text-lg mb-2">
                       {selectedFile
@@ -1388,7 +1388,7 @@ export default function Dashboard({ user }) {
                 <div className="lg:col-span-5 w-full flex flex-col gap-4 justify-center">
                   <div className="bg-gray-50 dark:bg-gray-800/50 p-5 rounded-xl border border-gray-100 dark:border-gray-700">
                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">
-                      <FaBriefcase className="w-4 h-4 text-indigo-500" />
+                      <FaBriefcase className="w-4 h-4 text-sage-500" />
                       Target Job Domain
                     </label>
                     <div className="relative">
@@ -1396,8 +1396,8 @@ export default function Dashboard({ user }) {
                         value={jobDomain}
                         onChange={(e) => setJobDomain(e.target.value)}
                         className="w-full appearance-none p-3 pl-4 pr-10 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#1f2937]
-          text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 
-          focus:border-transparent transition-all duration-200 hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer font-medium"
+          text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-500 
+          focus:border-transparent transition-all duration-200 hover:border-sage-400 dark:hover:border-sage-500 cursor-pointer font-medium"
                       >
                         {JOB_DOMAIN_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -1417,8 +1417,8 @@ export default function Dashboard({ user }) {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 text-white px-6 py-4 rounded-xl 
-                    hover:shadow-lg hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900
+                    className="w-full bg-gradient-to-r from-sage-600 to-emerald-600 dark:from-sage-700 dark:to-emerald-800 text-white px-6 py-4 rounded-xl 
+                    hover:shadow-lg hover:from-sage-700 hover:to-emerald-700 dark:hover:from-sage-800 dark:hover:to-emerald-900
                     transition-all duration-200 flex items-center justify-center gap-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:-translate-y-0.5"
                   >
                     {loading ? (
@@ -1448,7 +1448,7 @@ export default function Dashboard({ user }) {
                   typeof window !== "undefined" &&
                   document.getElementById("user-cv-library")?.scrollIntoView({ behavior: "smooth" })
                 }
-                className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline shrink-0 transition-colors"
+                className="text-sm font-semibold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 hover:underline shrink-0 transition-colors"
               >
                 View library
               </button>
@@ -1462,7 +1462,7 @@ export default function Dashboard({ user }) {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <FaFileAlt className="text-indigo-400 text-sm shrink-0" />
+                        <FaFileAlt className="text-sage-400 text-sm shrink-0" />
                         <p className="font-semibold text-gray-800 dark:text-gray-100 text-sm truncate" title={file.filename}>
                           {truncateFilename(file.filename, 28)}
                         </p>
@@ -1521,7 +1521,7 @@ export default function Dashboard({ user }) {
                       <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">CV Content</span>
                       <button
                         onClick={() => setExpandedPreview(!expandedPreview)}
-                        className="text-xs px-4 py-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60 transition-colors font-medium"
+                        className="text-xs px-4 py-1.5 rounded-lg bg-sage-100 dark:bg-sage-900/40 text-sage-700 dark:text-sage-300 hover:bg-sage-200 dark:hover:bg-sage-900/60 transition-colors font-medium"
                       >
                         {expandedPreview ? "📄 Raw Text" : "👁 Preview"}
                       </button>
@@ -1555,7 +1555,7 @@ export default function Dashboard({ user }) {
                               return (
                                 <div key={section.key} className="bg-white dark:bg-gray-800/50 p-5 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all shadow-sm">
                                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
-                                    <div className="p-2 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-lg">
+                                    <div className="p-2 bg-gradient-to-br from-sage-50 to-emerald-50 dark:from-sage-900/30 dark:to-emerald-900/30 rounded-lg">
                                       {getSectionIcon(section.key)}
                                     </div>
                                     <h4 className="text-base font-bold text-gray-900 dark:text-white uppercase tracking-wide">
@@ -1661,7 +1661,7 @@ export default function Dashboard({ user }) {
                   {foundKeywords && foundKeywords.length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                        <div className="w-2 h-2 bg-sage-500 rounded-full"></div>
                         <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Found Keywords</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -1678,7 +1678,7 @@ export default function Dashboard({ user }) {
                   )}
                   <button
                     onClick={handleDownloadOptimizedCV}
-                    className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 dark:from-indigo-700 dark:to-purple-800 dark:hover:from-indigo-800 dark:hover:to-purple-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                    className="mt-4 w-full bg-gradient-to-r from-sage-600 to-emerald-600 hover:from-sage-700 hover:to-emerald-700 dark:from-sage-700 dark:to-emerald-800 dark:hover:from-sage-800 dark:hover:to-emerald-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
                   >
                     <FaDownload className="text-base" /> Download Optimized PDF
                   </button>
@@ -1703,7 +1703,7 @@ export default function Dashboard({ user }) {
             {orderedSections && orderedSections.length > 0 && (
               <div className="mt-6">
                 <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                  <FaFileAlt className="text-indigo-500" />
+                  <FaFileAlt className="text-sage-500" />
                   CV Sections Overview
                 </h4>
                 <div className="grid md:grid-cols-2 gap-4">
@@ -1711,11 +1711,11 @@ export default function Dashboard({ user }) {
                     return content ? (
                       <div
                         key={key}
-                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all group"
+                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-sage-300 dark:hover:border-sage-600 transition-all group"
                       >
                         <div className="flex items-center gap-2 mb-3">
-                          <div className="w-1 h-6 bg-gradient-to-b from-indigo-500 to-purple-500 rounded-full group-hover:h-8 transition-all"></div>
-                          <h4 className="font-bold text-indigo-600 dark:text-indigo-400 text-sm uppercase tracking-wide">
+                          <div className="w-1 h-6 bg-gradient-to-b from-sage-500 to-emerald-500 rounded-full group-hover:h-8 transition-all"></div>
+                          <h4 className="font-bold text-sage-600 dark:text-sage-400 text-sm uppercase tracking-wide">
                             {label}
                           </h4>
                         </div>
@@ -1724,7 +1724,7 @@ export default function Dashboard({ user }) {
                         </div>
                         <button
                           onClick={() => setExpandedPreview(true)}
-                          className="mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium"
+                          className="mt-3 text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium"
                         >
                           View full section →
                         </button>
@@ -1751,7 +1751,7 @@ export default function Dashboard({ user }) {
                   <div className="space-y-3">
                     {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
                       <div key={cat}>
-                        <h4 className="font-semibold capitalize text-indigo-600">
+                        <h4 className="font-semibold capitalize text-sage-600">
                           {cat.replace("_", " ")}
                         </h4>
                         <ul className="list-disc pl-6 mt-1">
@@ -1787,10 +1787,10 @@ export default function Dashboard({ user }) {
               <div className={`${CARD_SURFACE} p-6 shadow-md h-full flex flex-col`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
-                    <FaChartLine className="text-indigo-500" />
+                    <FaChartLine className="text-sage-500" />
                     <h3 className="text-lg font-bold">Keyword Coverage</h3>
                   </div>
-                  <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">
+                  <span className="text-sm font-semibold text-sage-600 dark:text-sage-300">
                     {keywordInsight.coverage}% match
                   </span>
                 </div>
@@ -1798,7 +1798,7 @@ export default function Dashboard({ user }) {
                   <div>
                     <div className="w-full bg-gray-200 dark:bg-gray-800 rounded-full h-3">
                       <div
-                        className="bg-gradient-to-r from-indigo-500 to-purple-500 h-3 rounded-full"
+                        className="bg-gradient-to-r from-sage-500 to-emerald-500 h-3 rounded-full"
                         style={{ width: `${keywordInsight.coverage}%` }}
                       />
                     </div>
@@ -1861,7 +1861,7 @@ export default function Dashboard({ user }) {
         <section className="mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div
             className="flex items-center gap-3 flex-1 border border-gray-300 dark:border-gray-600 
-            rounded-lg px-4 py-3 bg-white dark:bg-[#1E1E2F] shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all"
+            rounded-lg px-4 py-3 bg-white dark:bg-[#1E1E2F] shadow-sm focus-within:ring-2 focus-within:ring-sage-500 transition-all"
           >
             <FaSearch className="text-gray-400 dark:text-gray-500" />
             <input
@@ -1877,7 +1877,7 @@ export default function Dashboard({ user }) {
               value={sortOption}
               onChange={(e) => setSortOption(e.target.value)}
               className="flex-1 md:flex-none border border-gray-300 dark:border-gray-600 px-4 py-3 rounded-lg 
-              bg-white dark:bg-[#1E1E2F] text-gray-700 dark:text-gray-200 font-medium focus:ring-2 focus:ring-indigo-500 transition-all"
+              bg-white dark:bg-[#1E1E2F] text-gray-700 dark:text-gray-200 font-medium focus:ring-2 focus:ring-sage-500 transition-all"
             >
               <option value="newest">📅 Newest First</option>
               <option value="oldest">📅 Oldest First</option>
@@ -1889,9 +1889,9 @@ export default function Dashboard({ user }) {
         {/* Uploaded CV Cards */}
         <section id="user-cv-library" className="mb-16">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-3">
+            <h2 className="text-3xl font-bold text-sage-600 dark:text-sage-400 flex items-center gap-3">
               <FaFileAlt className="text-2xl" /> Your Uploaded CVs
-              <span className="text-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full font-semibold">
+              <span className="text-lg bg-sage-100 dark:bg-sage-900/50 text-sage-600 dark:text-sage-400 px-3 py-1 rounded-full font-semibold">
                 {filteredFiles.length}
               </span>
             </h2>
@@ -1912,11 +1912,11 @@ export default function Dashboard({ user }) {
                 >
                   <div className="mb-5">
                     <div className="flex items-start gap-4 mb-3">
-                      <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl shrink-0 group-hover:scale-105 transition-transform">
-                        <FaFileAlt className="text-indigo-500 text-xl" />
+                      <div className="p-3 bg-sage-50 dark:bg-sage-900/30 rounded-xl shrink-0 group-hover:scale-105 transition-transform">
+                        <FaFileAlt className="text-sage-500 text-xl" />
                       </div>
                       <div className="flex-1 min-w-0 pt-1">
-                        <h3 className="font-bold text-lg truncate text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={file.filename}>
+                        <h3 className="font-bold text-lg truncate text-gray-900 dark:text-white group-hover:text-sage-600 dark:group-hover:text-sage-400 transition-colors" title={file.filename}>
                           {truncateFilename(file.filename, 24)}
                         </h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
@@ -1960,16 +1960,16 @@ export default function Dashboard({ user }) {
                           alert("Failed to load file for analysis");
                         }
                       }}
-                      className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-700 dark:to-purple-800 hover:from-indigo-700 hover:to-purple-700 dark:hover:from-indigo-800 dark:hover:to-purple-900 text-white px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm hover:shadow-md"
+                      className="w-full bg-gradient-to-r from-sage-600 to-emerald-600 dark:from-sage-700 dark:to-emerald-800 hover:from-sage-700 hover:to-emerald-700 dark:hover:from-sage-800 dark:hover:to-emerald-900 text-white px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm shadow-sm hover:shadow-md"
                     >
                       <FaChartLine /> Analyze CV
                     </button>
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleDownload(file._id, file.filename)}
-                        className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
+                        className="flex-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-sage-300 dark:hover:border-sage-700 hover:bg-sage-50 dark:hover:bg-sage-900/20 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm group/btn"
                       >
-                        <FaDownload className="text-gray-400 group-hover/btn:text-indigo-500 transition-colors" /> Download
+                        <FaDownload className="text-gray-400 group-hover/btn:text-sage-500 transition-colors" /> Download
                       </button>
                       <button
                         onClick={() => handleDelete(file._id)}
@@ -1990,7 +1990,7 @@ export default function Dashboard({ user }) {
       {/* Footer */}
       <footer className="bg-gradient-to-r from-gray-900 to-gray-950 dark:from-[#0D1117] dark:to-[#010409] text-gray-300 py-8 text-center transition-colors duration-500 border-t border-gray-800">
         <div className="max-w-6xl mx-auto px-4">
-          <p className="text-sm">&copy; {new Date().getFullYear()} <span className="font-semibold text-indigo-400">PerfectCV</span>. All rights reserved.</p>
+          <p className="text-sm">&copy; {new Date().getFullYear()} <span className="font-semibold text-sage-400">PerfectCV</span>. All rights reserved.</p>
           <p className="text-xs text-gray-500 mt-2">Craft your perfect resume with AI-powered insights</p>
         </div>
       </footer>

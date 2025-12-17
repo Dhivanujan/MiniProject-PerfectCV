@@ -20,7 +20,7 @@ export default function FAQ() {
         transition={{ duration: 0.5 }}
         className="text-3xl font-bold text-gray-900 dark:text-gray-100 text-center mb-10"
       >
-        Frequently Asked <span className="text-indigo-600">Questions</span>
+        Frequently Asked <span className="text-sage-600">Questions</span>
       </motion.h2>
 
       <div className="space-y-4">
@@ -39,7 +39,7 @@ export default function FAQ() {
               <motion.span 
                 animate={{ rotate: openIndex === i ? 180 : 0 }}
                 transition={{ duration: 0.3 }}
-                className="text-indigo-600"
+                className="text-sage-600"
               >
                 {openIndex === i ? "−" : "+"}
               </motion.span>

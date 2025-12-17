@@ -36,10 +36,10 @@ function About() {
         className="text-center"
       >
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">
-          About <span className="text-indigo-600 dark:text-indigo-400">PerfectCV</span>
+          About <span className="text-sage-600 dark:text-sage-400">PerfectCV</span>
         </h2>
         <p className="text-gray-600 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed text-base sm:text-lg">
-          <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+          <span className="font-semibold text-sage-600 dark:text-sage-400">
             PerfectCV
           </span>{" "}
           is an AI-powered resume builder designed to help job seekers create
@@ -50,7 +50,7 @@ function About() {
           <br />
           <br />
           Our{" "}
-          <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+          <span className="font-semibold text-sage-600 dark:text-sage-400">
             AI Chatbot
           </span>{" "}
           feature offers real-time feedback, tips, and guidance, making the
@@ -95,10 +95,10 @@ function AboutCard({ title, desc, variants }) {
     <motion.div
       variants={variants}
       className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-transparent 
-      shadow-sm hover:border-indigo-400 hover:shadow-md hover:shadow-indigo-200/40 
+      shadow-sm hover:border-sage-400 hover:shadow-md hover:shadow-sage-200/40 
       transition-all duration-300"
     >
-      <h3 className="font-semibold text-lg mb-3 text-indigo-600 dark:text-indigo-400">
+      <h3 className="font-semibold text-lg mb-3 text-sage-600 dark:text-sage-400">
         {title}
       </h3>
       <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">{desc}</p>

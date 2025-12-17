@@ -90,7 +90,7 @@ function Login({ setUser }) {
           hover:shadow-[0_8px_40px_rgba(0,0,0,0.12)]
           transition-all duration-500"
         >
-          <h1 className="text-4xl font-extrabold text-indigo-600 dark:text-indigo-400 mb-3 tracking-tight">
+          <h1 className="text-4xl font-extrabold text-sage-600 dark:text-sage-400 mb-3 tracking-tight">
             PerfectCV
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6 text-center text-sm">
@@ -126,7 +126,7 @@ function Login({ setUser }) {
             className="w-full h-12 px-5 mb-4 border border-gray-300 dark:border-gray-700
             rounded-full outline-none bg-white/90 dark:bg-[#232338]
             text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
-            focus:ring-2 focus:ring-indigo-400 dark:focus:ring-indigo-600 transition-all"
+            focus:ring-2 focus:ring-sage-400 dark:focus:ring-sage-600 transition-all"
           />
 
           {/* Password Input */}
@@ -145,12 +145,12 @@ function Login({ setUser }) {
               className="w-full h-12 px-5 pr-10 border border-gray-300 dark:border-gray-700
               rounded-full outline-none bg-white/90 dark:bg-[#232338]
               text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
-              focus:ring-2 focus:ring-indigo-400 dark:focus:ring-indigo-600 transition-all"
+              focus:ring-2 focus:ring-sage-400 dark:focus:ring-sage-600 transition-all"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-3 text-gray-500 dark:text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition"
+              className="absolute right-4 top-3 text-gray-500 dark:text-gray-400 hover:text-sage-500 dark:hover:text-sage-400 transition"
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
@@ -164,14 +164,14 @@ function Login({ setUser }) {
                 name="remember"
                 checked={formData.remember}
                 onChange={handleChange}
-                className="accent-indigo-500 w-4 h-4"
+                className="accent-sage-500 w-4 h-4"
               />
               Remember me
             </label>
             <button
               type="button"
               onClick={handleForgotPassword}
-              className="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 underline-offset-2 hover:underline transition-colors"
+              className="font-medium text-sage-600 hover:text-sage-700 dark:text-sage-400 dark:hover:text-sage-300 underline-offset-2 hover:underline transition-colors"
             >
               Forgot password?
             </button>
@@ -182,7 +182,7 @@ function Login({ setUser }) {
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.98 }}
             type="submit"
-            className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white 
+            className="w-full h-12 bg-sage-600 hover:bg-sage-700 text-white 
             rounded-full font-semibold tracking-wide transition-all shadow-md hover:shadow-lg"
           >
             Login
@@ -191,7 +191,7 @@ function Login({ setUser }) {
           {/* Register Link */}
           <p className="mt-5 text-sm text-gray-600 dark:text-gray-400">
             Don’t have an account? {" "}
-            <Link to="/register" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+            <Link to="/register" className="text-sage-600 dark:text-sage-400 hover:underline font-medium">
               Sign up
             </Link>
           </p>

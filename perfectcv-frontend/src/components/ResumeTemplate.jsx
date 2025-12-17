@@ -142,7 +142,7 @@ export default function ResumeTemplate({ data }) {
       {skillsList.length > 0 && (
         <section className="mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-1 h-8 bg-gradient-to-b from-violet-500 to-purple-500 rounded-full"></div>
+            <div className="w-1 h-8 bg-gradient-to-b from-sage-500 to-green-500 rounded-full"></div>
             <h2 className="text-2xl font-bold text-slate-800">Key Skills</h2>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pl-7">
@@ -153,13 +153,13 @@ export default function ResumeTemplate({ data }) {
               return (
                 <div
                   key={i}
-                  className="bg-gradient-to-br from-slate-50 to-gray-100 border border-slate-200 px-4 py-3 rounded-lg text-sm font-semibold text-slate-700 hover:shadow-md hover:border-violet-300 transition-all group"
+                  className="bg-gradient-to-br from-slate-50 to-gray-100 border border-slate-200 px-4 py-3 rounded-lg text-sm font-semibold text-slate-700 hover:shadow-md hover:border-sage-300 transition-all group"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 bg-violet-500 rounded-full group-hover:bg-purple-500 transition-colors"></span>
+                    <span className="w-1.5 h-1.5 bg-sage-500 rounded-full group-hover:bg-green-500 transition-colors"></span>
                     <span className="flex-1">{skillName}</span>
                     {skillLevel && (
-                      <span className="text-xs text-violet-600 font-bold">
+                      <span className="text-xs text-sage-600 font-bold">
                         {skillLevel}
                       </span>
                     )}
@@ -175,7 +175,7 @@ export default function ResumeTemplate({ data }) {
       {experienceList.length > 0 && (
         <section className="mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-1 h-8 bg-gradient-to-b from-blue-500 to-cyan-500 rounded-full"></div>
+            <div className="w-1 h-8 bg-gradient-to-b from-sage-500 to-green-500 rounded-full"></div>
             <h2 className="text-2xl font-bold text-slate-800">Professional Experience</h2>
           </div>
           <div className="pl-7 space-y-6">
@@ -189,8 +189,8 @@ export default function ResumeTemplate({ data }) {
               if (!jobTitle && !company) return null;
               
               return (
-                <div key={i} className="relative pl-6 border-l-2 border-slate-200 pb-6 last:pb-0 hover:border-blue-400 transition-colors">
-                  <div className="absolute -left-[9px] top-0 w-4 h-4 bg-blue-500 rounded-full border-4 border-white shadow-md"></div>
+                <div key={i} className="relative pl-6 border-l-2 border-slate-200 pb-6 last:pb-0 hover:border-sage-400 transition-colors">
+                  <div className="absolute -left-[9px] top-0 w-4 h-4 bg-sage-500 rounded-full border-4 border-white shadow-md"></div>
                   <div className="flex flex-wrap justify-between items-start gap-3 mb-3">
                     <div className="flex-1">
                       {jobTitle && (
@@ -199,7 +199,7 @@ export default function ResumeTemplate({ data }) {
                         </h3>
                       )}
                       {company && (
-                        <p className="text-base font-semibold text-blue-600 mt-1">
+                        <p className="text-base font-semibold text-sage-600 mt-1">
                           {company}
                         </p>
                       )}
@@ -221,7 +221,7 @@ export default function ResumeTemplate({ data }) {
                         <ul className="space-y-2">
                           {points.map((point, j) => (
                             <li key={j} className="text-slate-700 flex items-start gap-3">
-                              <span className="text-blue-500 mt-1.5 flex-shrink-0">
+                              <span className="text-sage-500 mt-1.5 flex-shrink-0">
                                 <svg className="w-2 h-2 fill-current" viewBox="0 0 8 8">
                                   <circle cx="4" cy="4" r="4" />
                                 </svg>
