@@ -35,37 +35,21 @@ fastapi-cors
 google-generativeai==0.3.2
 langchain==0.1.0
 langchain-community==0.0.10
-# PDF/Document Processing - Modern Stack
-pypdf>=4.0.0  # Modern PDF extraction (replaces pdfminer)
-PyMuPDF==1.22.5  # Layout-preserving extraction
-python-docx==1.1.0
-pdfplumber==0.7.6  # Legacy fallback
-pdfminer.six==20221105  # Legacy fallback
+# PDF/Document Processing - Unified Stack
+PyMuPDF==1.22.5  # Primary PDF extraction (best quality)
+python-docx==1.1.0  # DOCX extraction
 
-# NLP & Text Processing
+# NLP & Text Processing - spaCy-based extraction
 spacy==3.7.2
-phonenumbers==8.13.26
-nltk>=3.8.1
+# Download spaCy model with: python -m spacy download en_core_web_sm
+phonenumbers==8.13.26  # Phone number parsing and validation
 
 # Modern Data Validation & Formatting
 pydantic>=2.5.0  # Structured data validation
 rich>=13.7.0  # Beautiful terminal formatting and HTML export
 
-# OCR Support for scanned PDFs
-pytesseract>=0.3.10
-pillow>=10.0.0
-pdf2image>=1.16.3
-
-# Additional CV Analysis Libraries
-pdfminer3>=2018.12.3.0
-pafy>=0.5.5
-youtube-dl>=2021.12.17
-
-# Testing
+# Testing & PDF Generation
 pytest>=8.0.0
 reportlab>=4.0.0  # Modern PDF generation
-xhtml2pdf>=0.2.13  # HTML-to-PDF conversion
+xhtml2pdf>=0.2.13  # HTML-to-PDF conversion (Windows-compatible)
 cssselect2>=0.7.0
-
-# Professional PDF Generation (Windows-compatible)
-xhtml2pdf>=0.2.13
