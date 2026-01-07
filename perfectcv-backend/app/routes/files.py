@@ -6,8 +6,9 @@ import gridfs
 from gridfs.errors import NoFile
 import io
 import json
-from app.utils.cv_utils import extract_text_from_any, generate_pdf, optimize_cv
+from app.utils.cv_utils import extract_text_from_any, optimize_cv
 from app.utils.cv_template_mapper import normalize_cv_for_template
+from app.services.cv_generator import get_cv_generator
 
 files_bp = Blueprint('files', __name__)
 
@@ -320,16 +321,29 @@ def upload_cv():
         
         current_app.logger.info(f"Template data created - Name: {template_data.get('name')}, Skills: {len(template_data.get('skills', []))}, Experience: {len(template_data.get('experience', []))}")
 
-        # Generate PDF with structured data for better formatting
+        # Generate PDF with structured data using new cv_generator service
         try:
-            # Pass structured CV data to generate_pdf for professional HTML/CSS rendering
+            cv_gen = get_cv_generator()
+            # Pass structured CV data to cv_generator for professional Jinja2 template rendering
             if structured_payload and any(structured_payload.values()):
-                pdf_bytes = generate_pdf(structured_payload)
+                pdf_bytes = cv_gen.generate_cv_pdf(structured_payload, template_name='modern_cv.html')
             else:
-                pdf_bytes = generate_pdf(optimized_ats_cv)
+                # Fallback: wrap optimized text in basic structure
+                text_data = {
+                    'name': template_data.get('name', 'Resume'),
+                    'summary': optimized_ats_cv[:1000] if len(optimized_ats_cv) > 1000 else optimized_ats_cv,
+                    'experience': [{'description': optimized_ats_cv}]
+                }
+                pdf_bytes = cv_gen.generate_cv_pdf(text_data, template_name='modern_cv.html')
         except Exception as e:
-            current_app.logger.warning("Error generating PDF, returning fallback text version: %s", e)
-            pdf_bytes = generate_pdf(optimized_ats_cv)
+            current_app.logger.warning("Error generating PDF with cv_generator: %s", e)
+            # Final fallback: create minimal PDF with name and text
+            cv_gen = get_cv_generator()
+            fallback_data = {
+                'name': template_data.get('name', 'Resume'),
+                'summary': optimized_ats_cv[:500] if len(optimized_ats_cv) > 500 else optimized_ats_cv
+            }
+            pdf_bytes = cv_gen.generate_cv_pdf(fallback_data, template_name='modern_cv.html')
 
         fs = gridfs.GridFS(current_app.mongo.db)
         # Create a clean, descriptive filename for the optimized CV
@@ -492,12 +506,16 @@ def download_optimized_cv():
         
         current_app.logger.info(f"Download request - Structured CV: {bool(structured_cv)}, Text length: {len(optimized_text) if optimized_text else 0}")
         
+        # Get CV generator instance
+        cv_gen = get_cv_generator()
+        
         # Generate PDF from structured data or optimized text
         pdf_bytes = None
         if structured_cv and isinstance(structured_cv, dict) and any(structured_cv.values()):
-            current_app.logger.info("Generating PDF from structured CV data")
+            current_app.logger.info("Generating PDF from structured CV data using Jinja2 + xhtml2pdf")
             try:
-                pdf_bytes = generate_pdf(structured_cv)
+                # Use new cv_generator service with modern template
+                pdf_bytes = cv_gen.generate_cv_pdf(structured_cv, template_name='modern_cv.html')
             except Exception as e:
                 current_app.logger.warning(f"Failed to generate from structured data: {e}, trying text fallback")
                 pdf_bytes = None
@@ -505,7 +523,13 @@ def download_optimized_cv():
         if not pdf_bytes and optimized_text:
             current_app.logger.info("Generating PDF from optimized text")
             try:
-                pdf_bytes = generate_pdf(optimized_text)
+                # For plain text, create a basic structured format
+                text_data = {
+                    'name': 'Resume',
+                    'summary': optimized_text[:500] if len(optimized_text) > 500 else optimized_text,
+                    'experience': [{'description': optimized_text}]
+                }
+                pdf_bytes = cv_gen.generate_cv_pdf(text_data, template_name='modern_cv.html')
             except Exception as e:
                 current_app.logger.error(f"Failed to generate from text: {e}")
                 return jsonify({"success": False, "message": f"PDF generation failed: {str(e)}"}), 500
@@ -601,9 +625,10 @@ def generate_pdf_from_json():
         if not filename.lower().endswith('.pdf'):
             filename = f"{filename.rsplit('.', 1)[0]}.pdf"
         
-        # Generate PDF from structured CV data
+        # Generate PDF from structured CV data using new cv_generator service
         try:
-            pdf_bytes = generate_pdf(cv_data)
+            cv_gen = get_cv_generator()
+            pdf_bytes = cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html')
             pdf_bytes.seek(0)
         except Exception as e:
             current_app.logger.error(f"PDF generation failed: {e}")

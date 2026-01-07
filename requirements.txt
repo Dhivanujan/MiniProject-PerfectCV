@@ -48,6 +48,5 @@ rich>=13.7.0  # Beautiful terminal formatting and HTML export
 
 # Testing & PDF Generation
 pytest>=8.0.0
-reportlab>=4.0.0  # Modern PDF generation
-xhtml2pdf>=0.2.13  # HTML-to-PDF conversion (Windows-compatible)
-cssselect2>=0.7.0
+Jinja2>=3.1.0  # HTML templating engine
+xhtml2pdf>=0.2.13  # HTML/CSS to PDF conversion (Windows-compatible)

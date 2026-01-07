@@ -15,10 +15,8 @@ from app.services.cv_ai_service import improve_cv_data, score_ats_compatibility
 from app.services.cv_scoring_service import CVScoringService
 from app.services.course_recommender import course_recommender
 from app.utils.cv_template_generator import cv_template_generator
+from app.services.cv_generator import get_cv_generator
 from config.config import Config
-
-# Use ReportLab for PDF generation (WeasyPrint requires system libraries)
-from app.services.cv_pdf_service_reportlab import generate_cv_pdf_reportlab as generate_cv_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -122,15 +120,18 @@ async def generate_cv(
         elif improve and not ai_client:
             logger.warning("AI improvement requested but no AI client available")
         
-        # Step 4: Generate PDF
-        logger.info("Generating PDF...")
+        # Step 4: Generate PDF using new Jinja2 + xhtml2pdf service
+        logger.info("Generating PDF with modern template...")
+        cv_gen = get_cv_generator()
+        
         output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'output')
         os.makedirs(output_dir, exist_ok=True)
         
         output_filename = f"cv_{cv_data.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        generate_cv_pdf(cv_data, temp_output_path)
+        # Generate PDF using Jinja2 template
+        cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html', output_path=temp_output_path)
         
         # Schedule cleanup of temporary input file
         if background_tasks:
@@ -283,14 +284,17 @@ async def generate_pdf_from_json(cv_data: CVData):
         # Convert to dict
         cv_dict = cv_data.dict()
         
-        # Generate PDF
+        # Generate PDF using new Jinja2 + xhtml2pdf service
+        cv_gen = get_cv_generator()
+        
         output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'output')
         os.makedirs(output_dir, exist_ok=True)
         
         output_filename = f"cv_{cv_dict.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        generate_cv_pdf(cv_dict, temp_output_path)
+        # Generate PDF using modern template
+        cv_gen.generate_cv_pdf(cv_dict, template_name='modern_cv.html', output_path=temp_output_path)
         
         logger.info(f"Generated PDF: {temp_output_path}")
         return FileResponse(
