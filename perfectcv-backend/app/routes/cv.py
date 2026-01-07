@@ -10,11 +10,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.services.cv_extract_service import extract_cv_data
+from app.services.unified_cv_extractor import get_cv_extractor
 from app.services.cv_ai_service import improve_cv_data, score_ats_compatibility
 from app.services.cv_scoring_service import CVScoringService
 from app.services.course_recommender import course_recommender
-from app.utils.extractor import extract_text_from_pdf
 from app.utils.cv_template_generator import cv_template_generator
 from config.config import Config
 
@@ -108,9 +107,13 @@ async def generate_cv(
         
         logger.info(f"Saved uploaded file to: {temp_input_path}")
         
-        # Step 2: Extract structured CV data
+        # Step 2: Extract structured CV data using unified spaCy extractor
         logger.info("Extracting CV data...")
-        cv_data = extract_cv_data(temp_input_path, ai_client)
+        extractor = get_cv_extractor()
+        with open(temp_input_path, 'rb') as f:
+            file_content = f.read()
+        extraction_result = extractor.extract_from_file(file_content, file.filename)
+        cv_data = extraction_result['entities']
         
         # Step 3: Improve with AI if requested
         if improve and ai_client:
@@ -184,15 +187,11 @@ async def extract_cv(file: UploadFile = File(...)):
         
         logger.info(f"Extracting data from: {file.filename}")
         
-        # Save temporarily
-        suffix = '.pdf' if file.filename.lower().endswith('.pdf') else '.docx'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            temp_path = tmp_file.name
-        
-        # Extract data
-        cv_data = extract_cv_data(temp_path, ai_client)
+        # Extract data using unified extractor
+        content = await file.read()
+        extractor = get_cv_extractor()
+        extraction_result = extractor.extract_from_file(content, file.filename)
+        cv_data = extraction_result['entities']
         
         # Get ATS score
         ats_score_result = score_ats_compatibility(cv_data)

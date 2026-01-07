@@ -50,21 +50,26 @@ def upload_cv():
         file_bytes = file.read()
         
         # ═══════════════════════════════════════════════════════════════
-        # MODERN EXTRACTION SYSTEM
+        # UNIFIED SPACY-BASED EXTRACTION SYSTEM
         # ═══════════════════════════════════════════════════════════════
-        from app.utils.modern_extractor import extract_pdf_modern
+        from app.services.unified_cv_extractor import get_cv_extractor
         
         try:
-            # Use modern extraction system
-            extraction_result = extract_pdf_modern(file_bytes)
-            text = extraction_result.text
-            text_extraction_metadata = extraction_result.to_dict()
-            current_app.logger.info(f"✨ Modern extraction: {extraction_result.method.value}, "
-                                  f"{extraction_result.word_count} words, "
-                                  f"confidence: {extraction_result.confidence:.2f}")
+            # Use unified spaCy-based extraction system
+            extractor = get_cv_extractor()
+            extraction_result = extractor.extract_from_file(file_bytes, file.filename)
+            text = extraction_result['cleaned_text']
+            text_extraction_metadata = {
+                'method': extraction_result['extraction_method'],
+                'char_count': len(text),
+                'word_count': len(text.split()),
+            }
+            current_app.logger.info(f"✨ Unified extraction: {extraction_result['extraction_method']}, "
+                                  f"{len(text.split())} words")
         except Exception as e:
-            current_app.logger.warning(f"Modern extraction failed, using fallback: {e}")
+            current_app.logger.warning(f"Unified extraction failed, using fallback: {e}")
             # Fallback to legacy extraction
+            from app.utils.cv_utils import extract_text_from_any
             text = extract_text_from_any(file_bytes, file.filename)
             text_extraction_metadata = {}
 
@@ -72,19 +77,30 @@ def upload_cv():
         job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 1: PRIMARY EXTRACTION (Rule-based + spaCy + Regex)
+        # STEP 1: SPACY-BASED EXTRACTION WITH CUSTOM RULES
         # ═══════════════════════════════════════════════════════════════
-        from app.utils.cv_utils import (
-            extract_contact_info_basic, 
-            build_standardized_sections
-        )
+        # Extract structured data from the extraction result
+        entities = extraction_result.get('entities', {})
+        sections = extraction_result.get('sections', {})
         
-        # Primary extraction - contact info
-        contact_info = extract_contact_info_basic(text)
-        current_app.logger.info(f"📧 Primary extraction: name={contact_info.get('name')}, email={contact_info.get('email')}, phone={contact_info.get('phone')}")
+        # Build contact info from extracted entities
+        contact_info = {
+            'name': entities.get('name'),
+            'email': entities.get('email'),
+            'phone': entities.get('phone'),
+            'location': entities.get('location'),
+        }
+        current_app.logger.info(f"📧 Unified extraction: name={contact_info.get('name')}, email={contact_info.get('email')}, phone={contact_info.get('phone')}")
         
-        # Primary extraction - structured sections
-        structured_sections = build_standardized_sections(text)
+        # Build structured sections from entities
+        structured_sections = {
+            'skills': {'technical': entities.get('skills', [])},
+            'work_experience': entities.get('experience', []),
+            'education': entities.get('education', []),
+            'professional_summary': entities.get('summary', ''),
+            'certifications': [],
+            'projects': [],
+        }
         
         # Build primary extraction data package
         primary_extraction = {
@@ -97,41 +113,30 @@ def upload_cv():
             'projects': structured_sections.get('projects', []),
         }
         
-        # ═══════════════════════════════════════════════════════════════
-        # STEP 2: VALIDATION GATE & PHI-3 AI FALLBACK
-        # ═══════════════════════════════════════════════════════════════
-        from app.services.cv_extraction_orchestrator import get_extraction_orchestrator
-        
-        orchestrator = get_extraction_orchestrator()
-        
-        # Extract with validation and AI fallback if needed
-        final_extraction, cv_extraction_metadata = orchestrator.extract_with_fallback(
-            text=text,
-            primary_extraction=primary_extraction
-        )
-        
-        # Update contact_info with final extraction results
-        contact_info = final_extraction.get('contact_info', contact_info)
+        # Use entities as final extraction (spaCy-based extraction is already robust)
+        final_extraction = primary_extraction
         
         # Combine all extraction metadata
         extraction_metadata = {
             **text_extraction_metadata,  # Text extraction (PyMuPDF, etc.)
-            **cv_extraction_metadata,    # CV data extraction (rule-based + AI)
+            'extraction_method': 'spacy_custom_rules',
+            'sections_found': list(sections.keys()),
+        }
+        
+        # Build contact validation result
+        completeness = sum([1 for field in ['name', 'email', 'phone'] if contact_info.get(field)])
+        missing_fields = [field for field in ['name', 'email', 'phone'] if not contact_info.get(field)]
+        
+        contact_validation = {
+            'is_complete': completeness == 3,
+            'completeness': completeness,
+            'score': (completeness / 3) * 100,
+            'missing_fields': missing_fields
         }
         
         # Log extraction results
-        current_app.logger.info(f"✅ Final extraction completeness: {cv_extraction_metadata.get('completeness_score', 0):.1f}%")
-        if cv_extraction_metadata.get('ai_fallback_triggered'):
-            current_app.logger.info(f"🤖 AI Fallback: {'SUCCESS' if cv_extraction_metadata.get('ai_fallback_successful') else 'FAILED'}")
-        current_app.logger.info(f"📊 Extraction method: {cv_extraction_metadata.get('extraction_method', 'unknown')}")
-        
-        # Build contact validation result from extraction metadata
-        contact_validation = {
-            'is_complete': cv_extraction_metadata.get('final_is_complete', cv_extraction_metadata.get('primary_extraction_complete', False)),
-            'completeness': sum([1 for field in ['name', 'email', 'phone'] if contact_info.get(field)]),
-            'score': cv_extraction_metadata.get('final_completeness_score', cv_extraction_metadata.get('completeness_score', 0)),
-            'missing_fields': cv_extraction_metadata.get('missing_critical', [])
-        }
+        current_app.logger.info(f"✅ Extraction completeness: {contact_validation['score']:.1f}%")
+        current_app.logger.info(f"📊 Extraction method: spaCy with custom rules")
 
         # ═══════════════════════════════════════════════════════════════
         # STEP 2: ANALYZE ATS SCORE
@@ -667,19 +672,22 @@ def improve_cv_with_ai():
                 "message": "Missing cv_data in request"
             }), 400
         
-        current_app.logger.info("🎨 CV Improvement requested with Phi-3")
+        current_app.logger.info("🎨 CV Improvement requested")
         
-        # Use orchestrator for improvement
-        from app.services.cv_extraction_orchestrator import get_extraction_orchestrator
-        orchestrator = get_extraction_orchestrator()
+        # Use Gemini AI for improvement
+        from app.utils.cv_utils import optimize_cv
         
-        improved_data = orchestrator.improve_cv_content(cv_data)
+        # Convert cv_data to text format
+        cv_text = json.dumps(cv_data, indent=2)
+        result = optimize_cv(cv_text, use_ai=True)
         
-        if not improved_data:
+        if not result or not result.get('optimized_text'):
             return jsonify({
                 "success": False,
-                "message": "AI improvement failed or Phi-3 not available"
+                "message": "AI improvement failed"
             }), 500
+        
+        improved_data = result
         
         return jsonify({
             "success": True,
@@ -695,24 +703,3 @@ def improve_cv_with_ai():
             "message": f"Server error: {str(e)}"
         }), 500
 
-
-@files_bp.route('/phi3/status', methods=['GET'])
-@login_required
-def phi3_status():
-    """Check if Phi-3 is available"""
-    try:
-        from app.services.phi3_service import get_phi3_service
-        phi3 = get_phi3_service()
-        available = phi3.check_availability()
-        
-        return jsonify({
-            "success": True,
-            "phi3_available": available,
-            "message": "Phi-3 is ready" if available else "Phi-3 not available"
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "phi3_available": False,
-            "message": str(e)
-        }), 500

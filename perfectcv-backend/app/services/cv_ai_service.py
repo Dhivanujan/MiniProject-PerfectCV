@@ -259,12 +259,9 @@ def extract_contact_with_ai(cv_text: str) -> Dict[str, str]:
         Returns empty dict if AI extraction fails
     """
     try:
-        # Try Groq first (fastest)
-        from app.utils.ai_cv_parser import get_ai_parser
-        
-        parser = get_ai_parser()
-        if not parser:
-            logger.warning("⚠ AI parser not available for contact extraction")
+        # Use Groq or OpenAI for extraction
+        if not ai_client:
+            logger.warning("⚠ AI client not available for contact extraction")
             return {}
         
         # Construct strict prompt for contact-only extraction
