@@ -18,13 +18,8 @@ def test_extractor_initialization():
             print("❌ Failed: Extractor is None")
             return False
         
-        if extractor.nlp is None:
-            print("⚠️  Warning: spaCy model not loaded (run: python -m spacy download en_core_web_sm)")
-            print("✓ Extractor created but needs spaCy model")
-            return True
-        
         print(f"✓ Extractor initialized successfully")
-        print(f"✓ spaCy model loaded: {extractor.nlp.meta.get('name', 'unknown')}")
+        print(f"✓ Using pdfplumber for PDF extraction")
         print(f"✓ Skills database: {len(extractor.TECH_SKILLS)} skills")
         print(f"✓ Job titles database: {len(extractor.JOB_TITLES)} titles")
         print(f"✓ Section patterns: {len(extractor.SECTION_PATTERNS)} patterns")
@@ -86,14 +81,8 @@ University of California, Berkeley
         from app.services.unified_cv_extractor import get_cv_extractor
         import tempfile
         
-        # Save sample CV as temporary PDF (simulated)
-        # For this test, we'll just pass the text directly
+        # Get extractor instance
         extractor = get_cv_extractor()
-        
-        if extractor.nlp is None:
-            print("⚠️  Skipping extraction test - spaCy model not loaded")
-            print("   Run: python -m spacy download en_core_web_sm")
-            return True
         
         # Process the text directly (simulating extracted PDF text)
         cleaned_text = extractor._clean_text(sample_cv)

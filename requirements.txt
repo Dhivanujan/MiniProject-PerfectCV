@@ -36,12 +36,10 @@ google-generativeai==0.3.2
 langchain==0.1.0
 langchain-community==0.0.10
 # PDF/Document Processing - Unified Stack
-PyMuPDF==1.22.5  # Primary PDF extraction (best quality)
+pdfplumber>=0.10.0  # Primary PDF extraction with superior layout analysis
 python-docx==1.1.0  # DOCX extraction
 
-# NLP & Text Processing - spaCy-based extraction
-spacy==3.7.2
-# Download spaCy model with: python -m spacy download en_core_web_sm
+# Text Processing
 phonenumbers==8.13.26  # Phone number parsing and validation
 
 # Modern Data Validation & Formatting

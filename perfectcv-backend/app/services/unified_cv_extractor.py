@@ -1,6 +1,6 @@
 """
 Unified CV Extraction Service
-Uses spaCy with custom rules and PyMuPDF layout analysis for robust CV data extraction.
+Uses pdfplumber for superior layout analysis and regex-based entity extraction.
 """
 import re
 import io
@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 # Import text extraction libraries
 try:
-    import fitz  # PyMuPDF - best for PDFs
-    FITZ_AVAILABLE = True
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
 except ImportError:
-    FITZ_AVAILABLE = False
-    logger.warning("PyMuPDF not available. Install: pip install pymupdf")
+    PDFPLUMBER_AVAILABLE = False
+    logger.warning("pdfplumber not available. Install: pip install pdfplumber")
 
 try:
     from docx import Document
@@ -26,16 +26,6 @@ try:
 except ImportError:
     DOCX_AVAILABLE = False
     logger.warning("python-docx not available. Install: pip install python-docx")
-
-# Import NLP libraries
-try:
-    import spacy
-    from spacy.matcher import Matcher, PhraseMatcher
-    from spacy.tokens import Doc, Span
-    SPACY_AVAILABLE = True
-except ImportError:
-    SPACY_AVAILABLE = False
-    logger.error("spaCy not available! Install: pip install spacy && python -m spacy download en_core_web_sm")
 
 try:
     import phonenumbers
@@ -46,7 +36,7 @@ except ImportError:
 
 
 class CVExtractor:
-    """Unified CV extraction using spaCy with custom rules."""
+    """Unified CV extraction using pdfplumber layout analysis and regex patterns."""
     
     # Technical skills database
     TECH_SKILLS = {
@@ -99,64 +89,15 @@ class CVExtractor:
         'summary': r'(?i)^(summary|profile|about|objective|career objective)',
     }
     
-    def __init__(self, spacy_model: str = "en_core_web_sm"):
-        """Initialize CV extractor with spaCy model and custom rules."""
-        self.nlp = None
-        self.matcher = None
-        self.phrase_matcher = None
+    def __init__(self):
+        """Initialize CV extractor with pdfplumber."""
         self._layout_data = None  # Store PDF layout analysis
         
-        if not SPACY_AVAILABLE:
-            logger.error("spaCy is required for CV extraction!")
-            return
-        
-        try:
-            # Load spaCy model
-            self.nlp = spacy.load(spacy_model)
-            logger.info(f"✓ Loaded spaCy model: {spacy_model}")
-            
-            # Initialize matchers for custom rules
-            self._setup_custom_matchers()
-            
-        except OSError:
-            logger.error(f"spaCy model '{spacy_model}' not found!")
-            logger.error(f"Download with: python -m spacy download {spacy_model}")
-    
-    def _setup_custom_matchers(self):
-        """Setup custom pattern matchers for CV entities."""
-        if not self.nlp:
-            return
-        
-        # Token-based pattern matcher
-        self.matcher = Matcher(self.nlp.vocab)
-        
-        # Email pattern: word @ word.word
-        email_pattern = [
-            {"LIKE_EMAIL": True}
-        ]
-        self.matcher.add("EMAIL", [email_pattern])
-        
-        # Phone pattern variations
-        phone_patterns = [
-            # +1 (123) 456-7890
-            [{"TEXT": {"REGEX": r"^\+?\d{1,3}$"}}, {"TEXT": {"REGEX": r"^\(?\d{3}\)?$"}}, 
-             {"TEXT": {"REGEX": r"^\d{3}$"}}, {"TEXT": {"REGEX": r"^\d{4}$"}}],
-            # 123-456-7890
-            [{"TEXT": {"REGEX": r"^\d{3}$"}}, {"TEXT": "-"}, {"TEXT": {"REGEX": r"^\d{3}$"}}, 
-             {"TEXT": "-"}, {"TEXT": {"REGEX": r"^\d{4}$"}}],
-        ]
-        self.matcher.add("PHONE", phone_patterns)
-        
-        # Phrase matcher for skills and job titles
-        self.phrase_matcher = PhraseMatcher(self.nlp.vocab, attr="LOWER")
-        
-        # Add technical skills
-        skill_patterns = [self.nlp.make_doc(skill) for skill in self.TECH_SKILLS]
-        self.phrase_matcher.add("SKILL", skill_patterns)
-        
-        # Add job titles
-        job_patterns = [self.nlp.make_doc(title) for title in self.JOB_TITLES]
-        self.phrase_matcher.add("JOB_TITLE", job_patterns)
+        if not PDFPLUMBER_AVAILABLE:
+            logger.error("pdfplumber is required for CV extraction!")
+            logger.error("Install: pip install pdfplumber")
+        else:
+            logger.info("✓ pdfplumber available for PDF extraction")
     
     def extract_from_file(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -234,7 +175,7 @@ class CVExtractor:
         if file_lower.endswith('.pdf'):
             # Store layout analysis for later use
             self._layout_data = self._analyze_pdf_layout(file_bytes)
-            return self._extract_from_pdf(file_bytes), "PyMuPDF+Layout"
+            return self._extract_from_pdf(file_bytes), "pdfplumber+Layout"
         
         # DOCX extraction
         elif file_lower.endswith('.docx'):
@@ -245,16 +186,16 @@ class CVExtractor:
             raise ValueError(f"Unsupported file format: {filename}")
     
     def _extract_from_pdf(self, file_bytes: bytes) -> str:
-        """Extract text from PDF using PyMuPDF with layout analysis."""
-        if not FITZ_AVAILABLE:
-            raise RuntimeError("PyMuPDF not available. Install: pip install pymupdf")
+        """Extract text from PDF using pdfplumber."""
+        if not PDFPLUMBER_AVAILABLE:
+            raise RuntimeError("pdfplumber not available. Install: pip install pdfplumber")
         
         try:
             text_parts = []
-            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-                for page_num, page in enumerate(doc, 1):
-                    page_text = page.get_text("text")
-                    if page_text.strip():
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text and page_text.strip():
                         text_parts.append(page_text)
             
             return "\n\n".join(text_parts)
@@ -264,17 +205,17 @@ class CVExtractor:
     
     def _analyze_pdf_layout(self, file_bytes: bytes) -> Dict[str, Any]:
         """
-        Analyze PDF layout using PyMuPDF to identify CV components.
+        Analyze PDF layout using pdfplumber to identify CV components.
         
         Returns:
             Dictionary containing:
-            - text_blocks: List of text blocks with position, font, size
+            - text_blocks: List of text objects with position, font, size
             - headers: Detected header blocks (large font, bold)
             - contact_info: Top section blocks (likely contact details)
             - sections: Detected major sections based on layout
         """
-        if not FITZ_AVAILABLE:
-            raise RuntimeError("PyMuPDF not available")
+        if not PDFPLUMBER_AVAILABLE:
+            raise RuntimeError("pdfplumber not available")
         
         try:
             layout_data = {
@@ -285,37 +226,46 @@ class CVExtractor:
                 'font_sizes': []
             }
             
-            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
-                for page_num, page in enumerate(doc, 1):
-                    # Extract text with detailed layout information
-                    blocks = page.get_text("dict")["blocks"]
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                for page_num, page in enumerate(pdf.pages, 1):
+                    # Extract characters with detailed layout information
+                    chars = page.chars
                     
-                    for block in blocks:
-                        if block.get("type") == 0:  # Text block
-                            block_info = self._analyze_text_block(block, page_num, page.rect.height)
-                            if block_info:
-                                layout_data['text_blocks'].append(block_info)
-                                
-                                # Collect font sizes for statistical analysis
-                                if block_info['font_size']:
-                                    layout_data['font_sizes'].append(block_info['font_size'])
-                                
-                                # Identify potential header blocks
-                                # Headers are typically: larger font (12+), bold, or all caps
-                                is_header = (
-                                    (block_info['is_bold'] and block_info['font_size'] >= 12) or
-                                    (block_info['font_size'] >= 14) or
-                                    (block_info['text'].isupper() and len(block_info['text'].split()) <= 5)
-                                )
-                                if is_header:
-                                    layout_data['headers'].append(block_info)
-                                
-                                # Top section blocks (likely contact info) - first 20% of page
-                                if page_num == 1 and block_info['y_position'] < 0.2:
-                                    layout_data['contact_blocks'].append(block_info)
+                    if not chars:
+                        continue
+                    
+                    # Group characters into text blocks (lines)
+                    lines = self._group_chars_into_lines(chars)
+                    page_height = page.height
+                    
+                    for line in lines:
+                        block_info = self._analyze_text_line(line, page_num, page_height)
+                        if block_info:
+                            layout_data['text_blocks'].append(block_info)
+                            
+                            # Collect font sizes for statistical analysis
+                            if block_info['font_size']:
+                                layout_data['font_sizes'].append(block_info['font_size'])
+                            
+                            # Identify potential header blocks
+                            # Headers are typically: larger font (12+), bold, or all caps
+                            is_header = (
+                                (block_info['is_bold'] and block_info['font_size'] >= 12) or
+                                (block_info['font_size'] >= 14) or
+                                (block_info['text'].isupper() and len(block_info['text'].split()) <= 5)
+                            )
+                            if is_header:
+                                layout_data['headers'].append(block_info)
+                            
+                            # Top section blocks (likely contact info) - first 20% of page
+                            if page_num == 1 and block_info['y_position'] < 0.2:
+                                layout_data['contact_blocks'].append(block_info)
             
             # Identify sections based on headers
-            layout_data['sections'] = self._identify_sections_from_layout(layout_data['headers'], layout_data['text_blocks'])
+            layout_data['sections'] = self._identify_sections_from_layout(
+                layout_data['headers'], 
+                layout_data['text_blocks']
+            )
             
             return layout_data
             
@@ -329,65 +279,100 @@ class CVExtractor:
                 'font_sizes': []
             }
     
-    def _analyze_text_block(self, block: Dict, page_num: int, page_height: float) -> Optional[Dict[str, Any]]:
+    def _group_chars_into_lines(self, chars: List[Dict]) -> List[List[Dict]]:
         """
-        Analyze a single text block from PyMuPDF.
+        Group character objects into lines based on vertical position.
         
         Args:
-            block: PyMuPDF text block dictionary
+            chars: List of character dictionaries from pdfplumber
+        
+        Returns:
+            List of lines, where each line is a list of characters
+        """
+        if not chars:
+            return []
+        
+        # Sort characters by vertical position (top), then horizontal (left)
+        sorted_chars = sorted(chars, key=lambda c: (round(c['top'], 1), c['x0']))
+        
+        lines = []
+        current_line = []
+        current_top = None
+        tolerance = 2  # pixels
+        
+        for char in sorted_chars:
+            char_top = round(char['top'], 1)
+            
+            if current_top is None or abs(char_top - current_top) <= tolerance:
+                # Same line
+                current_line.append(char)
+                current_top = char_top
+            else:
+                # New line
+                if current_line:
+                    lines.append(current_line)
+                current_line = [char]
+                current_top = char_top
+        
+        # Add last line
+        if current_line:
+            lines.append(current_line)
+        
+        return lines
+    
+    def _analyze_text_line(self, line_chars: List[Dict], page_num: int, page_height: float) -> Optional[Dict[str, Any]]:
+        """
+        Analyze a text line from pdfplumber characters.
+        
+        Args:
+            line_chars: List of character dictionaries in a line
             page_num: Page number
             page_height: Height of the page for normalizing positions
         
         Returns:
-            Dictionary with block analysis or None if invalid
+            Dictionary with line analysis or None if invalid
         """
         try:
-            lines = block.get("lines", [])
-            if not lines:
+            if not line_chars:
                 return None
             
-            # Extract text and font information from spans
-            text_parts = []
-            font_sizes = []
-            font_names = []
-            is_bold = False
+            # Extract text and font information
+            text = ''.join(char['text'] for char in line_chars)
+            text = text.strip()
             
-            for line in lines:
-                for span in line.get("spans", []):
-                    text = span.get("text", "").strip()
-                    if text:
-                        text_parts.append(text)
-                        font_sizes.append(span.get("size", 0))
-                        font_name = span.get("font", "").lower()
-                        font_names.append(font_name)
-                        
-                        # Check if bold
-                        if "bold" in font_name or span.get("flags", 0) & 2**4:
-                            is_bold = True
-            
-            if not text_parts:
+            if not text:
                 return None
             
-            # Get bounding box
-            bbox = block.get("bbox", [0, 0, 0, 0])
+            # Collect font information
+            font_sizes = [char.get('size', 0) for char in line_chars if char.get('size')]
+            font_names = [char.get('fontname', '') for char in line_chars if char.get('fontname')]
+            
+            # Check if bold (font name contains 'Bold')
+            is_bold = any('bold' in name.lower() for name in font_names if name)
+            
+            # Calculate bounding box
+            x0 = min(char['x0'] for char in line_chars)
+            y0 = min(char['top'] for char in line_chars)
+            x1 = max(char['x1'] for char in line_chars)
+            y1 = max(char['bottom'] for char in line_chars)
             
             return {
-                'text': " ".join(text_parts),
+                'text': text,
                 'page': page_num,
-                'bbox': bbox,
-                'x_position': bbox[0],
-                'y_position': bbox[1] / page_height if page_height > 0 else 0,  # Normalized position
-                'width': bbox[2] - bbox[0],
-                'height': bbox[3] - bbox[1],
+                'bbox': [x0, y0, x1, y1],
+                'x_position': x0,
+                'y_position': y0 / page_height if page_height > 0 else 0,  # Normalized position
+                'width': x1 - x0,
+                'height': y1 - y0,
                 'font_size': max(font_sizes) if font_sizes else 0,
                 'avg_font_size': sum(font_sizes) / len(font_sizes) if font_sizes else 0,
                 'fonts': list(set(font_names)),
                 'is_bold': is_bold,
-                'line_count': len(lines)
+                'char_count': len(line_chars)
             }
             
         except Exception as e:
-            logger.error(f"Block analysis failed: {e}")
+            logger.error(f"Line analysis failed: {e}")
             return None
     
     def _identify_sections_from_layout(self, headers: List[Dict], text_blocks: List[Dict]) -> Dict[str, List[Dict]]:
@@ -505,7 +490,7 @@ class CVExtractor:
         return sections
     
     def _extract_entities(self, text: str, sections: Dict[str, str]) -> Dict[str, Any]:
-        """Extract all entities using spaCy + custom rules."""
+        """Extract all entities using regex patterns and layout analysis."""
         entities = {
             'name': None,
             'email': None,
@@ -519,11 +504,7 @@ class CVExtractor:
             'summary': None,
         }
         
-        if not self.nlp:
-            logger.warning("spaCy not available - limited extraction")
-            return entities
-        
-        # Extract email using regex (more reliable than spaCy)
+        # Extract email using regex
         entities['email'] = self._extract_email(text)
         
         # Extract phone using regex
@@ -537,39 +518,19 @@ class CVExtractor:
         # Fallback to text-based extraction if layout not available or name not found
         if not entities['name']:
             first_lines = '\n'.join(text.split('\n')[:10])  # First 10 lines of document
-            entities['name'] = self._extract_name(first_lines)
+            entities['name'] = self._extract_name_regex(first_lines)
         
-        # Process full document with spaCy
-        doc = self.nlp(text[:10000])  # Limit to first 10k chars for performance
+        # Extract location using regex
+        entities['location'] = self._extract_location(text)
         
-        # Extract location (GPE = Geo-Political Entity)
-        locations = [ent.text for ent in doc.ents if ent.label_ in ('GPE', 'LOC')]
-        if locations:
-            entities['location'] = locations[0]
+        # Extract organizations using regex
+        entities['organizations'] = self._extract_organizations(text)
         
-        # Extract organizations
-        entities['organizations'] = [ent.text for ent in doc.ents if ent.label_ == 'ORG'][:10]
+        # Extract skills using keyword matching
+        entities['skills'] = self._extract_skills_regex(text)
         
-        # Extract skills using phrase matcher
-        matches = self.phrase_matcher(doc)
-        skills_found = set()
-        for match_id, start, end in matches:
-            label = self.nlp.vocab.strings[match_id]
-            if label == "SKILL":
-                skill = doc[start:end].text.lower()
-                skills_found.add(skill)
-        
-        entities['skills'] = sorted(list(skills_found))
-        
-        # Extract job titles using phrase matcher
-        job_titles_found = set()
-        for match_id, start, end in matches:
-            label = self.nlp.vocab.strings[match_id]
-            if label == "JOB_TITLE":
-                title = doc[start:end].text
-                job_titles_found.add(title)
-        
-        entities['job_titles'] = list(job_titles_found)
+        # Extract job titles using keyword matching
+        entities['job_titles'] = self._extract_job_titles_regex(text)
         
         # Extract structured education
         if 'education' in sections:
@@ -617,24 +578,112 @@ class CVExtractor:
             if '@' in text or re.search(r'\d{3}[-\s]\d{3}[-\s]\d{4}', text):
                 continue
             
-            # Use spaCy to verify it's a person name
-            if self.nlp:
-                doc = self.nlp(text)
-                
-                # Check for PERSON entity
-                for ent in doc.ents:
-                    if ent.label_ == 'PERSON':
-                        return ent.text
-                
-                # If no PERSON entity, check if it looks like a name (2-3 capitalized words)
-                words = text.split()
-                if 2 <= len(words) <= 3 and all(w[0].isupper() for w in words if w):
-                    # Filter out job titles
-                    text_lower = text.lower()
-                    if not any(title.lower() in text_lower for title in self.JOB_TITLES[:10]):
-                        return text
+            # Check if it looks like a name (2-3 capitalized words)
+            words = text.split()
+            if 2 <= len(words) <= 3 and all(w[0].isupper() for w in words if w):
+                # Filter out job titles
+                text_lower = text.lower()
+                if not any(title.lower() in text_lower for title in self.JOB_TITLES):
+                    return text
         
         return None
+    
+    def _extract_name_regex(self, text: str) -> Optional[str]:
+        """
+        Extract name using regex patterns.
+        Looks for capitalized words at the beginning of the document.
+        
+        Args:
+            text: First few lines of the CV
+        
+        Returns:
+            Extracted name or None
+        """
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        if not lines:
+            return None
+        
+        # Look at first 5 lines
+        for line in lines[:5]:
+            # Skip lines with email or phone
+            if '@' in line or re.search(r'\d{3}[-\s()]\d{3}[-\s()]\d{4}', line):
+                continue
+            
+            # Name pattern: 2-3 capitalized words
+            name_pattern = r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})$'
+            match = re.match(name_pattern, line)
+            if match:
+                name = match.group(1)
+                # Filter out job titles
+                if not any(title.lower() in name.lower() for title in self.JOB_TITLES):
+                    return name
+        
+        return None
+    
+    def _extract_location(self, text: str) -> Optional[str]:
+        """Extract location using regex patterns."""
+        # Common location patterns
+        patterns = [
+            r'(?:Location|Address|Based in):\s*([A-Z][a-z]+(?:,?\s+[A-Z]{2})?)',
+            r'([A-Z][a-z]+,\s*[A-Z]{2})',  # City, State
+            r'([A-Z][a-z]+,\s*[A-Z][a-z]+)',  # City, Country
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
+        
+        # Look for common city names in first 500 chars
+        common_cities = [
+            'San Francisco', 'New York', 'Los Angeles', 'Chicago', 'Boston',
+            'Seattle', 'Austin', 'Denver', 'Portland', 'Atlanta', 'Miami',
+            'London', 'Paris', 'Berlin', 'Tokyo', 'Singapore', 'Sydney'
+        ]
+        
+        first_part = text[:500]
+        for city in common_cities:
+            if city in first_part:
+                return city
+        
+        return None
+    
+    def _extract_organizations(self, text: str) -> List[str]:
+        """Extract organization names using patterns."""
+        orgs = []
+        
+        # Look for "at Company" or "@ Company" patterns
+        pattern = r'(?:at|@)\s+([A-Z][A-Za-z0-9\s&]+(?:Inc\.|Corp\.|LLC|Ltd\.|Co\.|Group)?)'
+        matches = re.findall(pattern, text)
+        orgs.extend([m.strip() for m in matches])
+        
+        # Remove duplicates and limit
+        return sorted(list(set(orgs)))[:10]
+    
+    def _extract_skills_regex(self, text: str) -> List[str]:
+        """Extract skills using keyword matching."""
+        text_lower = text.lower()
+        skills_found = set()
+        
+        for skill in self.TECH_SKILLS:
+            # Use word boundaries for accurate matching
+            pattern = r'\b' + re.escape(skill.lower()) + r'\b'
+            if re.search(pattern, text_lower):
+                skills_found.add(skill.lower())
+        
+        return sorted(list(skills_found))
+    
+    def _extract_job_titles_regex(self, text: str) -> List[str]:
+        """Extract job titles using keyword matching."""
+        text_lower = text.lower()
+        titles_found = set()
+        
+        for title in self.JOB_TITLES:
+            if title.lower() in text_lower:
+                titles_found.add(title)
+        
+        return list(titles_found)
     
     @staticmethod
     def _extract_email(text: str) -> Optional[str]:
@@ -670,60 +719,7 @@ class CVExtractor:
         
         return None
     
-    def _extract_name(self, header_text: str) -> Optional[str]:
-        """Extract person name from document header."""
-        if not header_text:
-            return None
-        
-        # Process only first few lines
-        lines = header_text.split('\n')[:8]
-        
-        for line in lines:
-            line_clean = line.strip()
-            if not line_clean or len(line_clean) < 3:
-                continue
-            
-            # Skip lines with email, phone, or URLs
-            if '@' in line_clean or 'http' in line_clean.lower():
-                continue
-            if re.search(r'\d{3,}', line_clean):  # Has 3+ consecutive digits
-                continue
-            
-            # Skip common header keywords
-            skip_keywords = {'resume', 'cv', 'curriculum vitae', 'email', 'phone', 'address', 'location'}
-            if line_clean.lower() in skip_keywords:
-                continue
-            
-            # Fallback: If line looks like a name (2-4 words, properly capitalized)
-            words = line_clean.split()
-            if 2 <= len(words) <= 4:
-                # Check if words start with capital letters
-                properly_capped = all(w and len(w) > 1 and w[0].isupper() for w in words)
-                no_numbers = not any(any(c.isdigit() for c in w) for w in words)
-                not_all_caps = not line_clean.isupper()
-                
-                # Skip job titles
-                job_words = {'engineer', 'developer', 'manager', 'analyst', 'scientist', 
-                           'designer', 'architect', 'consultant', 'specialist', 'director',
-                           'lead', 'senior', 'junior', 'staff', 'principal'}
-                has_job_word = any(word.lower() in job_words for word in words)
-                
-                if properly_capped and no_numbers and not_all_caps and not has_job_word:
-                    return line_clean
-            
-            # Use spaCy to find PERSON entities if available
-            if self.nlp:
-                doc = self.nlp(line_clean)
-                persons = [ent.text for ent in doc.ents if ent.label_ == 'PERSON']
-                
-                # Filter out job titles
-                job_indicators = ['engineer', 'developer', 'manager']
-                persons = [p for p in persons if not any(ind in p.lower() for ind in job_indicators)]
-                
-                if persons:
-                    return persons[0]
-        
-        return None
+    # Removed old _extract_name method - replaced with _extract_name_regex
     
     def _parse_education(self, education_text: str) -> List[Dict[str, Any]]:
         """Parse education section into structured entries."""
@@ -755,12 +751,12 @@ class CVExtractor:
             if years:
                 entry['year'] = years[-1]  # Most recent year
             
-            # Extract institution using spaCy
-            if self.nlp:
-                doc = self.nlp(section[:200])
-                orgs = [ent.text for ent in doc.ents if ent.label_ == 'ORG']
-                if orgs:
-                    entry['institution'] = orgs[0]
+            # Extract institution (first capitalized line or org name)
+            lines = [l.strip() for l in section.split('\n') if l.strip()]
+            for line in lines[1:3]:  # Check 2nd and 3rd lines
+                if len(line) > 5 and line[0].isupper():
+                    entry['institution'] = line
+                    break
             
             entries.append(entry)
         
@@ -791,11 +787,12 @@ class CVExtractor:
                 entry['duration'] = date_match.group(0)
             
             # Extract company using spaCy
-            if self.nlp:
-                doc = self.nlp(section[:300])
-                orgs = [ent.text for ent in doc.ents if ent.label_ == 'ORG']
-                if orgs:
-                    entry['company'] = orgs[0]
+            # Extract company name from the section
+            # Look for company patterns
+            company_pattern = r'(?:at|@)\s+([A-Z][A-Za-z0-9\s&]+(?:Inc\.|Corp\.|LLC|Ltd\.|Co\.|Group)?)'
+            match = re.search(company_pattern, section)
+            if match:
+                entry['company'] = match.group(1).strip()
             
             # Extract job title (usually first line)
             first_line = section.split('\n')[0].strip()
