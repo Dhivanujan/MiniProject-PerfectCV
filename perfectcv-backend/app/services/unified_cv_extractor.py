@@ -1,6 +1,6 @@
 """
 Unified CV Extraction Service
-Uses spaCy with custom rules for robust CV data extraction.
+Uses spaCy with custom rules and PyMuPDF layout analysis for robust CV data extraction.
 """
 import re
 import io
@@ -8,6 +8,7 @@ import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ class CVExtractor:
         self.nlp = None
         self.matcher = None
         self.phrase_matcher = None
+        self._layout_data = None  # Store PDF layout analysis
         
         if not SPACY_AVAILABLE:
             logger.error("spaCy is required for CV extraction!")
@@ -194,18 +196,32 @@ class CVExtractor:
         logger.info(f"   - Education: {len(entities.get('education', []))} entries")
         logger.info(f"   - Experience: {len(entities.get('experience', []))} entries")
         
+        # Prepare layout metadata
+        layout_meta = {}
+        if self._layout_data:
+            layout_meta = {
+                'has_layout_analysis': True,
+                'headers_detected': len(self._layout_data.get('headers', [])),
+                'sections_detected': list(self._layout_data.get('sections', {}).keys()),
+                'contact_blocks_count': len(self._layout_data.get('contact_blocks', [])),
+                'avg_font_size': sum(self._layout_data.get('font_sizes', [])) / len(self._layout_data.get('font_sizes', [1])) if self._layout_data.get('font_sizes') else 0
+            }
+        
         result = {
             'raw_text': raw_text,
             'cleaned_text': cleaned_text,
             'extraction_method': extraction_method,
             'sections': sections,
             'entities': entities,
+            'layout_metadata': layout_meta,
             'filename': filename,
             'processed_at': datetime.now().isoformat()
         }
         
         logger.info(f"=" * 70)
         logger.info(f"✅ Successfully processed: {filename}")
+        if layout_meta:
+            logger.info(f"📊 Layout Analysis: {layout_meta['headers_detected']} headers, {len(layout_meta['sections_detected'])} sections")
         logger.info(f"=" * 70)
         
         return result
@@ -214,19 +230,22 @@ class CVExtractor:
         """Extract raw text from PDF or DOCX file."""
         file_lower = filename.lower()
         
-        # PDF extraction
+        # PDF extraction with layout analysis
         if file_lower.endswith('.pdf'):
-            return self._extract_from_pdf(file_bytes), "PyMuPDF"
+            # Store layout analysis for later use
+            self._layout_data = self._analyze_pdf_layout(file_bytes)
+            return self._extract_from_pdf(file_bytes), "PyMuPDF+Layout"
         
         # DOCX extraction
         elif file_lower.endswith('.docx'):
+            self._layout_data = None
             return self._extract_from_docx(file_bytes), "python-docx"
         
         else:
             raise ValueError(f"Unsupported file format: {filename}")
     
     def _extract_from_pdf(self, file_bytes: bytes) -> str:
-        """Extract text from PDF using PyMuPDF."""
+        """Extract text from PDF using PyMuPDF with layout analysis."""
         if not FITZ_AVAILABLE:
             raise RuntimeError("PyMuPDF not available. Install: pip install pymupdf")
         
@@ -242,6 +261,179 @@ class CVExtractor:
         except Exception as e:
             logger.error(f"PDF extraction failed: {e}")
             raise
+    
+    def _analyze_pdf_layout(self, file_bytes: bytes) -> Dict[str, Any]:
+        """
+        Analyze PDF layout using PyMuPDF to identify CV components.
+        
+        Returns:
+            Dictionary containing:
+            - text_blocks: List of text blocks with position, font, size
+            - headers: Detected header blocks (large font, bold)
+            - contact_info: Top section blocks (likely contact details)
+            - sections: Detected major sections based on layout
+        """
+        if not FITZ_AVAILABLE:
+            raise RuntimeError("PyMuPDF not available")
+        
+        try:
+            layout_data = {
+                'text_blocks': [],
+                'headers': [],
+                'contact_blocks': [],
+                'sections': defaultdict(list),
+                'font_sizes': []
+            }
+            
+            with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+                for page_num, page in enumerate(doc, 1):
+                    # Extract text with detailed layout information
+                    blocks = page.get_text("dict")["blocks"]
+                    
+                    for block in blocks:
+                        if block.get("type") == 0:  # Text block
+                            block_info = self._analyze_text_block(block, page_num, page.rect.height)
+                            if block_info:
+                                layout_data['text_blocks'].append(block_info)
+                                
+                                # Collect font sizes for statistical analysis
+                                if block_info['font_size']:
+                                    layout_data['font_sizes'].append(block_info['font_size'])
+                                
+                                # Identify potential header blocks
+                                # Headers are typically: larger font (12+), bold, or all caps
+                                is_header = (
+                                    (block_info['is_bold'] and block_info['font_size'] >= 12) or
+                                    (block_info['font_size'] >= 14) or
+                                    (block_info['text'].isupper() and len(block_info['text'].split()) <= 5)
+                                )
+                                if is_header:
+                                    layout_data['headers'].append(block_info)
+                                
+                                # Top section blocks (likely contact info) - first 20% of page
+                                if page_num == 1 and block_info['y_position'] < 0.2:
+                                    layout_data['contact_blocks'].append(block_info)
+            
+            # Identify sections based on headers
+            layout_data['sections'] = self._identify_sections_from_layout(layout_data['headers'], layout_data['text_blocks'])
+            
+            return layout_data
+            
+        except Exception as e:
+            logger.error(f"PDF layout analysis failed: {e}")
+            return {
+                'text_blocks': [],
+                'headers': [],
+                'contact_blocks': [],
+                'sections': {},
+                'font_sizes': []
+            }
+    
+    def _analyze_text_block(self, block: Dict, page_num: int, page_height: float) -> Optional[Dict[str, Any]]:
+        """
+        Analyze a single text block from PyMuPDF.
+        
+        Args:
+            block: PyMuPDF text block dictionary
+            page_num: Page number
+            page_height: Height of the page for normalizing positions
+        
+        Returns:
+            Dictionary with block analysis or None if invalid
+        """
+        try:
+            lines = block.get("lines", [])
+            if not lines:
+                return None
+            
+            # Extract text and font information from spans
+            text_parts = []
+            font_sizes = []
+            font_names = []
+            is_bold = False
+            
+            for line in lines:
+                for span in line.get("spans", []):
+                    text = span.get("text", "").strip()
+                    if text:
+                        text_parts.append(text)
+                        font_sizes.append(span.get("size", 0))
+                        font_name = span.get("font", "").lower()
+                        font_names.append(font_name)
+                        
+                        # Check if bold
+                        if "bold" in font_name or span.get("flags", 0) & 2**4:
+                            is_bold = True
+            
+            if not text_parts:
+                return None
+            
+            # Get bounding box
+            bbox = block.get("bbox", [0, 0, 0, 0])
+            
+            return {
+                'text': " ".join(text_parts),
+                'page': page_num,
+                'bbox': bbox,
+                'x_position': bbox[0],
+                'y_position': bbox[1] / page_height if page_height > 0 else 0,  # Normalized position
+                'width': bbox[2] - bbox[0],
+                'height': bbox[3] - bbox[1],
+                'font_size': max(font_sizes) if font_sizes else 0,
+                'avg_font_size': sum(font_sizes) / len(font_sizes) if font_sizes else 0,
+                'fonts': list(set(font_names)),
+                'is_bold': is_bold,
+                'line_count': len(lines)
+            }
+            
+        except Exception as e:
+            logger.error(f"Block analysis failed: {e}")
+            return None
+    
+    def _identify_sections_from_layout(self, headers: List[Dict], text_blocks: List[Dict]) -> Dict[str, List[Dict]]:
+        """
+        Identify CV sections based on header blocks and text layout.
+        
+        Args:
+            headers: List of header blocks
+            text_blocks: All text blocks
+        
+        Returns:
+            Dictionary mapping section names to their content blocks
+        """
+        sections = defaultdict(list)
+        
+        # Sort blocks by page and position
+        sorted_blocks = sorted(text_blocks, key=lambda b: (b['page'], b['y_position']))
+        
+        # Section keywords to look for
+        section_keywords = {
+            'experience': ['experience', 'work history', 'employment', 'work experience', 'professional experience'],
+            'education': ['education', 'academic', 'qualification', 'degree'],
+            'skills': ['skills', 'technical skills', 'competencies', 'expertise'],
+            'projects': ['projects', 'portfolio'],
+            'certifications': ['certifications', 'certificates', 'licenses'],
+            'summary': ['summary', 'profile', 'objective', 'about']
+        }
+        
+        current_section = 'other'
+        
+        for block in sorted_blocks:
+            text_lower = block['text'].lower()
+            
+            # Check if this block is a section header
+            section_found = False
+            for section_name, keywords in section_keywords.items():
+                if any(keyword in text_lower for keyword in keywords):
+                    current_section = section_name
+                    section_found = True
+                    sections[current_section].append(block)
+                    break
+            
+            if not section_found:
+                sections[current_section].append(block)
+        
+        return dict(sections)
     
     def _extract_from_docx(self, file_bytes: bytes) -> str:
         """Extract text from DOCX file."""
@@ -337,10 +529,15 @@ class CVExtractor:
         # Extract phone using regex
         entities['phone'] = self._extract_phone(text)
         
-        # Extract name from ENTIRE text first few lines (not just header section)
-        # This handles cases where section parsing might split the name
-        first_lines = '\n'.join(text.split('\n')[:10])  # First 10 lines of document
-        entities['name'] = self._extract_name(first_lines)
+        # Extract name using layout analysis if available (for PDFs)
+        if self._layout_data and self._layout_data.get('contact_blocks'):
+            # Use layout-based name extraction for better accuracy
+            entities['name'] = self._extract_name_from_layout(self._layout_data['contact_blocks'])
+        
+        # Fallback to text-based extraction if layout not available or name not found
+        if not entities['name']:
+            first_lines = '\n'.join(text.split('\n')[:10])  # First 10 lines of document
+            entities['name'] = self._extract_name(first_lines)
         
         # Process full document with spaCy
         doc = self.nlp(text[:10000])  # Limit to first 10k chars for performance
@@ -387,6 +584,57 @@ class CVExtractor:
             entities['summary'] = sections['summary'][:500]  # Limit to 500 chars
         
         return entities
+    
+    def _extract_name_from_layout(self, contact_blocks: List[Dict]) -> Optional[str]:
+        """
+        Extract name using PDF layout analysis.
+        Looks for large, bold text at the top of the CV.
+        
+        Args:
+            contact_blocks: Text blocks from top section of first page
+        
+        Returns:
+            Extracted name or None
+        """
+        if not contact_blocks:
+            return None
+        
+        # Sort by font size (descending) and position (top first)
+        sorted_blocks = sorted(
+            contact_blocks,
+            key=lambda b: (-b.get('font_size', 0), b.get('y_position', 0))
+        )
+        
+        # Look for name in largest text blocks
+        for block in sorted_blocks[:5]:  # Check top 5 blocks
+            text = block.get('text', '').strip()
+            
+            # Skip if too short or too long
+            if not text or len(text) < 3 or len(text) > 50:
+                continue
+            
+            # Skip if contains email or phone patterns
+            if '@' in text or re.search(r'\d{3}[-\s]\d{3}[-\s]\d{4}', text):
+                continue
+            
+            # Use spaCy to verify it's a person name
+            if self.nlp:
+                doc = self.nlp(text)
+                
+                # Check for PERSON entity
+                for ent in doc.ents:
+                    if ent.label_ == 'PERSON':
+                        return ent.text
+                
+                # If no PERSON entity, check if it looks like a name (2-3 capitalized words)
+                words = text.split()
+                if 2 <= len(words) <= 3 and all(w[0].isupper() for w in words if w):
+                    # Filter out job titles
+                    text_lower = text.lower()
+                    if not any(title.lower() in text_lower for title in self.JOB_TITLES[:10]):
+                        return text
+        
+        return None
     
     @staticmethod
     def _extract_email(text: str) -> Optional[str]:
