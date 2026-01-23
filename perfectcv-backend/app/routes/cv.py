@@ -10,16 +10,13 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.services.cv_extract_service import extract_cv_data
+from app.services.unified_cv_extractor import get_cv_extractor
 from app.services.cv_ai_service import improve_cv_data, score_ats_compatibility
 from app.services.cv_scoring_service import CVScoringService
 from app.services.course_recommender import course_recommender
-from app.utils.extractor import extract_text_from_pdf
 from app.utils.cv_template_generator import cv_template_generator
+from app.services.cv_generator import get_cv_generator
 from config.config import Config
-
-# Use ReportLab for PDF generation (WeasyPrint requires system libraries)
-from app.services.cv_pdf_service_reportlab import generate_cv_pdf_reportlab as generate_cv_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +105,13 @@ async def generate_cv(
         
         logger.info(f"Saved uploaded file to: {temp_input_path}")
         
-        # Step 2: Extract structured CV data
+        # Step 2: Extract structured CV data using unified spaCy extractor
         logger.info("Extracting CV data...")
-        cv_data = extract_cv_data(temp_input_path, ai_client)
+        extractor = get_cv_extractor()
+        with open(temp_input_path, 'rb') as f:
+            file_content = f.read()
+        extraction_result = extractor.extract_from_file(file_content, file.filename)
+        cv_data = extraction_result['entities']
         
         # Step 3: Improve with AI if requested
         if improve and ai_client:
@@ -119,15 +120,18 @@ async def generate_cv(
         elif improve and not ai_client:
             logger.warning("AI improvement requested but no AI client available")
         
-        # Step 4: Generate PDF
-        logger.info("Generating PDF...")
+        # Step 4: Generate PDF using new Jinja2 + xhtml2pdf service
+        logger.info("Generating PDF with modern template...")
+        cv_gen = get_cv_generator()
+        
         output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'output')
         os.makedirs(output_dir, exist_ok=True)
         
         output_filename = f"cv_{cv_data.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        generate_cv_pdf(cv_data, temp_output_path)
+        # Generate PDF using Jinja2 template
+        cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html', output_path=temp_output_path)
         
         # Schedule cleanup of temporary input file
         if background_tasks:
@@ -184,15 +188,11 @@ async def extract_cv(file: UploadFile = File(...)):
         
         logger.info(f"Extracting data from: {file.filename}")
         
-        # Save temporarily
-        suffix = '.pdf' if file.filename.lower().endswith('.pdf') else '.docx'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            temp_path = tmp_file.name
-        
-        # Extract data
-        cv_data = extract_cv_data(temp_path, ai_client)
+        # Extract data using unified extractor
+        content = await file.read()
+        extractor = get_cv_extractor()
+        extraction_result = extractor.extract_from_file(content, file.filename)
+        cv_data = extraction_result['entities']
         
         # Get ATS score
         ats_score_result = score_ats_compatibility(cv_data)
@@ -284,14 +284,17 @@ async def generate_pdf_from_json(cv_data: CVData):
         # Convert to dict
         cv_dict = cv_data.dict()
         
-        # Generate PDF
+        # Generate PDF using new Jinja2 + xhtml2pdf service
+        cv_gen = get_cv_generator()
+        
         output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'output')
         os.makedirs(output_dir, exist_ok=True)
         
         output_filename = f"cv_{cv_dict.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        generate_cv_pdf(cv_dict, temp_output_path)
+        # Generate PDF using modern template
+        cv_gen.generate_cv_pdf(cv_dict, template_name='modern_cv.html', output_path=temp_output_path)
         
         logger.info(f"Generated PDF: {temp_output_path}")
         return FileResponse(

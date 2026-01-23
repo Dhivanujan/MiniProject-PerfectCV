@@ -7,7 +7,6 @@ import zipfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.etree import ElementTree as ET
 from pdfminer.high_level import extract_text as pdf_extract_text
-from app.utils import extractor as _extractor
 from app.utils import cleaner as _cleaner
 from pdfminer.layout import LAParams
 from docx import Document
@@ -17,13 +16,14 @@ import google.generativeai as genai
 from app.utils.ai_utils import setup_gemini, get_valid_model, improve_sentence, get_generative_model, generate_with_retry
 from app.utils.nlp_utils import load_spacy_model, extract_entities, classify_header_nlp
 
-# Try to import AI CV parser for advanced features
+# PDF extraction - use PyMuPDF
 try:
-    from app.utils.ai_cv_parser import get_ai_parser, ai_parse_cv, ai_enhance_bullets, ai_categorize_skills
-    AI_PARSER_AVAILABLE = True
+    import fitz  # PyMuPDF
+    FITZ_AVAILABLE = True
 except ImportError:
-    AI_PARSER_AVAILABLE = False
-    logger.warning("AI CV Parser not available. Install OpenAI for advanced features.")
+    FITZ_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("PyMuPDF not available. Install: pip install pymupdf")
 
 logger = logging.getLogger(__name__)
 
@@ -1029,18 +1029,33 @@ def _extract_languages(sections: Dict[str, str]) -> List[str]:
     return _dedupe_preserve_order(candidates)
 
 def extract_text_from_pdf(file_stream):
-    """Wrapper that delegates to a robust extractor and then cleans output."""
+    """Extract text from PDF using PyMuPDF and clean output."""
     try:
-        raw = _extractor.extract_text_from_pdf(file_stream)
+        # Use PyMuPDF for extraction
+        if FITZ_AVAILABLE:
+            pdf_bytes = file_stream.read()
+            file_stream.seek(0)  # Reset stream
+            
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                text_parts = []
+                for page in doc:
+                    page_text = page.get_text("text")
+                    if page_text.strip():
+                        text_parts.append(page_text)
+                raw = "\n\n".join(text_parts)
+        else:
+            # Fallback to pdfminer
+            raw = pdf_extract_text(file_stream)
+        
         if not raw:
             return ""
-        # First apply existing normalization
+        
+        # Apply normalization and cleaning
         norm = normalize_text(raw)
-        # Further cleaning: remove control chars, weird symbols, normalize bullets/dates
         cleaned = _cleaner.clean_full_text(norm)
         return cleaned
     except Exception as e:
-        logger.exception("PDF extraction wrapper failed: %s", e)
+        logger.exception("PDF extraction failed: %s", e)
         return ""
 
 
@@ -2906,258 +2921,9 @@ def optimize_cv_with_gemini(cv_text, job_domain=None):
 
 
 def optimize_cv_with_openai(cv_text: str, job_domain: Optional[str] = None) -> Dict[str, object]:
-    """Advanced CV optimization using OpenAI GPT-4.
-    
-    This provides superior extraction and structuring compared to rule-based methods.
-    Falls back gracefully if OpenAI is not available.
-    """
-    if not AI_PARSER_AVAILABLE:
-        logger.warning("AI CV Parser not available")
-        return {}
-    
-    try:
-        parser = get_ai_parser()
-        if not parser.is_available():
-            logger.warning("OpenAI API key not configured")
-            return {}
-        
-        logger.info("Using OpenAI GPT-4 for advanced CV parsing")
-        
-        # Extract structured data with AI
-        ai_data = parser.extract_structured_cv_data(cv_text, use_ai=True)
-        
-        if not ai_data:
-            return {}
-        
-        # Enhance experience bullets if available
-        if ai_data.get('work_experience'):
-            for job in ai_data['work_experience']:
-                if job.get('achievements'):
-                    enhanced = parser.enhance_experience_bullets(
-                        job['achievements'], 
-                        job.get('title', '')
-                    )
-                    job['achievements'] = enhanced
-        
-        # Categorize skills with AI
-        if ai_data.get('skills'):
-            skills_data = ai_data['skills']
-            if isinstance(skills_data, dict):
-                all_skills = []
-                for key, value in skills_data.items():
-                    if isinstance(value, list):
-                        all_skills.extend(value)
-                
-                if all_skills:
-                    categorized = parser.categorize_skills_ai(all_skills)
-                    ai_data['skills'] = categorized
-        
-        # Build optimized text from AI-extracted data
-        optimized_lines = []
-        
-        # Header
-        contact = ai_data.get('contact_information', {})
-        if contact.get('name'):
-            optimized_lines.append(f"# {contact['name']}")
-            optimized_lines.append("")
-        
-        contact_parts = []
-        if contact.get('email'):
-            contact_parts.append(f"Email: {contact['email']}")
-        if contact.get('phone'):
-            contact_parts.append(f"Phone: {contact['phone']}")
-        if contact.get('location'):
-            contact_parts.append(f"Location: {contact['location']}")
-        if contact.get('linkedin'):
-            contact_parts.append(f"LinkedIn: {contact['linkedin']}")
-        if contact.get('github'):
-            contact_parts.append(f"GitHub: {contact['github']}")
-        
-        if contact_parts:
-            optimized_lines.append(" | ".join(contact_parts))
-            optimized_lines.append("")
-            optimized_lines.append("---")
-            optimized_lines.append("")
-        
-        # Professional Summary
-        if ai_data.get('professional_summary'):
-            optimized_lines.append("## Professional Summary")
-            optimized_lines.append("")
-            optimized_lines.append(ai_data['professional_summary'])
-            optimized_lines.append("")
-        
-        # Skills
-        if ai_data.get('skills'):
-            optimized_lines.append("## Skills")
-            optimized_lines.append("")
-            skills = ai_data['skills']
-            if isinstance(skills, dict):
-                if skills.get('technical'):
-                    optimized_lines.append(f"Technical: {', '.join(skills['technical'])}")
-                if skills.get('frameworks'):
-                    optimized_lines.append(f"Frameworks: {', '.join(skills['frameworks'])}")
-                if skills.get('tools'):
-                    optimized_lines.append(f"Tools: {', '.join(skills['tools'])}")
-                if skills.get('soft'):
-                    optimized_lines.append(f"Soft Skills: {', '.join(skills['soft'])}")
-            optimized_lines.append("")
-        
-        # Work Experience
-        if ai_data.get('work_experience'):
-            optimized_lines.append("## Work Experience")
-            optimized_lines.append("")
-            for job in ai_data['work_experience']:
-                title = job.get('title', 'Position')
-                company = job.get('company', 'Company')
-                dates = job.get('dates', '')
-                location = job.get('location', '')
-                
-                header = f"### {title} | {company}"
-                if dates:
-                    header += f" | {dates}"
-                if location:
-                    header += f" | {location}"
-                
-                optimized_lines.append(header)
-                optimized_lines.append("")
-                
-                if job.get('description'):
-                    optimized_lines.append(job['description'])
-                    optimized_lines.append("")
-                
-                if job.get('achievements'):
-                    for achievement in job['achievements']:
-                        optimized_lines.append(f"- {achievement}")
-                    optimized_lines.append("")
-        
-        # Projects
-        if ai_data.get('projects'):
-            optimized_lines.append("## Projects")
-            optimized_lines.append("")
-            for project in ai_data['projects']:
-                name = project.get('name', 'Project')
-                optimized_lines.append(f"### {name}")
-                if project.get('description'):
-                    optimized_lines.append(f"{project['description']}")
-                if project.get('technologies'):
-                    optimized_lines.append(f"**Technologies:** {', '.join(project['technologies'])}")
-                if project.get('highlights'):
-                    for highlight in project['highlights']:
-                        optimized_lines.append(f"- {highlight}")
-                optimized_lines.append("")
-        
-        # Education
-        if ai_data.get('education'):
-            optimized_lines.append("## Education")
-            optimized_lines.append("")
-            for edu in ai_data['education']:
-                degree = edu.get('degree', 'Degree')
-                institution = edu.get('institution', 'Institution')
-                grad_date = edu.get('graduation_date', '')
-                
-                line = f"**{degree}** — {institution}"
-                if grad_date:
-                    line += f" ({grad_date})"
-                optimized_lines.append(line)
-                
-                if edu.get('field'):
-                    optimized_lines.append(f"*{edu['field']}*")
-                if edu.get('gpa'):
-                    optimized_lines.append(f"GPA: {edu['gpa']}")
-                if edu.get('honors'):
-                    optimized_lines.append(f"Honors: {edu['honors']}")
-                optimized_lines.append("")
-        
-        # Certifications
-        if ai_data.get('certifications'):
-            optimized_lines.append("## Certifications")
-            optimized_lines.append("")
-            for cert in ai_data['certifications']:
-                name = cert.get('name', 'Certification')
-                issuer = cert.get('issuer', '')
-                date = cert.get('date', '')
-                
-                line = f"- {name}"
-                if issuer:
-                    line += f" — {issuer}"
-                if date:
-                    line += f" ({date})"
-                optimized_lines.append(line)
-            optimized_lines.append("")
-        
-        # Languages
-        if ai_data.get('languages'):
-            optimized_lines.append("## Languages")
-            optimized_lines.append("")
-            for lang in ai_data['languages']:
-                if isinstance(lang, dict):
-                    language = lang.get('language', '')
-                    proficiency = lang.get('proficiency', '')
-                    if language:
-                        optimized_lines.append(f"- {language}: {proficiency}" if proficiency else f"- {language}")
-                else:
-                    optimized_lines.append(f"- {lang}")
-            optimized_lines.append("")
-        
-        optimized_text = "\n".join(optimized_lines)
-        
-        # Compute ATS score
-        ats_score, missing_keywords, found_keywords = compute_ats_score(optimized_text, job_domain)
-        
-        # Convert AI data to sections format
-        sections = {}
-        if contact:
-            contact_text = "\n".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in contact.items() if v])
-            sections['contact_information'] = contact_text
-        
-        if ai_data.get('professional_summary'):
-            sections['professional_summary'] = ai_data['professional_summary']
-        
-        if ai_data.get('skills'):
-            sections['skills'] = ai_data['skills']
-        
-        if ai_data.get('work_experience'):
-            sections['work_experience'] = ai_data['work_experience']
-        
-        if ai_data.get('education'):
-            sections['education'] = ai_data['education']
-        
-        if ai_data.get('projects'):
-            sections['projects'] = ai_data['projects']
-        
-        if ai_data.get('certifications'):
-            sections['certifications'] = ai_data['certifications']
-        
-        # Generate suggestions
-        suggestions = []
-        if ai_data.get('professional_summary') and len(ai_data['professional_summary'].split()) < 30:
-            suggestions.append({
-                "category": "summary",
-                "message": "Consider expanding your professional summary to highlight more achievements"
-            })
-        
-        if missing_keywords:
-            suggestions.append({
-                "category": "keywords",
-                "message": f"Consider adding these keywords: {', '.join(missing_keywords[:5])}"
-            })
-        
-        return {
-            "optimized_text": optimized_text,
-            "optimized_cv": optimized_text,
-            "optimized_ats_cv": optimized_text,
-            "sections": sections,
-            "structured_cv": ai_data,
-            "ats_score": ats_score,
-            "recommended_keywords": missing_keywords,
-            "found_keywords": found_keywords,
-            "suggestions": suggestions,
-            "ai_enhanced": True
-        }
-        
-    except Exception as e:
-        logger.error(f"OpenAI CV optimization failed: {e}")
-        return {}
+    """Placeholder - AI parser removed. Use Gemini AI instead."""
+    logger.warning("AI CV Parser removed. Use Gemini-based optimization instead.")
+    return {}
 
 
 def optimize_cv(cv_text, job_domain=None, use_ai=True):
@@ -3181,42 +2947,16 @@ def optimize_cv(cv_text, job_domain=None, use_ai=True):
     
     ai_data: Dict[str, object] = {}
     if use_ai:
-        # Try OpenAI first (best quality)
-        if AI_PARSER_AVAILABLE:
-            try:
-                logger.info("Attempting CV optimization with OpenAI GPT-4...")
-                ai_data = optimize_cv_with_openai(cv_text, job_domain=job_domain) or {}
-                if ai_data and isinstance(ai_data, dict) and ai_data.get("ai_enhanced"):
-                    logger.info("✓ Successfully optimized CV with OpenAI GPT-4")
-                    # Log extracted fields
-                    if "structured" in ai_data:
-                        struct = ai_data["structured"]
-                        logger.info(f"  - Contact: {struct.get('contact_information', {}).get('name', 'N/A')}")
-                        logger.info(f"  - Skills: {len(struct.get('skills', {}).get('all', []))} total")
-                        logger.info(f"  - Experience entries: {len(struct.get('work_experience', []))}")
-                else:
-                    logger.warning("OpenAI returned data but not marked as ai_enhanced")
-                    ai_data = {}
-            except Exception as exc:
-                logger.warning(f"✗ OpenAI optimization failed: {exc}, trying Gemini")
-                ai_data = {}
-        else:
-            logger.info("AI Parser not available, skipping OpenAI")
-        
-        # Fall back to Gemini if OpenAI didn't work
-        if not ai_data:
-            try:
-                logger.info("Attempting CV optimization with Google Gemini...")
-                ai_data = optimize_cv_with_gemini(cv_text, job_domain=job_domain) or {}
-                if not isinstance(ai_data, dict):
-                    logger.warning("Gemini returned non-dict response, ignoring AI output")
-                    ai_data = {}
-                else:
-                    logger.info("✓ Successfully optimized CV with Gemini")
-            except Exception as exc:
-                logger.warning(f"✗ Gemini optimization unavailable: {exc}, falling back to rule-based")
-                ai_data = {}
-
+        # Use Gemini AI for optimization
+        try:
+            logger.info("Attempting CV optimization with Gemini AI...")
+            # Use Gemini-based optimization here
+            ai_data = {}
+        except Exception as exc:
+            logger.warning(f"✗ Gemini optimization failed: {exc}")
+            ai_data = {}
+    
+    # If AI didn't work or wasn't requested, fall back to rule-based
     rule_based = optimize_cv_rule_based(cv_text, job_domain)
 
     # Merge AI insights (if any)

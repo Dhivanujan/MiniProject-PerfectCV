@@ -6,8 +6,9 @@ import gridfs
 from gridfs.errors import NoFile
 import io
 import json
-from app.utils.cv_utils import extract_text_from_any, generate_pdf, optimize_cv
+from app.utils.cv_utils import extract_text_from_any, optimize_cv
 from app.utils.cv_template_mapper import normalize_cv_for_template
+from app.services.cv_generator import get_cv_generator
 
 files_bp = Blueprint('files', __name__)
 
@@ -50,21 +51,26 @@ def upload_cv():
         file_bytes = file.read()
         
         # ═══════════════════════════════════════════════════════════════
-        # MODERN EXTRACTION SYSTEM
+        # UNIFIED SPACY-BASED EXTRACTION SYSTEM
         # ═══════════════════════════════════════════════════════════════
-        from app.utils.modern_extractor import extract_pdf_modern
+        from app.services.unified_cv_extractor import get_cv_extractor
         
         try:
-            # Use modern extraction system
-            extraction_result = extract_pdf_modern(file_bytes)
-            text = extraction_result.text
-            text_extraction_metadata = extraction_result.to_dict()
-            current_app.logger.info(f"✨ Modern extraction: {extraction_result.method.value}, "
-                                  f"{extraction_result.word_count} words, "
-                                  f"confidence: {extraction_result.confidence:.2f}")
+            # Use unified spaCy-based extraction system
+            extractor = get_cv_extractor()
+            extraction_result = extractor.extract_from_file(file_bytes, file.filename)
+            text = extraction_result['cleaned_text']
+            text_extraction_metadata = {
+                'method': extraction_result['extraction_method'],
+                'char_count': len(text),
+                'word_count': len(text.split()),
+            }
+            current_app.logger.info(f"✨ Unified extraction: {extraction_result['extraction_method']}, "
+                                  f"{len(text.split())} words")
         except Exception as e:
-            current_app.logger.warning(f"Modern extraction failed, using fallback: {e}")
+            current_app.logger.warning(f"Unified extraction failed, using fallback: {e}")
             # Fallback to legacy extraction
+            from app.utils.cv_utils import extract_text_from_any
             text = extract_text_from_any(file_bytes, file.filename)
             text_extraction_metadata = {}
 
@@ -72,19 +78,30 @@ def upload_cv():
         job_domain = request.form.get('job_domain') or request.form.get('domain') or request.form.get('target_domain')
 
         # ═══════════════════════════════════════════════════════════════
-        # STEP 1: PRIMARY EXTRACTION (Rule-based + spaCy + Regex)
+        # STEP 1: SPACY-BASED EXTRACTION WITH CUSTOM RULES
         # ═══════════════════════════════════════════════════════════════
-        from app.utils.cv_utils import (
-            extract_contact_info_basic, 
-            build_standardized_sections
-        )
+        # Extract structured data from the extraction result
+        entities = extraction_result.get('entities', {})
+        sections = extraction_result.get('sections', {})
         
-        # Primary extraction - contact info
-        contact_info = extract_contact_info_basic(text)
-        current_app.logger.info(f"📧 Primary extraction: name={contact_info.get('name')}, email={contact_info.get('email')}, phone={contact_info.get('phone')}")
+        # Build contact info from extracted entities
+        contact_info = {
+            'name': entities.get('name'),
+            'email': entities.get('email'),
+            'phone': entities.get('phone'),
+            'location': entities.get('location'),
+        }
+        current_app.logger.info(f"📧 Unified extraction: name={contact_info.get('name')}, email={contact_info.get('email')}, phone={contact_info.get('phone')}")
         
-        # Primary extraction - structured sections
-        structured_sections = build_standardized_sections(text)
+        # Build structured sections from entities
+        structured_sections = {
+            'skills': {'technical': entities.get('skills', [])},
+            'work_experience': entities.get('experience', []),
+            'education': entities.get('education', []),
+            'professional_summary': entities.get('summary', ''),
+            'certifications': [],
+            'projects': [],
+        }
         
         # Build primary extraction data package
         primary_extraction = {
@@ -97,41 +114,30 @@ def upload_cv():
             'projects': structured_sections.get('projects', []),
         }
         
-        # ═══════════════════════════════════════════════════════════════
-        # STEP 2: VALIDATION GATE & PHI-3 AI FALLBACK
-        # ═══════════════════════════════════════════════════════════════
-        from app.services.cv_extraction_orchestrator import get_extraction_orchestrator
-        
-        orchestrator = get_extraction_orchestrator()
-        
-        # Extract with validation and AI fallback if needed
-        final_extraction, cv_extraction_metadata = orchestrator.extract_with_fallback(
-            text=text,
-            primary_extraction=primary_extraction
-        )
-        
-        # Update contact_info with final extraction results
-        contact_info = final_extraction.get('contact_info', contact_info)
+        # Use entities as final extraction (spaCy-based extraction is already robust)
+        final_extraction = primary_extraction
         
         # Combine all extraction metadata
         extraction_metadata = {
             **text_extraction_metadata,  # Text extraction (PyMuPDF, etc.)
-            **cv_extraction_metadata,    # CV data extraction (rule-based + AI)
+            'extraction_method': 'spacy_custom_rules',
+            'sections_found': list(sections.keys()),
+        }
+        
+        # Build contact validation result
+        completeness = sum([1 for field in ['name', 'email', 'phone'] if contact_info.get(field)])
+        missing_fields = [field for field in ['name', 'email', 'phone'] if not contact_info.get(field)]
+        
+        contact_validation = {
+            'is_complete': completeness == 3,
+            'completeness': completeness,
+            'score': (completeness / 3) * 100,
+            'missing_fields': missing_fields
         }
         
         # Log extraction results
-        current_app.logger.info(f"✅ Final extraction completeness: {cv_extraction_metadata.get('completeness_score', 0):.1f}%")
-        if cv_extraction_metadata.get('ai_fallback_triggered'):
-            current_app.logger.info(f"🤖 AI Fallback: {'SUCCESS' if cv_extraction_metadata.get('ai_fallback_successful') else 'FAILED'}")
-        current_app.logger.info(f"📊 Extraction method: {cv_extraction_metadata.get('extraction_method', 'unknown')}")
-        
-        # Build contact validation result from extraction metadata
-        contact_validation = {
-            'is_complete': cv_extraction_metadata.get('final_is_complete', cv_extraction_metadata.get('primary_extraction_complete', False)),
-            'completeness': sum([1 for field in ['name', 'email', 'phone'] if contact_info.get(field)]),
-            'score': cv_extraction_metadata.get('final_completeness_score', cv_extraction_metadata.get('completeness_score', 0)),
-            'missing_fields': cv_extraction_metadata.get('missing_critical', [])
-        }
+        current_app.logger.info(f"✅ Extraction completeness: {contact_validation['score']:.1f}%")
+        current_app.logger.info(f"📊 Extraction method: spaCy with custom rules")
 
         # ═══════════════════════════════════════════════════════════════
         # STEP 2: ANALYZE ATS SCORE
@@ -315,16 +321,29 @@ def upload_cv():
         
         current_app.logger.info(f"Template data created - Name: {template_data.get('name')}, Skills: {len(template_data.get('skills', []))}, Experience: {len(template_data.get('experience', []))}")
 
-        # Generate PDF with structured data for better formatting
+        # Generate PDF with structured data using new cv_generator service
         try:
-            # Pass structured CV data to generate_pdf for professional HTML/CSS rendering
+            cv_gen = get_cv_generator()
+            # Pass structured CV data to cv_generator for professional Jinja2 template rendering
             if structured_payload and any(structured_payload.values()):
-                pdf_bytes = generate_pdf(structured_payload)
+                pdf_bytes = cv_gen.generate_cv_pdf(structured_payload, template_name='modern_cv.html')
             else:
-                pdf_bytes = generate_pdf(optimized_ats_cv)
+                # Fallback: wrap optimized text in basic structure
+                text_data = {
+                    'name': template_data.get('name', 'Resume'),
+                    'summary': optimized_ats_cv[:1000] if len(optimized_ats_cv) > 1000 else optimized_ats_cv,
+                    'experience': [{'description': optimized_ats_cv}]
+                }
+                pdf_bytes = cv_gen.generate_cv_pdf(text_data, template_name='modern_cv.html')
         except Exception as e:
-            current_app.logger.warning("Error generating PDF, returning fallback text version: %s", e)
-            pdf_bytes = generate_pdf(optimized_ats_cv)
+            current_app.logger.warning("Error generating PDF with cv_generator: %s", e)
+            # Final fallback: create minimal PDF with name and text
+            cv_gen = get_cv_generator()
+            fallback_data = {
+                'name': template_data.get('name', 'Resume'),
+                'summary': optimized_ats_cv[:500] if len(optimized_ats_cv) > 500 else optimized_ats_cv
+            }
+            pdf_bytes = cv_gen.generate_cv_pdf(fallback_data, template_name='modern_cv.html')
 
         fs = gridfs.GridFS(current_app.mongo.db)
         # Create a clean, descriptive filename for the optimized CV
@@ -487,12 +506,16 @@ def download_optimized_cv():
         
         current_app.logger.info(f"Download request - Structured CV: {bool(structured_cv)}, Text length: {len(optimized_text) if optimized_text else 0}")
         
+        # Get CV generator instance
+        cv_gen = get_cv_generator()
+        
         # Generate PDF from structured data or optimized text
         pdf_bytes = None
         if structured_cv and isinstance(structured_cv, dict) and any(structured_cv.values()):
-            current_app.logger.info("Generating PDF from structured CV data")
+            current_app.logger.info("Generating PDF from structured CV data using Jinja2 + xhtml2pdf")
             try:
-                pdf_bytes = generate_pdf(structured_cv)
+                # Use new cv_generator service with modern template
+                pdf_bytes = cv_gen.generate_cv_pdf(structured_cv, template_name='modern_cv.html')
             except Exception as e:
                 current_app.logger.warning(f"Failed to generate from structured data: {e}, trying text fallback")
                 pdf_bytes = None
@@ -500,7 +523,13 @@ def download_optimized_cv():
         if not pdf_bytes and optimized_text:
             current_app.logger.info("Generating PDF from optimized text")
             try:
-                pdf_bytes = generate_pdf(optimized_text)
+                # For plain text, create a basic structured format
+                text_data = {
+                    'name': 'Resume',
+                    'summary': optimized_text[:500] if len(optimized_text) > 500 else optimized_text,
+                    'experience': [{'description': optimized_text}]
+                }
+                pdf_bytes = cv_gen.generate_cv_pdf(text_data, template_name='modern_cv.html')
             except Exception as e:
                 current_app.logger.error(f"Failed to generate from text: {e}")
                 return jsonify({"success": False, "message": f"PDF generation failed: {str(e)}"}), 500
@@ -596,9 +625,10 @@ def generate_pdf_from_json():
         if not filename.lower().endswith('.pdf'):
             filename = f"{filename.rsplit('.', 1)[0]}.pdf"
         
-        # Generate PDF from structured CV data
+        # Generate PDF from structured CV data using new cv_generator service
         try:
-            pdf_bytes = generate_pdf(cv_data)
+            cv_gen = get_cv_generator()
+            pdf_bytes = cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html')
             pdf_bytes.seek(0)
         except Exception as e:
             current_app.logger.error(f"PDF generation failed: {e}")
@@ -667,19 +697,22 @@ def improve_cv_with_ai():
                 "message": "Missing cv_data in request"
             }), 400
         
-        current_app.logger.info("🎨 CV Improvement requested with Phi-3")
+        current_app.logger.info("🎨 CV Improvement requested")
         
-        # Use orchestrator for improvement
-        from app.services.cv_extraction_orchestrator import get_extraction_orchestrator
-        orchestrator = get_extraction_orchestrator()
+        # Use Gemini AI for improvement
+        from app.utils.cv_utils import optimize_cv
         
-        improved_data = orchestrator.improve_cv_content(cv_data)
+        # Convert cv_data to text format
+        cv_text = json.dumps(cv_data, indent=2)
+        result = optimize_cv(cv_text, use_ai=True)
         
-        if not improved_data:
+        if not result or not result.get('optimized_text'):
             return jsonify({
                 "success": False,
-                "message": "AI improvement failed or Phi-3 not available"
+                "message": "AI improvement failed"
             }), 500
+        
+        improved_data = result
         
         return jsonify({
             "success": True,
@@ -695,24 +728,3 @@ def improve_cv_with_ai():
             "message": f"Server error: {str(e)}"
         }), 500
 
-
-@files_bp.route('/phi3/status', methods=['GET'])
-@login_required
-def phi3_status():
-    """Check if Phi-3 is available"""
-    try:
-        from app.services.phi3_service import get_phi3_service
-        phi3 = get_phi3_service()
-        available = phi3.check_availability()
-        
-        return jsonify({
-            "success": True,
-            "phi3_available": available,
-            "message": "Phi-3 is ready" if available else "Phi-3 not available"
-        })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "phi3_available": False,
-            "message": str(e)
-        }), 500
