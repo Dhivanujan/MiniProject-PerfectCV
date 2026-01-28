@@ -75,27 +75,35 @@ async def upload_cv(
         raw_text = extraction_result.get('raw_text', '')
         
         # Score the CV
+        ats_score = 0
         try:
+            logger.info("Starting CV scoring...")
             scoring_service = CVScoringService()
             score_result = scoring_service.score_cv(cv_data)
             ats_score = score_result.get('overall_score', 0)
             cv_data['ats_score'] = ats_score
             cv_data['scoring_details'] = score_result
+            logger.info(f"CV scoring completed - Score: {ats_score}")
         except Exception as e:
-            logger.warning(f"CV scoring failed: {e}")
+            logger.warning(f"CV scoring failed: {e}", exc_info=True)
             ats_score = 0
         
         # Generate PDF
         pdf_bytes = None
         try:
+            logger.info("Starting PDF generation...")
             cv_gen = get_cv_generator()
             pdf_result = cv_gen.generate_cv_pdf(cv_data)
             if pdf_result and pdf_result.success:
                 pdf_bytes = pdf_result.pdf_bytes.getvalue() if pdf_result.pdf_bytes else None
+                logger.info("PDF generation completed successfully")
+            else:
+                logger.warning(f"PDF generation returned unsuccessful result")
         except Exception as e:
-            logger.warning(f"PDF generation failed: {e}")
+            logger.error(f"PDF generation failed: {e}", exc_info=True)
         
         # Store in GridFS
+        logger.info("Starting GridFS storage...")
         user_id = current_user.get('id')
         storage_filename = f"{user_id}_{cv_file.filename}"
         
@@ -126,12 +134,29 @@ async def upload_cv(
         
         logger.info(f"CV uploaded successfully - File ID: {file_id}")
         
+        # Prepare JSON-safe cv_data for response
+        try:
+            import json
+            # Test if cv_data is JSON serializable
+            json.dumps(cv_data)
+            response_cv_data = cv_data
+        except (TypeError, ValueError) as e:
+            logger.warning(f"cv_data not JSON serializable, simplifying: {e}")
+            # Return a simplified version
+            response_cv_data = {
+                "name": cv_data.get("name"),
+                "email": cv_data.get("email"),
+                "phone": cv_data.get("phone"),
+                "skills": cv_data.get("skills", [])[:10] if cv_data.get("skills") else [],
+                "summary": cv_data.get("summary", "")[:200] if cv_data.get("summary") else ""
+            }
+        
         return JSONResponse({
             "success": True,
             "message": "CV uploaded and processed successfully",
             "file_id": str(file_id),
             "pdf_file_id": str(pdf_file_id) if pdf_file_id else None,
-            "cv_data": cv_data,
+            "cv_data": response_cv_data,
             "ats_score": ats_score,
             "filename": cv_file.filename
         })
@@ -197,3 +222,10 @@ async def list_user_files(current_user: dict = Depends(get_current_active_user))
     except Exception as e:
         logger.error(f"Error listing files: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/user-files")
+async def list_user_files_alias(current_user: dict = Depends(get_current_active_user)):
+    """
+    Alias for /files endpoint - List all CV files for the current user
+    """
+    return await list_user_files(current_user)
