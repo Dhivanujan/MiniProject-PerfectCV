@@ -11,7 +11,7 @@ from bson import ObjectId
 import gridfs
 
 from app.auth.jwt_handler import get_current_active_user
-from app.services.unified_cv_extractor import UnifiedCVExtractor
+from app.services.unified_cv_extractor import CVExtractor
 from app.services.cv_generator import get_cv_generator
 from app.services.cv_scoring_service import CVScoringService
 
@@ -59,8 +59,8 @@ async def upload_cv(
         
         # Extract CV data
         logger.info(f"Extracting CV data from {cv_file.filename}")
-        extractor = UnifiedCVExtractor()
-        extraction_result = extractor.extract_from_bytes(
+        extractor = CVExtractor()
+        extraction_result = extractor.extract_from_file(
             file_content, 
             filename=cv_file.filename
         )
@@ -150,15 +150,19 @@ async def get_current_user_endpoint(current_user: dict = Depends(get_current_act
     """
     Get current authenticated user information
     """
-    return JSONResponse({
-        "success": True,
-        "user": {
-            "id": current_user.get('id'),
-            "email": current_user.get('email'),
-            "full_name": current_user.get('full_name'),
-            "username": current_user.get('username')
-        }
-    })
+    try:
+        return JSONResponse({
+            "success": True,
+            "user": {
+                "id": current_user.get('id'),
+                "email": current_user.get('email'),
+                "full_name": current_user.get('full_name'),
+                "username": current_user.get('username')
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/files")
 async def list_user_files(current_user: dict = Depends(get_current_active_user)):

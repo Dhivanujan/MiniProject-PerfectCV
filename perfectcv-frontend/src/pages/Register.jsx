@@ -50,8 +50,16 @@ function Register() {
 
       const data = res.data || {};
       if (data.success) {
+        // Store JWT tokens if provided
+        if (data.access_token) {
+          localStorage.setItem("access_token", data.access_token);
+        }
+        if (data.refresh_token) {
+          localStorage.setItem("refresh_token", data.refresh_token);
+        }
+        
         showMessage("success", data.message);
-        setTimeout(() => navigate("/login"), 1500);
+        setTimeout(() => navigate("/dashboard"), 1500);
       } else {
         const details = data.details ? ` - ${data.details}` : "";
         showMessage(

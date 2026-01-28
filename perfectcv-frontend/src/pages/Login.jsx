@@ -33,6 +33,14 @@ function Login({ setUser }) {
       const data = res.data;
 
       if (res.status >= 200 && res.status < 300 && data.success) {
+        // Store JWT tokens
+        if (data.access_token) {
+          localStorage.setItem("access_token", data.access_token);
+        }
+        if (data.refresh_token) {
+          localStorage.setItem("refresh_token", data.refresh_token);
+        }
+        
         setFlashMessages([{ type: "success", message: data.message }]);
         if (setUser) setUser(data.user);
         navigate("/dashboard");
