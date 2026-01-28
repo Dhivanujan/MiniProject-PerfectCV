@@ -241,7 +241,7 @@ async def improve_cv_endpoint(cv_data: CVData):
         logger.info("Improving CV data...")
         
         # Convert Pydantic model to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Improve with AI
         improved_cv = improve_cv_data(cv_dict, ai_client)
@@ -282,7 +282,7 @@ async def generate_pdf_from_json(cv_data: CVData):
         logger.info("Generating PDF from JSON data...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Generate PDF using new Jinja2 + xhtml2pdf service
         cv_gen = get_cv_generator()
@@ -439,7 +439,7 @@ async def get_skill_recommendations(cv_data: CVData):
         logger.info("Generating recommendations...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Predict field and get recommended skills
         predicted_field, recommended_skills = cv_scoring_service.predict_field_and_skills(
@@ -552,7 +552,7 @@ async def enhance_cv_example(cv_data: CVData):
         logger.info("Creating enhanced CV example...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Enhance the CV
         enhanced_cv = cv_template_generator.enhance_cv_professionally(cv_dict)

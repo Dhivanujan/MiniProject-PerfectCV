@@ -27,15 +27,15 @@ if __name__ == '__main__':
     app = create_app()
     
     # Fix for Windows WinError 10038 during auto-reload
-    # Use threaded mode and disable reloader issues
+    # Disable reloader on Windows to prevent socket errors
     import os
     if os.name == 'nt':  # Windows
         app.run(
             host="0.0.0.0",
             port=8000,
             debug=True,
-            use_reloader=True,
-            reloader_type='stat'  # Use stat-based reloader (more stable on Windows)
+            use_reloader=False,  # Disable reloader to prevent WinError 10038
+            threaded=True
         )
     else:  # Linux/Mac
         app.run(

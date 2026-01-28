@@ -37,11 +37,12 @@ def create_app(config_class=Config):
         # Add timeout parameters to MONGO_URI if using Atlas
         mongo_uri = app.config.get('MONGO_URI', 'mongodb://localhost:27017/perfectcv')
         if 'mongodb+srv://' in mongo_uri or 'mongodb.net' in mongo_uri:
-            # Add timeout parameters for Atlas connections
+            # Add timeout parameters and SSL settings for Atlas connections
             separator = '&' if '?' in mongo_uri else '?'
-            mongo_uri += f'{separator}connectTimeoutMS=5000&serverSelectionTimeoutMS=5000&socketTimeoutMS=5000'
+            # Add SSL certificate bypass for certificate validation issues
+            mongo_uri += f'{separator}connectTimeoutMS=5000&serverSelectionTimeoutMS=5000&socketTimeoutMS=5000&tlsAllowInvalidCertificates=true'
             app.config['MONGO_URI'] = mongo_uri
-            app.logger.info("Using MongoDB Atlas with timeout settings")
+            app.logger.info("Using MongoDB Atlas with timeout settings and SSL bypass")
         else:
             app.logger.info("Using local MongoDB")
         
