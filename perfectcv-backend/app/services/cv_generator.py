@@ -37,7 +37,7 @@ except ImportError:
 @dataclass
 class CVGenerationConfig:
     """Configuration for CV generation."""
-    default_template: str = "modern_cv.html"
+    default_template: str = "enhanced_cv.html"  # Enhanced template optimized for xhtml2pdf
     enable_logging: bool = True
     max_pdf_size_mb: float = 10.0
     encoding: str = 'utf-8'

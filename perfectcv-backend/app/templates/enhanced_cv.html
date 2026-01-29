@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ entities.name or "Professional" }} - Resume</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-size: 10pt;
+            color: #2c3e50;
+            line-height: 1.6;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 3px solid #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            font-size: 28pt;
+            color: #2c3e50;
+            font-weight: bold;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        
+        .header .title {
+            font-size: 13pt;
+            color: #555;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        
+        .contact-bar {
+            text-align: center;
+            font-size: 9.5pt;
+            color: #555;
+            padding: 10px 0;
+            background-color: #f5f7fa;
+            margin-bottom: 20px;
+        }
+        
+        .contact-bar span {
+            padding: 0 15px;
+            border-right: 1px solid #ccc;
+        }
+        
+        .contact-bar span:last-child {
+            border-right: none;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+        }
+        
+        .section-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #2c3e50;
+            text-transform: uppercase;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+            letter-spacing: 1px;
+        }
+        
+        .summary-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-left: 4px solid #2c3e50;
+            margin-bottom: 20px;
+            text-align: justify;
+            font-size: 10pt;
+            line-height: 1.7;
+        }
+        
+        .item {
+            margin-bottom: 18px;
+            padding-left: 15px;
+            border-left: 2px solid #ddd;
+        }
+        
+        .item-title {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 3px;
+        }
+        
+        .item-subtitle {
+            font-size: 10.5pt;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+        
+        .item-meta {
+            font-size: 9pt;
+            color: #777;
+            font-style: italic;
+            margin-bottom: 8px;
+        }
+        
+        .item-description {
+            font-size: 10pt;
+            color: #444;
+            line-height: 1.6;
+            text-align: justify;
+        }
+        
+        .item-description ul {
+            margin-left: 20px;
+            margin-top: 5px;
+        }
+        
+        .item-description li {
+            margin-bottom: 4px;
+        }
+        
+        .skills-grid {
+            display: table;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .skills-row {
+            display: table-row;
+        }
+        
+        .skill-cell {
+            display: table-cell;
+            width: 25%;
+            padding: 8px;
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            font-size: 9.5pt;
+            text-align: center;
+        }
+        
+        .two-column {
+            width: 100%;
+        }
+        
+        .two-column table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .two-column td {
+            width: 50%;
+            vertical-align: top;
+            padding: 10px;
+        }
+        
+        .highlight {
+            background-color: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 3px;
+            margin-top: 8px;
+            font-size: 9.5pt;
+        }
+        
+        .highlight strong {
+            color: #2c3e50;
+        }
+        
+        .cert-card {
+            background-color: #f8f9fa;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 3px solid #2c3e50;
+        }
+        
+        .cert-name {
+            font-weight: bold;
+            font-size: 10.5pt;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+        
+        .cert-issuer {
+            font-size: 9.5pt;
+            color: #555;
+            margin-bottom: 2px;
+        }
+        
+        .cert-date {
+            font-size: 9pt;
+            color: #777;
+            font-style: italic;
+        }
+        
+        .page-break {
+            page-break-after: always;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>{{ entities.name or "YOUR NAME" }}</h1>
+        {% if entities.job_titles and entities.job_titles[0] %}
+        <div class="title">{{ entities.job_titles[0] }}</div>
+        {% elif entities.experience and entities.experience[0].title %}
+        <div class="title">{{ entities.experience[0].title }}</div>
+        {% else %}
+        <div class="title">PROFESSIONAL</div>
+        {% endif %}
+    </div>
+    
+    <!-- Contact Information Bar -->
+    <div class="contact-bar">
+        {% if entities.email %}
+        <span>{{ entities.email }}</span>
+        {% endif %}
+        {% if entities.phone %}
+        <span>{{ entities.phone }}</span>
+        {% endif %}
+        {% if entities.location %}
+        <span>{{ entities.location }}</span>
+        {% endif %}
+        {% if entities.linkedin %}
+        <span>{{ entities.linkedin }}</span>
+        {% endif %}
+    </div>
+    
+    <!-- Professional Summary -->
+    {% if entities.summary %}
+    <div class="section">
+        <div class="section-title">Professional Summary</div>
+        <div class="summary-box">
+            {{ entities.summary }}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Core Skills -->
+    {% if entities.skills %}
+    <div class="section">
+        <div class="section-title">Core Skills</div>
+        <div class="skills-grid">
+            {% for i in range(0, entities.skills|length, 4) %}
+            <div class="skills-row">
+                {% for skill in entities.skills[i:i+4] %}
+                <div class="skill-cell">{{ skill }}</div>
+                {% endfor %}
+                {% if (entities.skills[i:i+4]|length < 4) %}
+                    {% for j in range(4 - entities.skills[i:i+4]|length) %}
+                    <div class="skill-cell">&nbsp;</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            {% if loop.index >= 5 %}{% break %}{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Work Experience -->
+    {% if entities.experience %}
+    <div class="section">
+        <div class="section-title">Professional Experience</div>
+        {% for exp in entities.experience %}
+        <div class="item">
+            <div class="item-title">{{ exp.title or "Position" }}</div>
+            <div class="item-subtitle">{{ exp.company or "Company Name" }}</div>
+            <div class="item-meta">
+                {% if exp.duration %}{{ exp.duration }}{% endif %}
+                {% if exp.duration and exp.location %} | {% endif %}
+                {% if exp.location %}{{ exp.location }}{% endif %}
+            </div>
+            {% if exp.description %}
+            <div class="item-description">
+                {% if exp.description is string %}
+                <p>{{ exp.description }}</p>
+                {% else %}
+                <ul>
+                    {% for point in exp.description[:5] %}
+                    <li>{{ point }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if exp.achievements %}
+            <div class="highlight">
+                <strong>Key Achievements:</strong> {{ exp.achievements }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Projects -->
+    {% if entities.projects %}
+    <div class="section">
+        <div class="section-title">Key Projects</div>
+        {% for project in entities.projects[:3] %}
+        <div class="item">
+            <div class="item-title">{{ project.name or project.title or "Project" }}</div>
+            {% if project.role %}
+            <div class="item-subtitle">{{ project.role }}</div>
+            {% endif %}
+            {% if project.duration %}
+            <div class="item-meta">{{ project.duration }}</div>
+            {% endif %}
+            {% if project.description %}
+            <div class="item-description">
+                <p>{{ project.description }}</p>
+            </div>
+            {% endif %}
+            {% if project.technologies %}
+            <div class="highlight">
+                <strong>Technologies:</strong> {{ project.technologies if project.technologies is string else project.technologies|join(', ') }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Education -->
+    {% if entities.education %}
+    <div class="section">
+        <div class="section-title">Education</div>
+        {% for edu in entities.education %}
+        <div class="item">
+            <div class="item-title">{{ edu.degree or "Degree" }}</div>
+            <div class="item-subtitle">{{ edu.institution or "Institution" }}</div>
+            <div class="item-meta">
+                {% if edu.year %}{{ edu.year }}{% endif %}
+                {% if edu.year and edu.location %} | {% endif %}
+                {% if edu.location %}{{ edu.location }}{% endif %}
+            </div>
+            {% if edu.gpa %}
+            <div class="item-description">
+                <strong>GPA:</strong> {{ edu.gpa }}
+            </div>
+            {% endif %}
+            {% if edu.honors %}
+            <div class="highlight">
+                <strong>Honors:</strong> {{ edu.honors }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Certifications -->
+    {% if entities.certifications %}
+    <div class="section">
+        <div class="section-title">Certifications</div>
+        {% for cert in entities.certifications %}
+        <div class="cert-card">
+            <div class="cert-name">{{ cert.name or cert.title or "Certification" }}</div>
+            {% if cert.issuer or cert.organization %}
+            <div class="cert-issuer">{{ cert.issuer or cert.organization }}</div>
+            {% endif %}
+            {% if cert.date or cert.year %}
+            <div class="cert-date">{{ cert.date or cert.year }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Additional Skills -->
+    {% if entities.skills and entities.skills|length > 20 %}
+    <div class="section">
+        <div class="section-title">Additional Technical Skills</div>
+        <div class="item-description">
+            {{ entities.skills[20:]|join(' • ') }}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Languages -->
+    {% if entities.languages %}
+    <div class="section">
+        <div class="section-title">Languages</div>
+        <div class="item-description">
+            {% for lang in entities.languages %}
+            {{ lang }}{% if not loop.last %} • {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</body>
+</html>
