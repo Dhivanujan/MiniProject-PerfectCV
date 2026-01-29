@@ -8,7 +8,6 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pymongo.database import Database
 from bson import ObjectId
 
 # Password hashing context
@@ -112,7 +111,7 @@ def verify_token(token: str) -> Dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Database = None
+    db = None
 ) -> Dict:
     """
     Dependency to get the current authenticated user
@@ -202,7 +201,7 @@ async def get_current_active_user(current_user: Dict = Depends(get_current_user)
         )
     return current_user
 
-def authenticate_user(db: Database, email: str, password: str) -> Optional[Dict]:
+def authenticate_user(db, email: str, password: str) -> Optional[Dict]:
     """
     Authenticate a user by email and password
     
