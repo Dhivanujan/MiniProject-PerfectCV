@@ -49,7 +49,7 @@ function AppContent() {
 
   const handleLogout = async () => {
     try {
-      await api.post("/api/logout");
+      await api.post("/auth/logout");
     } catch (err) {
       console.error(err);
     }
