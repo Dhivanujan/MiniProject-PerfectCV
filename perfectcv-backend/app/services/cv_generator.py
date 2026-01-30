@@ -483,7 +483,7 @@ def reset_cv_generator():
 
 def generate_cv_from_extraction(
     extraction_result: Dict[str, Any],
-    template: str = "modern_cv.html",
+    template: str = "enhanced_cv.html",
     output_path: Optional[Path] = None
 ) -> io.BytesIO:
     """
@@ -491,7 +491,7 @@ def generate_cv_from_extraction(
     
     Args:
         extraction_result: Result from unified_cv_extractor.extract_from_file()
-        template: Template name to use
+        template: Template name to use (default: enhanced_cv.html)
         output_path: Optional path to save PDF
     
     Returns:

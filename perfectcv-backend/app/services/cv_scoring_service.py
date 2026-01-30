@@ -49,6 +49,63 @@ class CVScoringService:
         """Initialize CV scoring service."""
         pass
     
+    def score_cv(self, cv_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Score a CV based on its content.
+        
+        Args:
+            cv_data: Structured CV data (entities)
+            
+        Returns:
+            Dictionary with overall_score and breakdown
+        """
+        # Build raw text from cv_data for scoring
+        text_parts = []
+        if cv_data.get('summary'):
+            text_parts.append(cv_data.get('summary'))
+        if cv_data.get('skills'):
+            text_parts.append(' '.join(cv_data.get('skills', [])))
+        if cv_data.get('experience'):
+            for exp in cv_data.get('experience', []):
+                if isinstance(exp, dict):
+                    text_parts.append(exp.get('title', ''))
+                    text_parts.append(exp.get('company', ''))
+                    desc = exp.get('description', '')
+                    if isinstance(desc, list):
+                        text_parts.extend(desc)
+                    elif desc:
+                        text_parts.append(desc)
+        if cv_data.get('education'):
+            for edu in cv_data.get('education', []):
+                if isinstance(edu, dict):
+                    text_parts.append(edu.get('degree', ''))
+                    text_parts.append(edu.get('institution', ''))
+        if cv_data.get('projects'):
+            for proj in cv_data.get('projects', []):
+                if isinstance(proj, dict):
+                    text_parts.append(proj.get('name', ''))
+                    text_parts.append(proj.get('description', ''))
+        
+        raw_text = ' '.join(filter(None, text_parts))
+        
+        # Use calculate_resume_score
+        score_result = self.calculate_resume_score(raw_text, cv_data)
+        
+        # Get recommendations
+        predicted_field, recommended_skills = self.predict_field_and_skills(cv_data.get('skills', []))
+        
+        return {
+            'overall_score': score_result['score'],
+            'score': score_result['score'],
+            'max_score': 100,
+            'breakdown': score_result['breakdown'],
+            'missing_sections': score_result['missing_sections'],
+            'present_sections': score_result['present_sections'],
+            'predicted_field': predicted_field,
+            'recommended_skills': recommended_skills,
+            'recommendations': self.generate_recommendations(raw_text, cv_data, score_result['score'], predicted_field)
+        }
+    
     def analyze_cv(self, cv_data: Dict[str, Any], raw_text: str) -> Dict[str, Any]:
         """
         Comprehensive CV analysis including scoring, field prediction, and recommendations.

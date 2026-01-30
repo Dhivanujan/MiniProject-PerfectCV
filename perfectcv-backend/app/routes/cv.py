@@ -130,8 +130,8 @@ async def generate_cv(
         output_filename = f"cv_{cv_data.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        # Generate PDF using Jinja2 template
-        cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html', output_path=temp_output_path)
+        # Generate PDF using Jinja2 template (enhanced_cv.html - same format as demo_optimized_cv.pdf)
+        cv_gen.generate_cv_pdf(cv_data, template_name='enhanced_cv.html', output_path=temp_output_path)
         
         # Schedule cleanup of temporary input file
         if background_tasks:
@@ -293,8 +293,8 @@ async def generate_pdf_from_json(cv_data: CVData):
         output_filename = f"cv_{cv_dict.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        # Generate PDF using modern template
-        cv_gen.generate_cv_pdf(cv_dict, template_name='modern_cv.html', output_path=temp_output_path)
+        # Generate PDF using enhanced template (same format as demo_optimized_cv.pdf)
+        cv_gen.generate_cv_pdf(cv_dict, template_name='enhanced_cv.html', output_path=temp_output_path)
         
         logger.info(f"Generated PDF: {temp_output_path}")
         return FileResponse(
