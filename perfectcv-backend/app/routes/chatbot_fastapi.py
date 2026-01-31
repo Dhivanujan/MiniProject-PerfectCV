@@ -1,20 +1,17 @@
 """
-FastAPI Chatbot Routes
+FastAPI Chatbot Routes - Refactored
 Handles chatbot interactions with JWT authentication and Groq AI
+Uses in-memory session storage for reliable CV data access
 """
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import logging
-import gridfs
-from bson import ObjectId
 from datetime import datetime
-import os
 
 from app.auth.jwt_handler import get_current_active_user
 from app.services.unified_cv_extractor import CVExtractor
-from app.services.cv_scoring_service import CVScoringService
 from config.config import Config
 
 logger = logging.getLogger(__name__)
@@ -38,111 +35,43 @@ except Exception as e:
 
 router = APIRouter()
 
-def get_db():
-    """Get MongoDB database instance"""
-    from app_fastapi import get_mongo_db
-    return get_mongo_db()
-
-class ChatMessage(BaseModel):
-    message: str
-    context: Optional[Dict[str, Any]] = None
-
-@router.get("/cv-info")
-async def get_cv_info(current_user: dict = Depends(get_current_active_user)):
-    """
-    Get CV information for the current user
-    """
-    try:
-        db = get_db()
-        fs = gridfs.GridFS(db)
-        
-        user_id = current_user.get('id')
-        
-        # Find the most recent CV file for this user
-        files = list(fs.find({"user_id": user_id}).sort([("uploadDate", -1)]).limit(1))
-        
-        if not files:
-            return JSONResponse({
-                "success": True,
-                "has_cv": False,
-                "message": "No CV uploaded yet"
-            })
-        
-        file = files[0]
-        cv_data = getattr(file, 'cv_data', {})
-        raw_text = getattr(file, 'raw_text', '')
-        ats_score = getattr(file, 'ats_score', None)
-        
-        return JSONResponse({
-            "success": True,
-            "has_cv": True,
-            "cv_data": cv_data,
-            "raw_text": raw_text[:500] if raw_text else None,  # First 500 chars
-            "ats_score": ats_score,
-            "filename": getattr(file, 'original_filename', file.filename),
-            "uploaded_at": file.upload_date.isoformat() if file.upload_date else None
-        })
-        
-    except Exception as e:
-        logger.error(f"Error getting CV info: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/chat")
-async def chat(
-    message: ChatMessage,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Chat with the AI assistant about CV
-    """
-    try:
-        # This is a placeholder - implement actual chatbot logic
-        return JSONResponse({
-            "success": True,
-            "response": "Chatbot functionality is being migrated to FastAPI. Please check back soon.",
-            "message": message.message
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in chat: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+# In-memory session storage for CV data (keyed by user_id)
+# This avoids GridFS lookup issues and ensures reliable data access
+cv_sessions: Dict[str, Dict[str, Any]] = {}
 
 
 class QuestionRequest(BaseModel):
     question: str
 
 
-def get_user_cv_data(user_id: str) -> Dict[str, Any]:
-    """Get the user's CV data from GridFS."""
-    db = get_db()
-    fs = gridfs.GridFS(db)
-    
-    # Find the most recent CV file for this user
-    files = list(fs.find({"user_id": user_id}).sort([("uploadDate", -1)]).limit(1))
-    
-    if not files:
-        return None
-    
-    file = files[0]
-    return {
-        "cv_data": getattr(file, 'cv_data', {}),
-        "raw_text": getattr(file, 'raw_text', ''),
-        "ats_score": getattr(file, 'ats_score', None),
-        "score_details": getattr(file, 'score_details', {}),
-        "filename": getattr(file, 'original_filename', file.filename),
+class ChatMessage(BaseModel):
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
+
+def get_cv_session(user_id: str) -> Optional[Dict[str, Any]]:
+    """Get CV session data for user."""
+    return cv_sessions.get(user_id)
+
+
+def set_cv_session(user_id: str, cv_data: Dict[str, Any], filename: str):
+    """Store CV session data for user."""
+    cv_sessions[user_id] = {
+        "cv_data": cv_data,
+        "filename": filename,
+        "uploaded_at": datetime.utcnow().isoformat()
     }
+    logger.info(f"✓ CV session stored for user {user_id[:8] if user_id else 'unknown'}...")
 
 
-def build_cv_context(cv_info: Dict[str, Any]) -> str:
+def build_cv_context(cv_data: Dict[str, Any]) -> str:
     """Build a context string from CV data for AI prompt."""
-    cv_data = cv_info.get('cv_data', {})
-    ats_score = cv_info.get('ats_score', 0)
-    
     context_parts = []
-    context_parts.append(f"ATS Score: {ats_score}%")
     
-    if cv_data.get('name'):
-        context_parts.append(f"Name: {cv_data['name']}")
+    # Always add name if available
+    name = cv_data.get('name') or cv_data.get('full_name') or 'Unknown'
+    context_parts.append(f"Name: {name}")
+    
     if cv_data.get('email'):
         context_parts.append(f"Email: {cv_data['email']}")
     if cv_data.get('phone'):
@@ -151,74 +80,123 @@ def build_cv_context(cv_info: Dict[str, Any]) -> str:
         context_parts.append(f"Location: {cv_data['location']}")
     
     if cv_data.get('summary'):
-        context_parts.append(f"\nProfessional Summary:\n{cv_data['summary'][:500]}")
+        summary = cv_data['summary']
+        if isinstance(summary, str):
+            context_parts.append(f"\nSummary: {summary[:500]}")
     
-    if cv_data.get('skills'):
-        skills = cv_data['skills'][:20] if isinstance(cv_data['skills'], list) else []
-        context_parts.append(f"\nSkills: {', '.join(skills)}")
+    # Handle skills - check multiple possible field names
+    skills = cv_data.get('skills') or cv_data.get('technical_skills') or []
+    if skills and isinstance(skills, list):
+        context_parts.append(f"\nSkills: {', '.join(str(s) for s in skills[:20])}")
     
-    if cv_data.get('technical_skills'):
-        tech_skills = cv_data['technical_skills'][:15] if isinstance(cv_data['technical_skills'], list) else []
-        context_parts.append(f"Technical Skills: {', '.join(tech_skills)}")
-    
-    if cv_data.get('experience'):
-        context_parts.append(f"\nWork Experience ({len(cv_data['experience'])} positions):")
-        for exp in cv_data['experience'][:3]:
+    # Handle experience
+    experience = cv_data.get('experience') or cv_data.get('work_experience') or []
+    if experience and isinstance(experience, list):
+        context_parts.append(f"\nWork Experience ({len(experience)} positions):")
+        for exp in experience[:5]:
             if isinstance(exp, dict):
-                title = exp.get('title', exp.get('position', ''))
-                company = exp.get('company', exp.get('organization', ''))
-                dates = exp.get('dates', exp.get('duration', ''))
-                context_parts.append(f"  - {title} at {company} ({dates})")
+                title = exp.get('title') or exp.get('position') or exp.get('role') or ''
+                company = exp.get('company') or exp.get('organization') or exp.get('employer') or ''
+                dates = exp.get('dates') or exp.get('duration') or exp.get('period') or ''
+                desc = exp.get('description') or exp.get('responsibilities') or ''
+                if isinstance(desc, list):
+                    desc = '; '.join(desc[:2])
+                line = f"  - {title}"
+                if company:
+                    line += f" at {company}"
+                if dates:
+                    line += f" ({dates})"
+                context_parts.append(line)
+                if desc and isinstance(desc, str):
+                    context_parts.append(f"    {desc[:150]}")
+            elif isinstance(exp, str):
+                context_parts.append(f"  - {exp[:100]}")
     
-    if cv_data.get('education'):
-        context_parts.append(f"\nEducation ({len(cv_data['education'])} entries):")
-        for edu in cv_data['education'][:3]:
+    # Handle education
+    education = cv_data.get('education') or []
+    if education and isinstance(education, list):
+        context_parts.append(f"\nEducation ({len(education)} entries):")
+        for edu in education[:3]:
             if isinstance(edu, dict):
-                degree = edu.get('degree', edu.get('qualification', ''))
-                institution = edu.get('institution', edu.get('school', ''))
-                year = edu.get('year', '')
-                context_parts.append(f"  - {degree} from {institution} ({year})")
+                degree = edu.get('degree') or edu.get('qualification') or edu.get('title') or ''
+                institution = edu.get('institution') or edu.get('school') or edu.get('university') or ''
+                year = edu.get('year') or edu.get('graduation_year') or ''
+                line = f"  - {degree}"
+                if institution:
+                    line += f" from {institution}"
+                if year:
+                    line += f" ({year})"
+                context_parts.append(line)
+            elif isinstance(edu, str):
+                context_parts.append(f"  - {edu[:100]}")
     
-    if cv_data.get('projects'):
-        context_parts.append(f"\nProjects ({len(cv_data['projects'])}):")
-        for proj in cv_data['projects'][:3]:
+    # Handle projects
+    projects = cv_data.get('projects') or []
+    if projects and isinstance(projects, list):
+        context_parts.append(f"\nProjects ({len(projects)}):")
+        for proj in projects[:5]:
             if isinstance(proj, dict):
-                name = proj.get('name', proj.get('title', ''))
-                context_parts.append(f"  - {name}")
+                name = proj.get('name') or proj.get('title') or 'Project'
+                desc = proj.get('description') or ''
+                if isinstance(desc, str):
+                    desc = desc[:100]
+                line = f"  - {name}"
+                if desc:
+                    line += f": {desc}"
+                context_parts.append(line)
+            elif isinstance(proj, str):
+                context_parts.append(f"  - {proj[:100]}")
     
-    if cv_data.get('certifications'):
-        certs = cv_data['certifications'][:5]
-        cert_names = [c.get('name', str(c)) if isinstance(c, dict) else str(c) for c in certs]
+    # Handle certifications
+    certs = cv_data.get('certifications') or cv_data.get('certificates') or []
+    if certs and isinstance(certs, list):
+        cert_names = []
+        for c in certs[:5]:
+            if isinstance(c, dict):
+                cert_names.append(c.get('name') or c.get('title') or str(c))
+            else:
+                cert_names.append(str(c))
         context_parts.append(f"\nCertifications: {', '.join(cert_names)}")
     
-    return '\n'.join(context_parts)
+    # If we have raw_text and very little structured data, include some of it
+    if len(context_parts) <= 2 and cv_data.get('raw_text'):
+        raw_text = cv_data['raw_text']
+        if isinstance(raw_text, str) and raw_text.strip():
+            context_parts.append(f"\nCV Content:\n{raw_text[:1500]}")
+    
+    result = '\n'.join(context_parts)
+    logger.info(f"Built CV context ({len(result)} chars): {result[:200]}...")
+    return result
 
 
 def ask_groq_ai(question: str, cv_context: str) -> Optional[str]:
-    """Use Groq AI to generate a response about the CV."""
+    """Use Groq AI to generate a medium-length helpful response about the CV."""
     if not GROQ_AVAILABLE or not groq_client:
         return None
     
     try:
-        system_prompt = """You are PerfectCV Assistant, an expert AI career advisor and CV consultant. 
-Your role is to help users understand and improve their CVs/resumes.
+        system_prompt = """You are PerfectCV Assistant, a friendly CV advisor.
 
-Guidelines:
-- Be helpful, professional, and encouraging
-- Provide specific, actionable advice based on the CV data
-- Use emojis sparingly to make responses engaging (📊, 💡, ✅, ⚠️, 🎯)
-- Format responses with markdown (bold, lists) for readability
-- Keep responses concise but comprehensive (max 300 words)
-- If asked about something not in the CV, suggest they add it
-- Focus on ATS optimization and professional presentation"""
+Response rules:
+- Keep answers MEDIUM length (2-4 sentences)
+- Be helpful and conversational
+- Reference specific details from the CV when relevant
+- Use 1-2 emojis max (💼 🎓 💡 ✅)
+- No long lists - summarize instead
+- Be direct but friendly
 
-        user_prompt = f"""Here is the user's CV information:
+Example good responses:
+- "Your CV shows strong Python and React skills 💡 Combined with your 2 years at TechCorp, you have a solid full-stack foundation."
+- "I see you studied at XYZ University and have 3 projects listed. Adding more technical details to your projects would strengthen your profile."
 
+Always base answers on the CV data provided."""
+
+        user_prompt = f"""CV Data:
 {cv_context}
 
-User's question: {question}
+Question: {question}
 
-Please provide a helpful, personalized response based on this CV data."""
+Give a medium-length helpful answer (2-4 sentences):"""
 
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -226,7 +204,7 @@ Please provide a helpful, personalized response based on this CV data."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=500,
+            max_tokens=200,
             temperature=0.7
         )
         
@@ -237,316 +215,104 @@ Please provide a helpful, personalized response based on this CV data."""
         return None
 
 
-def generate_cv_response(question: str, cv_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate a response to user's question about their CV using Groq AI or fallback."""
-    cv_data = cv_info.get('cv_data', {})
-    ats_score = cv_info.get('ats_score', 0)
-    score_details = cv_info.get('score_details', {})
-    
-    # Try Groq AI first
-    if GROQ_AVAILABLE:
-        cv_context = build_cv_context(cv_info)
-        ai_response = ask_groq_ai(question, cv_context)
-        
-        if ai_response:
-            logger.info(f"✓ Groq AI generated response for: '{question[:50]}...'")
-            
-            # Detect query type for metadata
-            question_lower = question.lower()
-            query_type = "general"
-            if any(word in question_lower for word in ['score', 'ats']):
-                query_type = "ats_score"
-            elif any(word in question_lower for word in ['skill']):
-                query_type = "skills"
-            elif any(word in question_lower for word in ['experience', 'work']):
-                query_type = "experience"
-            elif any(word in question_lower for word in ['education']):
-                query_type = "education"
-            elif any(word in question_lower for word in ['improve', 'suggestion']):
-                query_type = "suggestions"
-            
-            return {
-                "success": True,
-                "answer": ai_response,
-                "query_type": query_type,
-                "ai_powered": True,
-                "ats_result": {"score": ats_score} if query_type == "ats_score" else None,
-                "keywords": cv_data.get('skills', [])[:10] if query_type == "skills" else None
-            }
-    
-    # Fallback to rule-based responses
-    logger.info("Using rule-based response (Groq not available)")
-    return generate_rule_based_response(question, cv_info)
-
-
-def generate_rule_based_response(question: str, cv_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate a rule-based response (fallback when AI is not available)."""
+def generate_rule_based_response(question: str, cv_data: Dict[str, Any]) -> str:
+    """Generate a medium-length rule-based response when AI is not available."""
     question_lower = question.lower()
-    cv_data = cv_info.get('cv_data', {})
-    ats_score = cv_info.get('ats_score', 0)
-    score_details = cv_info.get('score_details', {})
     
-    # Detect query type and generate appropriate response
-    if any(word in question_lower for word in ['score', 'ats', 'rating', 'how good', 'how is my']):
-        # ATS Score query
-        category_scores = score_details.get('category_scores', {})
-        strengths = [cat for cat, score in category_scores.items() if score >= 8]
-        weaknesses = [cat for cat, score in category_scores.items() if score < 5]
-        
-        response = f"📊 **Your ATS Score: {ats_score}%**\n\n"
-        
-        if ats_score >= 80:
-            response += "🎉 Excellent! Your CV is well-optimized for ATS systems.\n\n"
-        elif ats_score >= 60:
-            response += "👍 Good job! Your CV is fairly well-structured, but there's room for improvement.\n\n"
-        else:
-            response += "⚠️ Your CV needs some improvements to pass ATS screenings effectively.\n\n"
-        
-        if strengths:
-            response += f"**Strengths:** {', '.join(strengths)}\n"
-        if weaknesses:
-            response += f"**Areas to Improve:** {', '.join(weaknesses)}\n"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "ats_score",
-            "ats_result": {"score": ats_score, "details": score_details}
-        }
+    name = cv_data.get('name') or 'the candidate'
     
-    elif any(word in question_lower for word in ['skill', 'skills', 'competenc', 'expertise']):
-        # Skills query
-        skills = cv_data.get('skills', [])
-        technical_skills = cv_data.get('technical_skills', [])
-        soft_skills = cv_data.get('soft_skills', [])
-        
-        response = "📋 **Skills Found in Your CV:**\n\n"
-        
-        if technical_skills:
-            response += f"**Technical Skills ({len(technical_skills)}):** {', '.join(technical_skills[:15])}"
-            if len(technical_skills) > 15:
-                response += f" +{len(technical_skills) - 15} more"
-            response += "\n\n"
-        
-        if soft_skills:
-            response += f"**Soft Skills ({len(soft_skills)}):** {', '.join(soft_skills[:10])}\n\n"
-        
-        if skills and skills != technical_skills:
-            response += f"**Core Skills ({len(skills)}):** {', '.join(skills[:15])}\n\n"
-        
-        if not skills and not technical_skills and not soft_skills:
-            response += "⚠️ No skills detected. Consider adding a dedicated Skills section.\n"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "skills",
-            "keywords": skills[:20]
-        }
+    # Name query
+    if any(word in question_lower for word in ['name', 'who', 'whose']):
+        email = cv_data.get('email', '')
+        response = f"This CV belongs to {name}."
+        if email:
+            response += f" Contact: {email}"
+        return response
     
-    elif any(word in question_lower for word in ['experience', 'work', 'job', 'employment']):
-        # Experience query
-        experience = cv_data.get('experience', [])
-        
-        if experience:
-            response = f"💼 **Work Experience ({len(experience)} positions):**\n\n"
-            for i, exp in enumerate(experience[:5], 1):
-                if isinstance(exp, dict):
-                    title = exp.get('title', exp.get('position', 'Position'))
-                    company = exp.get('company', exp.get('organization', ''))
-                    dates = exp.get('dates', exp.get('duration', ''))
-                    response += f"{i}. **{title}**"
-                    if company:
-                        response += f" at {company}"
-                    if dates:
-                        response += f" ({dates})"
-                    response += "\n"
-                else:
-                    response += f"{i}. {str(exp)[:100]}\n"
-        else:
-            response = "⚠️ No work experience found in your CV. Consider adding a Work Experience section."
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "experience"
-        }
+    # Skills query
+    elif any(word in question_lower for word in ['skill', 'skills', 'technology', 'technologies', 'tech stack']):
+        skills = cv_data.get('skills', []) or cv_data.get('technical_skills', [])
+        if skills and isinstance(skills, list):
+            top_skills = ', '.join(str(s) for s in skills[:8])
+            return f"💡 Skills found: {top_skills}. Total {len(skills)} skills identified."
+        return "No skills detected. Consider adding a Skills section."
     
-    elif any(word in question_lower for word in ['education', 'degree', 'university', 'college', 'school']):
-        # Education query
-        education = cv_data.get('education', [])
-        
-        if education:
-            response = f"🎓 **Education ({len(education)} entries):**\n\n"
-            for i, edu in enumerate(education[:5], 1):
-                if isinstance(edu, dict):
-                    degree = edu.get('degree', edu.get('qualification', 'Degree'))
-                    institution = edu.get('institution', edu.get('school', edu.get('university', '')))
-                    year = edu.get('year', edu.get('graduation_year', ''))
-                    response += f"{i}. **{degree}**"
-                    if institution:
-                        response += f" - {institution}"
-                    if year:
-                        response += f" ({year})"
-                    response += "\n"
-                else:
-                    response += f"{i}. {str(edu)[:100]}\n"
-        else:
-            response = "⚠️ No education found in your CV. Consider adding an Education section."
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "education"
-        }
+    # Experience query
+    elif any(word in question_lower for word in ['experience', 'work', 'job', 'career', 'employment']):
+        exp = cv_data.get('experience', [])
+        if exp and isinstance(exp, list) and len(exp) > 0:
+            first = exp[0]
+            if isinstance(first, dict):
+                title = first.get('title') or first.get('position') or 'Position'
+                company = first.get('company') or ''
+                response = f"💼 Most recent: {title}"
+                if company:
+                    response += f" at {company}"
+                response += f". Total {len(exp)} position(s) listed."
+                return response
+        return "No work experience found. Adding experience would strengthen this CV."
     
-    elif any(word in question_lower for word in ['project', 'portfolio']):
-        # Projects query
+    # Education query
+    elif any(word in question_lower for word in ['education', 'degree', 'study', 'university', 'college', 'qualification']):
+        edu = cv_data.get('education', [])
+        if edu and isinstance(edu, list) and len(edu) > 0:
+            first = edu[0]
+            if isinstance(first, dict):
+                degree = first.get('degree') or first.get('qualification') or 'Degree'
+                inst = first.get('institution') or first.get('school') or ''
+                response = f"🎓 Education: {degree}"
+                if inst:
+                    response += f" from {inst}"
+                if len(edu) > 1:
+                    response += f". Plus {len(edu)-1} more entry(ies)."
+                return response
+        return "No education details found."
+    
+    # Contact query
+    elif any(word in question_lower for word in ['email', 'phone', 'contact', 'reach']):
+        email = cv_data.get('email', 'Not provided')
+        phone = cv_data.get('phone', 'Not provided')
+        return f"📧 Contact: Email - {email}, Phone - {phone}"
+    
+    # Projects query
+    elif any(word in question_lower for word in ['project', 'portfolio', 'built', 'created']):
         projects = cv_data.get('projects', [])
-        
-        if projects:
-            response = f"🚀 **Projects ({len(projects)}):**\n\n"
-            for i, proj in enumerate(projects[:5], 1):
-                if isinstance(proj, dict):
-                    name = proj.get('name', proj.get('title', 'Project'))
-                    desc = proj.get('description', '')[:100]
-                    response += f"{i}. **{name}**"
-                    if desc:
-                        response += f": {desc}"
-                    response += "\n"
-                else:
-                    response += f"{i}. {str(proj)[:100]}\n"
-        else:
-            response = "⚠️ No projects found in your CV. Adding projects can strengthen your profile!"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "projects"
-        }
+        if projects and isinstance(projects, list):
+            names = [p.get('name') or p.get('title') or 'Project' for p in projects[:3] if isinstance(p, dict)]
+            return f"🚀 {len(projects)} project(s) found: {', '.join(names)}."
+        return "No projects found. Adding projects would showcase practical skills."
     
-    elif any(word in question_lower for word in ['improve', 'better', 'enhance', 'optimize', 'suggestion', 'recommendation', 'tip']):
-        # Improvement suggestions
-        suggestions = []
-        
+    # Improvement suggestions
+    elif any(word in question_lower for word in ['improve', 'better', 'suggestion', 'tip', 'advice', 'recommend']):
+        missing = []
         if not cv_data.get('summary'):
-            suggestions.append("📝 Add a professional summary at the top of your CV")
-        if len(cv_data.get('skills', [])) < 5:
-            suggestions.append("💡 Add more relevant skills (aim for 10-15 key skills)")
-        if not cv_data.get('experience'):
-            suggestions.append("💼 Add work experience with quantifiable achievements")
-        if not cv_data.get('education'):
-            suggestions.append("🎓 Include your educational background")
+            missing.append("professional summary")
+        if not cv_data.get('skills') and not cv_data.get('technical_skills'):
+            missing.append("skills section")
         if not cv_data.get('projects'):
-            suggestions.append("🚀 Add projects to showcase your practical skills")
-        if not cv_data.get('certifications'):
-            suggestions.append("📜 Consider adding relevant certifications")
-        if ats_score < 70:
-            suggestions.append("🎯 Use more industry keywords to improve ATS compatibility")
+            missing.append("projects")
         
-        if suggestions:
-            response = "💡 **Suggestions to Improve Your CV:**\n\n"
-            for i, suggestion in enumerate(suggestions, 1):
-                response += f"{i}. {suggestion}\n"
-        else:
-            response = "🎉 Your CV looks great! It has all the key sections. Keep it updated with your latest achievements."
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "suggestions"
-        }
+        if missing:
+            return f"💡 Suggestions: Consider adding {', '.join(missing)} to strengthen the CV."
+        return f"✅ This CV looks good! Keep it updated with recent achievements."
     
-    elif any(word in question_lower for word in ['summary', 'profile', 'about', 'objective']):
-        # Summary query
+    # Summary/overview
+    elif any(word in question_lower for word in ['summary', 'overview', 'tell me about', 'describe']):
         summary = cv_data.get('summary', '')
+        if summary and isinstance(summary, str):
+            short_summary = summary[:200] + "..." if len(summary) > 200 else summary
+            return f"📋 Summary: {short_summary}"
         
-        if summary:
-            response = f"📋 **Your Professional Summary:**\n\n{summary}"
-        else:
-            response = "⚠️ No professional summary found. A strong summary at the top of your CV can make a great first impression!"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "summary"
-        }
+        # Build a quick overview
+        skills_count = len(cv_data.get('skills', []) or [])
+        exp_count = len(cv_data.get('experience', []) or [])
+        return f"📊 {name}'s CV has {skills_count} skills and {exp_count} work experience entries."
     
-    elif any(word in question_lower for word in ['contact', 'email', 'phone', 'info']):
-        # Contact info query
-        name = cv_data.get('name', 'Not found')
-        email = cv_data.get('email', 'Not found')
-        phone = cv_data.get('phone', 'Not found')
-        location = cv_data.get('location', '')
-        linkedin = cv_data.get('linkedin', '')
-        github = cv_data.get('github', '')
-        
-        response = "📧 **Contact Information:**\n\n"
-        response += f"**Name:** {name}\n"
-        response += f"**Email:** {email}\n"
-        response += f"**Phone:** {phone}\n"
-        if location:
-            response += f"**Location:** {location}\n"
-        if linkedin:
-            response += f"**LinkedIn:** {linkedin}\n"
-        if github:
-            response += f"**GitHub:** {github}\n"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "contact"
-        }
-    
+    # Default helpful response
     else:
-        # General/fallback response
-        name = cv_data.get('name', 'there')
-        response = f"👋 Hi {name}! Here's what I can help you with:\n\n"
-        response += "• **\"What's my ATS score?\"** - Check your CV's ATS compatibility\n"
-        response += "• **\"Show my skills\"** - View extracted skills\n"
-        response += "• **\"Show my experience\"** - View work history\n"
-        response += "• **\"Show my education\"** - View educational background\n"
-        response += "• **\"Show my projects\"** - View projects\n"
-        response += "• **\"How can I improve my CV?\"** - Get improvement suggestions\n\n"
-        response += f"Your CV: **{cv_info.get('filename', 'Uploaded CV')}** | ATS Score: **{ats_score}%**"
-        
-        return {
-            "success": True,
-            "answer": response,
-            "query_type": "general"
-        }
-
-
-@router.post("/ask")
-async def ask_about_cv(
-    request: QuestionRequest,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Answer questions about the user's CV
-    """
-    try:
-        user_id = current_user.get('id')
-        
-        # Get user's CV data
-        cv_info = get_user_cv_data(user_id)
-        
-        if not cv_info:
-            return JSONResponse({
-                "success": False,
-                "message": "No CV found. Please upload your CV first."
-            }, status_code=404)
-        
-        # Generate response based on question
-        response = generate_cv_response(request.question, cv_info)
-        
-        logger.info(f"Chatbot question: '{request.question}' -> type: {response.get('query_type')}")
-        
-        return JSONResponse(response)
-        
-    except Exception as e:
-        logger.error(f"Error in chatbot ask: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        skills_count = len(cv_data.get('skills', []) or [])
+        exp_count = len(cv_data.get('experience', []) or [])
+        return f"This is {name}'s CV with {skills_count} skills and {exp_count} positions. Ask about skills, experience, education, or improvements."
 
 
 @router.post("/upload")
@@ -554,15 +320,12 @@ async def upload_cv_for_chat(
     files: UploadFile = File(...),
     current_user: dict = Depends(get_current_active_user)
 ):
-    """
-    Upload a CV file for chatbot interaction
-    """
+    """Upload a CV file for chatbot interaction."""
     try:
-        db = get_db()
-        fs = gridfs.GridFS(db)
-        
-        user_id = current_user.get('id')
+        user_id = str(current_user.get('id', ''))
         filename = files.filename
+        
+        logger.info(f"📤 Chatbot upload: user={user_id[:8] if user_id else 'unknown'}..., file={filename}")
         
         # Check file type
         allowed_extensions = {'.pdf', '.doc', '.docx', '.txt'}
@@ -581,48 +344,154 @@ async def upload_cv_for_chat(
         extractor = CVExtractor()
         cv_data = extractor.extract_from_file(file_bytes, filename)
         
-        raw_text = cv_data.get('raw_text', '')
+        # Log what we extracted for debugging
+        logger.info(f"📋 CV data keys: {list(cv_data.keys())}")
+        logger.info(f"📋 Name: {cv_data.get('name')}")
+        logger.info(f"📋 Email: {cv_data.get('email')}")
         
-        # Score the CV
-        scoring_service = CVScoringService()
-        score_result = scoring_service.score_cv(cv_data)
-        ats_score = score_result.get('overall_score', 0)
+        skills_count = len(cv_data.get('skills', []) or [])
+        exp_count = len(cv_data.get('experience', []) or [])
         
-        # Delete old CV files for this user (keep only latest)
-        old_files = list(fs.find({"user_id": user_id, "source": "chatbot"}))
-        for old_file in old_files:
-            fs.delete(old_file._id)
+        logger.info(f"✓ CV extracted: {skills_count} skills, {exp_count} experiences")
         
-        # Store in GridFS with metadata
-        file_id = fs.put(
-            file_bytes,
-            filename=filename,
-            user_id=user_id,
-            original_filename=filename,
-            cv_data=cv_data,
-            raw_text=raw_text,
-            ats_score=ats_score,
-            score_details=score_result,
-            source="chatbot",
-            upload_date=datetime.utcnow()
-        )
+        # Store in session with user_id
+        set_cv_session(user_id, cv_data, filename)
+        logger.info(f"✓ Session stored. Total sessions: {len(cv_sessions)}, Keys: {list(cv_sessions.keys())}")
         
-        logger.info(f"✓ CV uploaded for chatbot: {filename} (user: {user_id})")
+        # Build simple welcome message
+        name = cv_data.get('name') or 'there'
+        
+        welcome_msg = f"Got it! I've loaded {name}'s CV. What would you like to know?"
         
         return JSONResponse({
             "success": True,
-            "message": f"CV '{filename}' uploaded successfully! I've analyzed your CV and found an ATS score of {ats_score}%. How can I help you improve it?",
-            "file_id": str(file_id),
-            "ats_score": ats_score,
+            "message": welcome_msg,
             "cv_data": {
                 "name": cv_data.get("name"),
                 "email": cv_data.get("email"),
-                "skills_count": len(cv_data.get("skills", [])),
-                "experience_count": len(cv_data.get("experience", [])),
+                "skills_count": skills_count,
+                "experience_count": exp_count,
                 "education_count": len(cv_data.get("education", []))
             }
         })
         
     except Exception as e:
-        logger.error(f"Error uploading CV for chatbot: {e}", exc_info=True)
+        logger.error(f"Error uploading CV: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": f"Error processing CV: {str(e)}"
+        }, status_code=500)
+
+
+@router.post("/ask")
+async def ask_about_cv(
+    request: QuestionRequest,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Answer questions about the user's CV."""
+    try:
+        user_id = str(current_user.get('id', ''))
+        question = request.question.strip()
+        
+        logger.info(f"📥 Chatbot ask: user={user_id[:8] if user_id else 'unknown'}..., question='{question[:50]}'")
+        
+        # Get CV session
+        session = get_cv_session(user_id)
+        
+        if not session:
+            logger.warning(f"No CV session found for user {user_id[:8] if user_id else 'unknown'}")
+            logger.info(f"Active sessions: {list(cv_sessions.keys())}")
+            return JSONResponse({
+                "success": False,
+                "answer": "❌ No CV found. Please upload your CV first using the upload button above.",
+                "query_type": "error"
+            })
+        
+        cv_data = session.get('cv_data', {})
+        logger.info(f"✓ Found CV session. Keys: {list(cv_data.keys())}")
+        
+        # Try Groq AI first
+        if GROQ_AVAILABLE:
+            cv_context = build_cv_context(cv_data)
+            logger.info(f"📋 CV context length: {len(cv_context)} chars")
+            
+            if not cv_context or len(cv_context) < 20:
+                logger.warning("CV context is too short, using raw text fallback")
+                # Try to get raw text directly
+                raw = cv_data.get('raw_text', '')
+                if raw:
+                    cv_context = f"CV Content:\n{raw[:2000]}"
+            
+            ai_response = ask_groq_ai(question, cv_context)
+            
+            if ai_response:
+                logger.info(f"✓ Groq AI response generated")
+                return JSONResponse({
+                    "success": True,
+                    "answer": ai_response,
+                    "query_type": "ai_response",
+                    "ai_powered": True
+                })
+        
+        # Fallback to rule-based
+        logger.info("Using rule-based response")
+        response = generate_rule_based_response(question, cv_data)
+        
+        return JSONResponse({
+            "success": True,
+            "answer": response,
+            "query_type": "rule_based",
+            "ai_powered": False
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in chatbot ask: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "answer": f"Sorry, I encountered an error: {str(e)}",
+            "query_type": "error"
+        })
+
+
+@router.get("/cv-info")
+async def get_cv_info(current_user: dict = Depends(get_current_active_user)):
+    """Get CV information for the current user from session."""
+    try:
+        user_id = str(current_user.get('id', ''))
+        session = get_cv_session(user_id)
+        
+        if not session:
+            return JSONResponse({
+                "success": True,
+                "has_cv": False,
+                "message": "No CV uploaded yet"
+            })
+        
+        cv_data = session.get('cv_data', {})
+        
+        return JSONResponse({
+            "success": True,
+            "has_cv": True,
+            "cv_data": {
+                "name": cv_data.get("name"),
+                "email": cv_data.get("email"),
+                "skills_count": len(cv_data.get("skills", [])),
+                "experience_count": len(cv_data.get("experience", []))
+            },
+            "filename": session.get('filename'),
+            "uploaded_at": session.get('uploaded_at')
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting CV info: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat")
+async def chat(
+    message: ChatMessage,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Legacy chat endpoint - redirects to /ask."""
+    request = QuestionRequest(question=message.message)
+    return await ask_about_cv(request, current_user)
