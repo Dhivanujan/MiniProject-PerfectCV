@@ -180,28 +180,111 @@ async def upload_cv(
             "email": cv_data.get("email", ""),
             "phone": cv_data.get("phone", ""),
             "location": cv_data.get("location", ""),
+            "linkedin": cv_data.get("linkedin", ""),
+            "github": cv_data.get("github", ""),
+            "website": cv_data.get("website", ""),
             "summary": cv_data.get("summary", ""),
             "skills": cv_data.get("skills", []),
+            "technical_skills": cv_data.get("technical_skills", []),
+            "soft_skills": cv_data.get("soft_skills", []),
+            "tools": cv_data.get("tools", []),
             "experience": cv_data.get("experience", []),
+            "internship": cv_data.get("internship", []),
             "education": cv_data.get("education", []),
             "projects": cv_data.get("projects", []),
             "certifications": cv_data.get("certifications", []),
+            "achievements": cv_data.get("achievements", []),
+            "volunteer": cv_data.get("volunteer", []),
+            "leadership": cv_data.get("leadership", []),
+            "publications": cv_data.get("publications", []),
+            "languages": cv_data.get("languages", []),
+            "interests": cv_data.get("interests", []),
+            "references": cv_data.get("references", ""),
         }
         
-        # Build ordered sections for frontend display
+        # Build ordered sections for frontend display (comprehensive)
         ordered_sections = []
+        
+        # Contact/Header info
+        contact_info = {
+            "name": cv_data.get("name"),
+            "email": cv_data.get("email"),
+            "phone": cv_data.get("phone"),
+            "location": cv_data.get("location"),
+            "linkedin": cv_data.get("linkedin"),
+            "github": cv_data.get("github"),
+            "website": cv_data.get("website"),
+        }
+        if any(contact_info.values()):
+            ordered_sections.append({"key": "contact", "label": "Contact Information", "content": contact_info})
+        
+        # Professional Summary
         if cv_data.get("summary"):
             ordered_sections.append({"key": "summary", "label": "Professional Summary", "content": cv_data.get("summary")})
+        
+        # Skills sections
         if cv_data.get("skills"):
-            ordered_sections.append({"key": "skills", "label": "Skills", "content": cv_data.get("skills", [])})
+            ordered_sections.append({"key": "skills", "label": "Core Skills", "content": cv_data.get("skills", [])})
+        if cv_data.get("technical_skills") and cv_data.get("technical_skills") != cv_data.get("skills"):
+            ordered_sections.append({"key": "technical_skills", "label": "Technical Skills", "content": cv_data.get("technical_skills", [])})
+        if cv_data.get("soft_skills"):
+            ordered_sections.append({"key": "soft_skills", "label": "Soft Skills", "content": cv_data.get("soft_skills", [])})
+        if cv_data.get("tools"):
+            ordered_sections.append({"key": "tools", "label": "Tools & Technologies", "content": cv_data.get("tools", [])})
+        
+        # Experience sections
         if cv_data.get("experience"):
             ordered_sections.append({"key": "experience", "label": "Work Experience", "content": cv_data.get("experience", [])})
-        if cv_data.get("education"):
-            ordered_sections.append({"key": "education", "label": "Education", "content": cv_data.get("education", [])})
+        if cv_data.get("internship"):
+            ordered_sections.append({"key": "internship", "label": "Internship Experience", "content": cv_data.get("internship", [])})
+        
+        # Projects
         if cv_data.get("projects"):
             ordered_sections.append({"key": "projects", "label": "Projects", "content": cv_data.get("projects", [])})
+        
+        # Education
+        if cv_data.get("education"):
+            ordered_sections.append({"key": "education", "label": "Education", "content": cv_data.get("education", [])})
+        
+        # Certifications
         if cv_data.get("certifications"):
             ordered_sections.append({"key": "certifications", "label": "Certifications", "content": cv_data.get("certifications", [])})
+        
+        # Achievements
+        if cv_data.get("achievements"):
+            ordered_sections.append({"key": "achievements", "label": "Achievements & Awards", "content": cv_data.get("achievements", [])})
+        
+        # Volunteering & Leadership
+        if cv_data.get("volunteer"):
+            ordered_sections.append({"key": "volunteer", "label": "Volunteering Experience", "content": cv_data.get("volunteer", [])})
+        if cv_data.get("leadership"):
+            ordered_sections.append({"key": "leadership", "label": "Leadership Experience", "content": cv_data.get("leadership", [])})
+        
+        # Publications
+        if cv_data.get("publications"):
+            ordered_sections.append({"key": "publications", "label": "Publications & Research", "content": cv_data.get("publications", [])})
+        
+        # Languages
+        if cv_data.get("languages"):
+            ordered_sections.append({"key": "languages", "label": "Languages", "content": cv_data.get("languages", [])})
+        
+        # Interests
+        if cv_data.get("interests"):
+            ordered_sections.append({"key": "interests", "label": "Interests", "content": cv_data.get("interests", [])})
+        
+        # References
+        if cv_data.get("references"):
+            ordered_sections.append({"key": "references", "label": "References", "content": cv_data.get("references")})
+        
+        # Portfolio/Links (collect from individual link fields)
+        portfolio_links = {
+            "linkedin": cv_data.get("linkedin"),
+            "github": cv_data.get("github"),
+            "website": cv_data.get("website"),
+            "portfolio": cv_data.get("portfolio"),
+        }
+        if any(portfolio_links.values()):
+            ordered_sections.append({"key": "links", "label": "Portfolio & Links", "content": portfolio_links})
         
         # Build optimized text from structured data
         optimized_parts = []
@@ -407,6 +490,10 @@ async def download_optimized_cv(
         optimized_text = request.optimized_text
         filename = request.filename or "Optimized_CV.pdf"
         
+        logger.info(f"Download optimized CV request received")
+        logger.info(f"structured_cv present: {bool(structured_cv)}")
+        logger.info(f"optimized_text present: {bool(optimized_text)}")
+        
         if not structured_cv and not optimized_text:
             raise HTTPException(
                 status_code=400,
@@ -417,17 +504,43 @@ async def download_optimized_cv(
         cv_data = {}
         if structured_cv:
             cv_data = {
-                "name": structured_cv.get("name", ""),
-                "email": structured_cv.get("email", ""),
-                "phone": structured_cv.get("phone", ""),
-                "location": structured_cv.get("location", ""),
-                "summary": structured_cv.get("summary", ""),
-                "skills": structured_cv.get("skills", []),
-                "experience": structured_cv.get("experience", []),
-                "education": structured_cv.get("education", []),
-                "projects": structured_cv.get("projects", []),
-                "certifications": structured_cv.get("certifications", []),
+                "name": structured_cv.get("name", "") or "",
+                "email": structured_cv.get("email", "") or "",
+                "phone": structured_cv.get("phone", "") or "",
+                "location": structured_cv.get("location", "") or "",
+                "summary": structured_cv.get("summary", "") or "",
+                "skills": structured_cv.get("skills") or [],
+                "experience": structured_cv.get("experience") or [],
+                "education": structured_cv.get("education") or [],
+                "projects": structured_cv.get("projects") or [],
+                "certifications": structured_cv.get("certifications") or [],
             }
+            logger.info(f"Built cv_data: name={cv_data.get('name')}, email={cv_data.get('email')}")
+            logger.info(f"Skills count: {len(cv_data.get('skills', []))}")
+            logger.info(f"Experience count: {len(cv_data.get('experience', []))}")
+            logger.info(f"Education count: {len(cv_data.get('education', []))}")
+        
+        # Check if cv_data has any meaningful content
+        has_content = (
+            cv_data.get("name") or 
+            cv_data.get("summary") or 
+            cv_data.get("skills") or 
+            cv_data.get("experience") or 
+            cv_data.get("education")
+        )
+        
+        if not has_content:
+            logger.warning("structured_cv has no meaningful content, PDF may be empty")
+            # If structured_cv is empty but we have optimized_text, create minimal data
+            if optimized_text:
+                cv_data = {
+                    "name": "Professional Resume",
+                    "summary": optimized_text[:500] if len(optimized_text) > 500 else optimized_text,
+                    "skills": [],
+                    "experience": [],
+                    "education": [],
+                }
+                logger.info("Using optimized_text as fallback content")
         
         # Generate PDF
         logger.info("Generating optimized CV PDF...")

@@ -24,7 +24,7 @@ const CVAnalysisPanel = ({ file, onClose }) => {
       const blob = await response.blob();
       formData.append('file', blob, file.name || 'cv.pdf');
 
-      const res = await api.post('/cv/analyze-cv', formData, {
+      const res = await api.post('/api/cv/analyze-cv', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

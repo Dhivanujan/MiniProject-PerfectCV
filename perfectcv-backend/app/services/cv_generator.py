@@ -301,6 +301,16 @@ class CVGenerator:
             # Normalize data
             normalized_data = self.normalizer.normalize(cv_data)
             
+            # Debug: Log the normalized data structure
+            entities = normalized_data.get('entities', {})
+            if self.config.enable_logging:
+                logger.info(f"📋 Normalized data entities:")
+                logger.info(f"   - name: {entities.get('name', 'NOT FOUND')}")
+                logger.info(f"   - email: {entities.get('email', 'NOT FOUND')}")
+                logger.info(f"   - skills count: {len(entities.get('skills', []))}")
+                logger.info(f"   - experience count: {len(entities.get('experience', []))}")
+                logger.info(f"   - education count: {len(entities.get('education', []))}")
+            
             # Validate data
             is_valid, warnings = self.normalizer.validate(normalized_data)
             result.warnings = warnings

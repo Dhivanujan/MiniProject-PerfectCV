@@ -31,6 +31,12 @@ import {
   FaTrophy,
   FaLanguage,
   FaProjectDiagram,
+  FaHeart,
+  FaHandsHelping,
+  FaBook,
+  FaWrench,
+  FaUsers,
+  FaLink,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
@@ -409,6 +415,376 @@ const CertificationsRenderer = ({ content }) => {
   );
 };
 
+// Component to render Projects section
+const ProjectsRenderer = ({ content }) => {
+  let projectsData = parseContentSafely(content);
+  
+  if (!projectsData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No projects listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(projectsData)) {
+    // If it's a single project object
+    if (typeof projectsData === 'object' && projectsData !== null) {
+      projectsData = [projectsData];
+    } else if (typeof projectsData === 'string') {
+      // Split by newlines for plain text
+      const items = projectsData.split('\n').map(s => s.trim()).filter(s => s);
+      if (items.length > 0) {
+        projectsData = items.map(item => ({ name: item }));
+      } else {
+        projectsData = [{ name: projectsData }];
+      }
+    } else {
+      projectsData = [];
+    }
+  }
+
+  // Filter out invalid entries
+  projectsData = projectsData.filter(proj => {
+    if (typeof proj === 'string') return proj.trim().length > 0;
+    if (!proj || typeof proj !== 'object') return false;
+    return proj.name || proj.title;
+  });
+
+  if (projectsData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No projects listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {projectsData.map((proj, idx) => {
+        // Handle string items
+        if (typeof proj === 'string') {
+          return (
+            <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+              <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {proj}
+              </h5>
+            </div>
+          );
+        }
+        
+        // Handle object items
+        return (
+          <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h5 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {proj.name || proj.title || 'Project'}
+                </h5>
+                {proj.role && (
+                  <p className="text-xs text-sage-600 dark:text-sage-400 mt-0.5">
+                    {proj.role}
+                  </p>
+                )}
+              </div>
+              {(proj.date || proj.duration) && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {proj.date || proj.duration}
+                </span>
+              )}
+            </div>
+            {(proj.description || proj.desc) && (
+              <p className="text-xs text-gray-600 dark:text-gray-300 mt-2 leading-relaxed">
+                {proj.description || proj.desc}
+              </p>
+            )}
+            {proj.technologies && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(Array.isArray(proj.technologies) ? proj.technologies : proj.technologies.split(',').map(t => t.trim())).map((tech, techIdx) => (
+                  <span 
+                    key={techIdx}
+                    className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded"
+                  >
+                    {tech}
+                  </span>
+                ))}
+              </div>
+            )}
+            {proj.url && (
+              <a 
+                href={proj.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-sage-600 dark:text-sage-400 hover:underline mt-2 inline-block"
+              >
+                View project →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Achievements section
+const AchievementsRenderer = ({ content }) => {
+  let achievementData = parseContentSafely(content);
+  
+  if (!achievementData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No achievements listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(achievementData)) {
+    if (typeof achievementData === 'string') {
+      const items = achievementData.split('\n').map(s => s.trim()).filter(s => s);
+      achievementData = items.map(item => ({ title: item }));
+    } else if (typeof achievementData === 'object') {
+      achievementData = [achievementData];
+    } else {
+      achievementData = [];
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {achievementData.map((achievement, idx) => {
+        if (typeof achievement === 'string') {
+          return (
+            <div key={idx} className="flex items-start gap-2">
+              <span className="text-yellow-500">🏆</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">{achievement}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start gap-2">
+              <span className="text-yellow-500">🏆</span>
+              <div className="flex-1">
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {achievement.title || achievement.name || 'Achievement'}
+                </h5>
+                {achievement.issuer && (
+                  <p className="text-xs text-sage-600 dark:text-sage-400">{achievement.issuer}</p>
+                )}
+                {achievement.date && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{achievement.date}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Publications section
+const PublicationsRenderer = ({ content }) => {
+  let pubData = parseContentSafely(content);
+  
+  if (!pubData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No publications listed</div>;
+  }
+
+  if (!Array.isArray(pubData)) {
+    if (typeof pubData === 'string') {
+      const items = pubData.split('\n').map(s => s.trim()).filter(s => s);
+      pubData = items.map(item => ({ title: item }));
+    } else {
+      pubData = [pubData];
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {pubData.map((pub, idx) => {
+        if (typeof pub === 'string') {
+          return (
+            <div key={idx} className="flex items-start gap-2">
+              <span className="text-blue-500">📄</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">{pub}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {pub.title || 'Publication'}
+            </h5>
+            {pub.authors && <p className="text-xs text-gray-600 dark:text-gray-400">{pub.authors}</p>}
+            {pub.venue && <p className="text-xs text-sage-600 dark:text-sage-400">{pub.venue}</p>}
+            {pub.date && <p className="text-xs text-gray-500 dark:text-gray-400">{pub.date}</p>}
+            {pub.url && (
+              <a href={pub.url} target="_blank" rel="noopener noreferrer" className="text-xs text-sage-600 dark:text-sage-400 hover:underline">
+                View publication →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Languages section
+const LanguagesRenderer = ({ content }) => {
+  let langData = parseContentSafely(content);
+  
+  if (!langData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No languages listed</div>;
+  }
+
+  if (!Array.isArray(langData)) {
+    if (typeof langData === 'string') {
+      const items = langData.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+      langData = items.map(item => ({ language: item }));
+    } else {
+      langData = [langData];
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {langData.map((lang, idx) => {
+        const langName = typeof lang === 'string' ? lang : (lang.language || lang.name || 'Language');
+        const proficiency = typeof lang === 'object' ? lang.proficiency : null;
+        
+        return (
+          <div key={idx} className="bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200">🌐 {langName}</span>
+            {proficiency && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({proficiency})</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Interests section
+const InterestsRenderer = ({ content }) => {
+  let interestData = parseContentSafely(content);
+  
+  if (!interestData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No interests listed</div>;
+  }
+
+  if (!Array.isArray(interestData)) {
+    if (typeof interestData === 'string') {
+      interestData = interestData.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+    } else {
+      interestData = [interestData];
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {interestData.map((interest, idx) => {
+        const text = typeof interest === 'string' ? interest : (interest.name || interest.title || 'Interest');
+        return (
+          <span key={idx} className="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs px-3 py-1.5 rounded-lg">
+            {text}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render References section
+const ReferencesRenderer = ({ content }) => {
+  if (!content) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No references provided</div>;
+  }
+
+  if (typeof content === 'string') {
+    return (
+      <div className="text-sm text-gray-700 dark:text-gray-300 italic">
+        {content}
+      </div>
+    );
+  }
+
+  // If it's an array or object, render appropriately
+  const refData = parseContentSafely(content);
+  if (Array.isArray(refData)) {
+    return (
+      <div className="space-y-3">
+        {refData.map((ref, idx) => (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            {typeof ref === 'string' ? (
+              <p className="text-sm text-gray-700 dark:text-gray-300">{ref}</p>
+            ) : (
+              <>
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ref.name || 'Reference'}</h5>
+                {ref.title && <p className="text-xs text-gray-600 dark:text-gray-400">{ref.title}</p>}
+                {ref.company && <p className="text-xs text-sage-600 dark:text-sage-400">{ref.company}</p>}
+                {ref.email && <p className="text-xs text-gray-500 dark:text-gray-400">{ref.email}</p>}
+                {ref.phone && <p className="text-xs text-gray-500 dark:text-gray-400">{ref.phone}</p>}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
+};
+
+// Component to render Portfolio/Links section
+const LinksRenderer = ({ content }) => {
+  if (!content) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No links provided</div>;
+  }
+
+  const linkData = parseContentSafely(content);
+  
+  const renderLink = (url, label, icon) => {
+    if (!url) return null;
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+    return (
+      <a
+        href={fullUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 text-sm text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-200 hover:underline transition-colors"
+      >
+        {icon}
+        <span>{label || url}</span>
+      </a>
+    );
+  };
+
+  if (typeof linkData === 'object' && linkData !== null && !Array.isArray(linkData)) {
+    return (
+      <div className="space-y-2">
+        {linkData.linkedin && renderLink(linkData.linkedin, 'LinkedIn', <FaLink className="text-blue-600" />)}
+        {linkData.github && renderLink(linkData.github, 'GitHub', <FaLink className="text-gray-700 dark:text-gray-300" />)}
+        {linkData.website && renderLink(linkData.website, 'Website', <FaLink className="text-green-600" />)}
+        {linkData.portfolio && renderLink(linkData.portfolio, 'Portfolio', <FaLink className="text-purple-600" />)}
+      </div>
+    );
+  }
+
+  if (Array.isArray(linkData)) {
+    return (
+      <div className="space-y-2">
+        {linkData.map((link, idx) => (
+          <div key={idx}>
+            {typeof link === 'string' 
+              ? renderLink(link, link) 
+              : renderLink(link.url || link.link, link.label || link.title || link.name)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof linkData === 'string') {
+    return renderLink(linkData, linkData);
+  }
+
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
+};
+
 // Main render function for CV sections
 const renderSectionContent = (key, content) => {
   if (!content) return null;
@@ -422,14 +798,28 @@ const renderSectionContent = (key, content) => {
 
   const lowerKey = key.toLowerCase();
   
-  if (lowerKey.includes('skill')) {
+  if (lowerKey.includes('skill') || lowerKey.includes('tools')) {
     return <SkillsRenderer content={content} />;
-  } else if (lowerKey.includes('experience') || lowerKey.includes('work')) {
+  } else if (lowerKey.includes('experience') || lowerKey.includes('work') || lowerKey.includes('internship') || lowerKey.includes('volunteer') || lowerKey.includes('leadership')) {
     return <WorkExperienceRenderer content={content} />;
   } else if (lowerKey.includes('education')) {
     return <EducationRenderer content={content} />;
   } else if (lowerKey.includes('certification')) {
     return <CertificationsRenderer content={content} />;
+  } else if (lowerKey.includes('project')) {
+    return <ProjectsRenderer content={content} />;
+  } else if (lowerKey.includes('achievement') || lowerKey.includes('award')) {
+    return <AchievementsRenderer content={content} />;
+  } else if (lowerKey.includes('publication') || lowerKey.includes('research')) {
+    return <PublicationsRenderer content={content} />;
+  } else if (lowerKey.includes('language')) {
+    return <LanguagesRenderer content={content} />;
+  } else if (lowerKey.includes('interest') || lowerKey.includes('hobbi')) {
+    return <InterestsRenderer content={content} />;
+  } else if (lowerKey.includes('reference')) {
+    return <ReferencesRenderer content={content} />;
+  } else if (lowerKey.includes('link') || lowerKey.includes('portfolio') || lowerKey.includes('github')) {
+    return <LinksRenderer content={content} />;
   } else if (lowerKey.includes('personal') || lowerKey.includes('contact')) {
     // For personal information, try to parse and display nicely
     const data = parseContentSafely(content);
@@ -461,8 +851,41 @@ const renderSectionContent = (key, content) => {
     }
   }
   
-  // Default: display as text
-  return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+  // Default: handle different content types safely
+  if (typeof content === 'string') {
+    return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+  } else if (Array.isArray(content)) {
+    // If it's an array of strings, join them
+    const stringContent = content.map((item, idx) => {
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object' && item !== null) {
+        // Try to get a meaningful string from the object
+        return item.name || item.title || item.text || JSON.stringify(item);
+      }
+      return String(item);
+    });
+    return (
+      <ul className="list-disc list-inside text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        {stringContent.map((item, idx) => (
+          <li key={idx}>{item}</li>
+        ))}
+      </ul>
+    );
+  } else if (typeof content === 'object' && content !== null) {
+    // Render object properties
+    return (
+      <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        {Object.entries(content).map(([key, value]) => (
+          <p key={key}>
+            <span className="font-semibold capitalize">{key}:</span>{' '}
+            {typeof value === 'string' ? value : JSON.stringify(value)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
 };
 
 // Enhanced CV Content Renderer with Icons and Better Formatting
@@ -515,13 +938,22 @@ const EnhancedCVRenderer = ({ content }) => {
   const getSectionIcon = (title) => {
     const titleLower = title.toLowerCase();
     if (titleLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+    if (titleLower.includes('internship')) return <FaBriefcase className="text-teal-500" />;
     if (titleLower.includes('experience') || titleLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+    if (titleLower.includes('technical') && titleLower.includes('skill')) return <FaCode className="text-green-600" />;
+    if (titleLower.includes('soft') && titleLower.includes('skill')) return <FaHeart className="text-pink-500" />;
     if (titleLower.includes('skill')) return <FaCode className="text-green-500" />;
     if (titleLower.includes('profile') || titleLower.includes('summary')) return <FaUser className="text-indigo-500" />;
     if (titleLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
     if (titleLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
     if (titleLower.includes('achievement') || titleLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+    if (titleLower.includes('volunteer') || titleLower.includes('leadership')) return <FaHandsHelping className="text-rose-500" />;
+    if (titleLower.includes('publication') || titleLower.includes('research')) return <FaBook className="text-amber-600" />;
     if (titleLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+    if (titleLower.includes('tool') || titleLower.includes('technolog')) return <FaWrench className="text-slate-500" />;
+    if (titleLower.includes('interest') || titleLower.includes('hobby')) return <FaHeart className="text-red-400" />;
+    if (titleLower.includes('reference')) return <FaUsers className="text-gray-600" />;
+    if (titleLower.includes('portfolio') || titleLower.includes('link') || titleLower.includes('github')) return <FaLink className="text-blue-400" />;
     return <FaFileAlt className="text-gray-500" />;
   };
 
@@ -949,6 +1381,17 @@ export default function Dashboard({ user }) {
       }
       
       setOrderedSections(orderedSectionsData);
+      
+      // Debug: Log template_data received from backend
+      console.log('📋 Received template_data from backend:', res.data.template_data);
+      if (res.data.template_data) {
+        console.log('  - name:', res.data.template_data.name);
+        console.log('  - email:', res.data.template_data.email);
+        console.log('  - skills:', res.data.template_data.skills?.length || 0, 'items');
+        console.log('  - experience:', res.data.template_data.experience?.length || 0, 'items');
+        console.log('  - education:', res.data.template_data.education?.length || 0, 'items');
+      }
+      
       setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
@@ -1012,6 +1455,16 @@ export default function Dashboard({ user }) {
   };
 
   const handleDownloadOptimizedCV = async () => {
+    console.log('🔄 handleDownloadOptimizedCV called');
+    console.log('  - optimizedCV present:', !!optimizedCV);
+    console.log('  - templateData present:', !!templateData);
+    
+    if (templateData) {
+      console.log('  - templateData.name:', templateData.name);
+      console.log('  - templateData.skills:', templateData.skills?.length || 0, 'items');
+      console.log('  - templateData.experience:', templateData.experience?.length || 0, 'items');
+    }
+    
     if (!optimizedCV && !templateData) {
       alert("No optimized CV available to download.");
       return;
@@ -1627,13 +2080,22 @@ export default function Dashboard({ user }) {
                     const getSectionIcon = (sectionKey) => {
                       const keyLower = sectionKey.toLowerCase();
                       if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+                      if (keyLower.includes('internship')) return <FaBriefcase className="text-teal-500" />;
                       if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+                      if (keyLower.includes('technical') && keyLower.includes('skill')) return <FaCode className="text-green-600" />;
+                      if (keyLower.includes('soft') && keyLower.includes('skill')) return <FaHeart className="text-pink-500" />;
                       if (keyLower.includes('skill')) return <FaCode className="text-green-500" />;
                       if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500" />;
                       if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
                       if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
                       if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+                      if (keyLower.includes('volunteer') || keyLower.includes('leadership')) return <FaHandsHelping className="text-rose-500" />;
+                      if (keyLower.includes('publication') || keyLower.includes('research')) return <FaBook className="text-amber-600" />;
                       if (keyLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+                      if (keyLower.includes('tool') || keyLower.includes('technolog')) return <FaWrench className="text-slate-500" />;
+                      if (keyLower.includes('interest') || keyLower.includes('hobby')) return <FaHeart className="text-red-400" />;
+                      if (keyLower.includes('reference')) return <FaUsers className="text-gray-600" />;
+                      if (keyLower.includes('portfolio') || keyLower.includes('link') || keyLower.includes('github')) return <FaLink className="text-blue-400" />;
                       if (keyLower.includes('summary') || keyLower.includes('objective')) return <FaUser className="text-indigo-500" />;
                       return <FaFileAlt className="text-gray-500" />;
                     };
@@ -1698,13 +2160,22 @@ export default function Dashboard({ user }) {
                               const getSectionIcon = (sectionKey) => {
                                 const keyLower = sectionKey.toLowerCase();
                                 if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500 text-lg" />;
+                                if (keyLower.includes('internship')) return <FaBriefcase className="text-teal-500 text-lg" />;
                                 if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500 text-lg" />;
+                                if (keyLower.includes('technical') && keyLower.includes('skill')) return <FaCode className="text-green-600 text-lg" />;
+                                if (keyLower.includes('soft') && keyLower.includes('skill')) return <FaHeart className="text-pink-500 text-lg" />;
                                 if (keyLower.includes('skill')) return <FaCode className="text-green-500 text-lg" />;
                                 if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500 text-lg" />;
                                 if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500 text-lg" />;
                                 if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500 text-lg" />;
                                 if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500 text-lg" />;
+                                if (keyLower.includes('volunteer') || keyLower.includes('leadership')) return <FaHandsHelping className="text-rose-500 text-lg" />;
+                                if (keyLower.includes('publication') || keyLower.includes('research')) return <FaBook className="text-amber-600 text-lg" />;
                                 if (keyLower.includes('language')) return <FaLanguage className="text-pink-500 text-lg" />;
+                                if (keyLower.includes('tool') || keyLower.includes('technolog')) return <FaWrench className="text-slate-500 text-lg" />;
+                                if (keyLower.includes('interest') || keyLower.includes('hobby')) return <FaHeart className="text-red-400 text-lg" />;
+                                if (keyLower.includes('reference')) return <FaUsers className="text-gray-600 text-lg" />;
+                                if (keyLower.includes('portfolio') || keyLower.includes('link') || keyLower.includes('github')) return <FaLink className="text-blue-400 text-lg" />;
                                 if (keyLower.includes('summary') || keyLower.includes('objective') || keyLower.includes('profile')) return <FaUser className="text-indigo-500 text-lg" />;
                                 return <FaFileAlt className="text-gray-500 text-lg" />;
                               };

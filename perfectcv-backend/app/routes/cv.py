@@ -355,18 +355,16 @@ async def analyze_cv_comprehensive(file: UploadFile = File(...)):
         
         logger.info(f"Starting comprehensive analysis for: {file.filename}")
         
-        # Save temporarily
-        suffix = '.pdf' if file.filename.lower().endswith('.pdf') else '.docx'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            temp_path = tmp_file.name
+        # Read file content
+        content = await file.read()
         
-        # Extract raw text
-        raw_text = extract_text_from_pdf(temp_path)
+        # Use unified CV extractor
+        cv_extractor = get_cv_extractor()
+        extraction_result = cv_extractor.extract_from_file(content, file.filename)
         
-        # Extract structured data
-        cv_data = extract_cv_data(temp_path, ai_client)
+        # Get raw text and structured data
+        raw_text = extraction_result.get('cleaned_text', '')
+        cv_data = extraction_result.get('entities', {})
         
         # Perform comprehensive analysis
         analysis = cv_scoring_service.analyze_cv(cv_data, raw_text)
@@ -414,14 +412,6 @@ async def analyze_cv_comprehensive(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Failed to analyze CV: {str(e)}"
         )
-    
-    finally:
-        # Cleanup
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
 
 
 @router.post("/get-recommendations")
