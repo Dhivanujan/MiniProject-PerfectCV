@@ -1504,16 +1504,173 @@ export default function Dashboard({ user }) {
 
         {/* Optimized CV & Suggestions */}
         {optimizedCV && (
-          <section className="mb-10">
+          <section className="mb-10 space-y-8">
+            {/* STEP 1: ATS Score & Keywords Section */}
+            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-700/50 p-6 rounded-2xl shadow-md">
+              <h3 className="text-2xl font-bold mb-6 text-blue-800 dark:text-blue-400 flex items-center gap-3">
+                <FaRobot className="text-xl" /> ATS Analysis Results
+              </h3>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* ATS Score Circle */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm text-center">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <FaStar className="text-yellow-500 text-lg" />
+                    <span className="text-sm font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                      ATS Compatibility Score
+                    </span>
+                  </div>
+                  <div className="relative w-36 h-36 mx-auto mb-4">
+                    <svg className="transform -rotate-90 w-36 h-36">
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="64"
+                        stroke="currentColor"
+                        strokeWidth="10"
+                        fill="transparent"
+                        className="text-gray-200 dark:text-gray-700"
+                      />
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="64"
+                        stroke="currentColor"
+                        strokeWidth="10"
+                        fill="transparent"
+                        strokeDasharray={`${2 * Math.PI * 64}`}
+                        strokeDashoffset={`${2 * Math.PI * 64 * (1 - (atsScore || 0) / 100)}`}
+                        className={`transition-all duration-500 ${
+                          (atsScore || 0) >= 70 
+                            ? 'text-green-500' 
+                            : (atsScore || 0) >= 50 
+                            ? 'text-yellow-500' 
+                            : 'text-red-500'
+                        }`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className={`text-4xl font-bold ${
+                        (atsScore || 0) >= 70 
+                          ? 'text-green-600 dark:text-green-400' 
+                          : (atsScore || 0) >= 50 
+                          ? 'text-yellow-600 dark:text-yellow-400' 
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {atsScore ?? "--"}
+                      </span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">/100</span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {(atsScore || 0) >= 70 
+                      ? '✅ Excellent! Your CV is ATS-friendly' 
+                      : (atsScore || 0) >= 50 
+                      ? '⚠️ Good, but can be improved' 
+                      : '❌ Needs significant optimization'}
+                  </p>
+                </div>
+
+                {/* Found Keywords */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                      Found Keywords ({foundKeywords.length})
+                    </h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                    {foundKeywords.length > 0 ? (
+                      foundKeywords.map((kw, i) => (
+                        <span key={i} className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg border border-green-200 dark:border-green-700 font-medium">
+                          ✓ {kw}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">No keywords detected</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recommended Keywords */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                      Recommended to Add ({recommendedKeywords.length})
+                    </h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                    {recommendedKeywords.length > 0 ? (
+                      recommendedKeywords.map((kw, i) => (
+                        <span key={i} className="bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-xs px-3 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 font-medium">
+                          + {kw}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">All recommended keywords included!</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 2: CV Sections Overview */}
+            {orderedSections && orderedSections.length > 0 && (
+              <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 dark:from-purple-900/30 dark:via-pink-900/30 dark:to-rose-900/30 border border-purple-200 dark:border-purple-700/50 p-6 rounded-2xl shadow-md">
+                <h3 className="text-2xl font-bold mb-6 text-purple-800 dark:text-purple-400 flex items-center gap-3">
+                  <FaFileAlt className="text-xl" /> CV Sections Overview
+                </h3>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {orderedSections.map(({ key, label, content }) => {
+                    const getSectionIcon = (sectionKey) => {
+                      const keyLower = sectionKey.toLowerCase();
+                      if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+                      if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+                      if (keyLower.includes('skill')) return <FaCode className="text-green-500" />;
+                      if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500" />;
+                      if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
+                      if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
+                      if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+                      if (keyLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+                      if (keyLower.includes('summary') || keyLower.includes('objective')) return <FaUser className="text-indigo-500" />;
+                      return <FaFileAlt className="text-gray-500" />;
+                    };
+
+                    return content ? (
+                      <div
+                        key={key}
+                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-purple-100 dark:border-purple-700/50 hover:shadow-md hover:border-purple-300 dark:hover:border-purple-600 transition-all group"
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
+                            {getSectionIcon(key)}
+                          </div>
+                          <h4 className="font-bold text-purple-700 dark:text-purple-400 text-sm uppercase tracking-wide">
+                            {label}
+                          </h4>
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4 overflow-hidden leading-relaxed">
+                          {renderSectionContent(key, content)}
+                        </div>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: Optimized CV & Download */}
             <div
               className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 
               border border-green-200 dark:border-green-700/50 p-6 
-              rounded-2xl shadow-md mb-6 text-gray-800 dark:text-gray-200"
+              rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
             >
               <div className="flex flex-col lg:flex-row items-start gap-6">
                 <div className="flex-1 w-full">
                   <h3 className="text-2xl font-bold mb-4 text-green-800 dark:text-green-400 flex items-center gap-2">
-                    <FaCheckCircle className="text-xl" /> Optimized CV
+                    <FaCheckCircle className="text-xl" /> Optimized CV Preview
                   </h3>
                   <div className="bg-white dark:bg-gray-900/50 p-5 rounded-lg border border-green-100 dark:border-green-800/50 shadow-sm">
                     {/* Toggle between raw optimized text and organized preview */}
@@ -1528,18 +1685,18 @@ export default function Dashboard({ user }) {
                     </div>
 
                     {!expandedPreview ? (
-                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
                         <EnhancedCVRenderer content={optimizedCV} />
                       </div>
                     ) : (
-                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
                         ) : orderedSections && orderedSections.length > 0 ? (
                           <div className="space-y-4">
                             {orderedSections.map((section) => {
-                              const getSectionIcon = (key) => {
-                                const keyLower = key.toLowerCase();
+                              const getSectionIcon = (sectionKey) => {
+                                const keyLower = sectionKey.toLowerCase();
                                 if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500 text-lg" />;
                                 if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500 text-lg" />;
                                 if (keyLower.includes('skill')) return <FaCode className="text-green-500 text-lg" />;
@@ -1582,106 +1739,28 @@ export default function Dashboard({ user }) {
                     )}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[280px]">
-                  <div className="text-center mb-5">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <FaStar className="text-yellow-500 text-lg" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                        ATS Score
-                      </span>
+                
+                {/* Download Section */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[300px]">
+                  <div className="text-center mb-6">
+                    <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-full flex items-center justify-center">
+                      <FaDownload className="text-green-600 dark:text-green-400 text-3xl" />
                     </div>
-                    <div className="relative w-32 h-32 mx-auto mb-3">
-                      <svg className="transform -rotate-90 w-32 h-32">
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r="56"
-                          stroke="currentColor"
-                          strokeWidth="8"
-                          fill="transparent"
-                          className="text-gray-200 dark:text-gray-700"
-                        />
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r="56"
-                          stroke="currentColor"
-                          strokeWidth="8"
-                          fill="transparent"
-                          strokeDasharray={`${2 * Math.PI * 56}`}
-                          strokeDashoffset={`${2 * Math.PI * 56 * (1 - (atsScore || 0) / 100)}`}
-                          className={`transition-all duration-500 ${
-                            (atsScore || 0) >= 70 
-                              ? 'text-green-500' 
-                              : (atsScore || 0) >= 50 
-                              ? 'text-yellow-500' 
-                              : 'text-red-500'
-                          }`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`text-3xl font-bold ${
-                          (atsScore || 0) >= 70 
-                            ? 'text-green-600 dark:text-green-400' 
-                            : (atsScore || 0) >= 50 
-                            ? 'text-yellow-600 dark:text-yellow-400' 
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          {atsScore ?? "--"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(atsScore || 0) >= 70 
-                        ? '✅ Excellent score!' 
-                        : (atsScore || 0) >= 50 
-                        ? '⚠️ Good, can improve' 
-                        : '❌ Needs optimization'}
+                    <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
+                      Download Your Optimized CV
+                    </h4>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Get your ATS-friendly PDF ready for applications
                     </p>
                   </div>
-                  {recommendedKeywords.length > 0 && (
-                    <div className="mb-4 pb-4 border-b border-green-100 dark:border-green-800/50">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Recommended Keywords</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {recommendedKeywords.slice(0, 6).map((kw, i) => (
-                          <span key={i} className="bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg font-medium border border-green-200 dark:border-green-700">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      {recommendedKeywords.length > 6 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{recommendedKeywords.length - 6} more</p>
-                      )}
-                    </div>
-                  )}
-                  {foundKeywords && foundKeywords.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-sage-500 rounded-full"></div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Found Keywords</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {foundKeywords.slice(0, 10).map((kw, i) => (
-                          <span key={i} className="bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-200 text-xs px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      {foundKeywords.length > 10 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{foundKeywords.length - 10} more</p>
-                      )}
-                    </div>
-                  )}
+                  
                   <button
                     onClick={handleDownloadOptimizedCV}
-                    className="mt-4 w-full bg-gradient-to-r from-sage-600 to-emerald-600 hover:from-sage-700 hover:to-emerald-700 dark:from-sage-700 dark:to-emerald-800 dark:hover:from-sage-800 dark:hover:to-emerald-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 dark:from-green-700 dark:to-emerald-800 dark:hover:from-green-800 dark:hover:to-emerald-900 text-white px-6 py-4 rounded-xl font-bold transition-all duration-200 flex items-center justify-center gap-3 shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-lg"
                   >
-                    <FaDownload className="text-base" /> Download Optimized PDF
+                    <FaDownload className="text-xl" /> Download Optimized PDF
                   </button>
+                  
                   {lastUploadedFileId && (
                     <button
                       onClick={() =>
@@ -1690,73 +1769,43 @@ export default function Dashboard({ user }) {
                           lastUploadedFilename?.replace(/\.[^/.]+$/, "_ATS_Optimized.pdf") || "CV_ATS_Optimized.pdf"
                         )
                       }
-                      className="mt-2 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
+                      className="mt-3 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
                     >
                       <FaDownload className="text-sm" /> Download from Library
                     </button>
                   )}
+                  
+                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center flex items-center justify-center gap-2">
+                      <FaCheckCircle className="text-green-500" />
+                      Ready for job applications
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Structured sections preview */}
-            {orderedSections && orderedSections.length > 0 && (
-              <div className="mt-6">
-                <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                  <FaFileAlt className="text-sage-500" />
-                  CV Sections Overview
-                </h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  {orderedSections.map(({ key, label, content }) => {
-                    return content ? (
-                      <div
-                        key={key}
-                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-sage-300 dark:hover:border-sage-600 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="w-1 h-6 bg-gradient-to-b from-sage-500 to-emerald-500 rounded-full group-hover:h-8 transition-all"></div>
-                          <h4 className="font-bold text-sage-600 dark:text-sage-400 text-sm uppercase tracking-wide">
-                            {label}
-                          </h4>
-                        </div>
-                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-[8] overflow-hidden leading-relaxed">
-                          {renderSectionContent(key, content)}
-                        </div>
-                        <button
-                          onClick={() => setExpandedPreview(true)}
-                          className="mt-3 text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium"
-                        >
-                          View full section →
-                        </button>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Suggestions list (grouped) */}
+            {/* Improvement Suggestions */}
             {(Object.keys(groupedSuggestions).length > 0 ||
               (suggestions && suggestions.length > 0)) && (
               <div
-                className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
-                border border-blue-200 dark:border-blue-700/50 p-6 
+                className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 
+                border border-amber-200 dark:border-amber-700/50 p-6 
                 rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
               >
-                <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
+                <h3 className="text-xl font-bold mb-4 text-amber-800 dark:text-amber-400 flex items-center gap-2">
                   <FaExclamationCircle className="text-lg" /> Improvement Suggestions
                 </h3>
-                {/* Prefer groupedSuggestions if provided by backend */}
                 {Object.keys(groupedSuggestions).length > 0 ? (
                   <div className="space-y-3">
                     {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
-                      <div key={cat}>
-                        <h4 className="font-semibold capitalize text-sage-600">
+                      <div key={cat} className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-amber-100 dark:border-amber-800/50">
+                        <h4 className="font-semibold capitalize text-amber-700 dark:text-amber-400 mb-2">
                           {cat.replace("_", " ")}
                         </h4>
-                        <ul className="list-disc pl-6 mt-1">
+                        <ul className="list-disc pl-6 space-y-1">
                           {msgs.map((m, i) => (
-                            <li key={i} className="text-sm">
+                            <li key={i} className="text-sm text-gray-700 dark:text-gray-300">
                               {m}
                             </li>
                           ))}
@@ -1765,13 +1814,13 @@ export default function Dashboard({ user }) {
                     ))}
                   </div>
                 ) : (
-                  <ul className="list-disc pl-6">
+                  <ul className="list-disc pl-6 space-y-2">
                     {suggestions.map((s, idx) => (
-                      <li key={idx} className="mb-2">
-                        <strong className="capitalize">
+                      <li key={idx} className="text-sm">
+                        <strong className="capitalize text-amber-700 dark:text-amber-400">
                           {s.category || "General"}:
                         </strong>{" "}
-                        {s.message || s}
+                        <span className="text-gray-700 dark:text-gray-300">{s.message || s}</span>
                       </li>
                     ))}
                   </ul>
