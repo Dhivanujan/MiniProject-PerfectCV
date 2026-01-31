@@ -7,7 +7,6 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta
 import random
-from pymongo.database import Database
 from app.auth.jwt_handler import (
     authenticate_user,
     create_access_token,
@@ -64,12 +63,12 @@ class AuthResponse(BaseModel):
     token_type: Optional[str] = "bearer"
 
 # Dependency to get MongoDB instance
-def get_db() -> Database:
+def get_db():
     from app_fastapi import get_mongo_db
     return get_mongo_db()
 
 @router.post("/login", response_model=AuthResponse)
-async def login(request: LoginRequest, db: Database = Depends(get_db)):
+async def login(request: LoginRequest, db = Depends(get_db)):
     """
     User login endpoint - Returns JWT tokens
     """
@@ -117,7 +116,7 @@ async def login(request: LoginRequest, db: Database = Depends(get_db)):
         )
 
 @router.post("/register", response_model=AuthResponse)
-async def register(request: RegisterRequest, db: Database = Depends(get_db)):
+async def register(request: RegisterRequest, db = Depends(get_db)):
     """
     User registration endpoint - Returns JWT tokens
     """
@@ -185,7 +184,7 @@ async def register(request: RegisterRequest, db: Database = Depends(get_db)):
         )
 
 @router.post("/forgot-password")
-async def forgot_password(request: ForgotPasswordRequest, db: Database = Depends(get_db)):
+async def forgot_password(request: ForgotPasswordRequest, db = Depends(get_db)):
     """
     Request password reset code
     """
@@ -235,7 +234,7 @@ async def forgot_password(request: ForgotPasswordRequest, db: Database = Depends
         )
 
 @router.post("/verify-code")
-async def verify_code(request: VerifyCodeRequest, db: Database = Depends(get_db)):
+async def verify_code(request: VerifyCodeRequest, db = Depends(get_db)):
     """
     Verify password reset code
     """
@@ -279,7 +278,7 @@ async def verify_code(request: VerifyCodeRequest, db: Database = Depends(get_db)
         )
 
 @router.post("/reset-password")
-async def reset_password(request: ResetPasswordRequest, db: Database = Depends(get_db)):
+async def reset_password(request: ResetPasswordRequest, db = Depends(get_db)):
     """
     Reset password with verified code
     """
@@ -356,7 +355,7 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_access_token(request: RefreshTokenRequest, db: Database = Depends(get_db)):
+async def refresh_access_token(request: RefreshTokenRequest, db = Depends(get_db)):
     """
     Refresh access token using refresh token
     """

@@ -11,6 +11,8 @@ from config.config import Config
 # Import routers
 from app.routes.cv import router as cv_router
 from app.routes.auth_fastapi import router as auth_router
+from app.routes.files_fastapi import router as files_router
+from app.routes.chatbot_fastapi import router as chatbot_router
 
 # MongoDB connection
 mongo_client = None
@@ -54,6 +56,8 @@ app.add_middleware(
 # Include routers
 app.include_router(cv_router, prefix="/api/cv", tags=["CV Generation"])
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(files_router, prefix="/api", tags=["File Management"])
+app.include_router(chatbot_router, prefix="/api/chatbot", tags=["Chatbot"])
 
 @app.get("/")
 async def root():

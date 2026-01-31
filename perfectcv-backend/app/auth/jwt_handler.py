@@ -8,8 +8,10 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pymongo.database import Database
 from bson import ObjectId
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -31,7 +33,12 @@ class JWTConfig:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        # Handle cases where the stored hash is not a valid bcrypt hash
+        logger.error(f"Password verification error: {e}")
+        return False
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
@@ -112,7 +119,7 @@ def verify_token(token: str) -> Dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Database = None
+    db = None
 ) -> Dict:
     """
     Dependency to get the current authenticated user
@@ -127,7 +134,10 @@ async def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    logger.info(f"get_current_user called - credentials present: {credentials is not None}")
+    
     if not credentials:
+        logger.warning("No credentials provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
@@ -135,10 +145,18 @@ async def get_current_user(
         )
     
     token = credentials.credentials
-    payload = verify_token(token)
+    logger.info(f"Token received: {token[:20]}...")
+    
+    try:
+        payload = verify_token(token)
+        logger.info(f"Token verified - payload: {payload}")
+    except HTTPException as e:
+        logger.error(f"Token verification failed: {e.detail}")
+        raise
     
     # Verify token type
     if payload.get("type") != "access":
+        logger.warning(f"Invalid token type: {payload.get('type')}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",
@@ -147,6 +165,7 @@ async def get_current_user(
     
     user_id = payload.get("sub")
     if user_id is None:
+        logger.warning("No user_id in token payload")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -161,8 +180,10 @@ async def get_current_user(
     # Fetch user from database
     try:
         user = db.users.find_one({"_id": ObjectId(user_id)})
-    except Exception:
+        logger.info(f"User lookup result: {user is not None}")
+    except Exception as e:
         # Invalid ObjectId format
+        logger.error(f"Invalid ObjectId: {user_id}, error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user ID",
@@ -170,6 +191,7 @@ async def get_current_user(
         )
     
     if user is None:
+        logger.warning(f"User not found for id: {user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
@@ -179,6 +201,9 @@ async def get_current_user(
     # Remove password from user object
     user.pop('password', None)
     user['id'] = str(user['_id'])
+    
+    logger.info(f"Successfully authenticated user: {user.get('email')}")
+    return user
     
     return user
 
@@ -202,7 +227,7 @@ async def get_current_active_user(current_user: Dict = Depends(get_current_user)
         )
     return current_user
 
-def authenticate_user(db: Database, email: str, password: str) -> Optional[Dict]:
+def authenticate_user(db, email: str, password: str) -> Optional[Dict]:
     """
     Authenticate a user by email and password
     

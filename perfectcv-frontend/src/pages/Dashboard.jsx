@@ -31,6 +31,12 @@ import {
   FaTrophy,
   FaLanguage,
   FaProjectDiagram,
+  FaHeart,
+  FaHandsHelping,
+  FaBook,
+  FaWrench,
+  FaUsers,
+  FaLink,
 } from "react-icons/fa";
 import CvIllustration from "../assets/CV_Illustration.png";
 import ResumeTemplate from "../components/ResumeTemplate";
@@ -409,6 +415,376 @@ const CertificationsRenderer = ({ content }) => {
   );
 };
 
+// Component to render Projects section
+const ProjectsRenderer = ({ content }) => {
+  let projectsData = parseContentSafely(content);
+  
+  if (!projectsData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No projects listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(projectsData)) {
+    // If it's a single project object
+    if (typeof projectsData === 'object' && projectsData !== null) {
+      projectsData = [projectsData];
+    } else if (typeof projectsData === 'string') {
+      // Split by newlines for plain text
+      const items = projectsData.split('\n').map(s => s.trim()).filter(s => s);
+      if (items.length > 0) {
+        projectsData = items.map(item => ({ name: item }));
+      } else {
+        projectsData = [{ name: projectsData }];
+      }
+    } else {
+      projectsData = [];
+    }
+  }
+
+  // Filter out invalid entries
+  projectsData = projectsData.filter(proj => {
+    if (typeof proj === 'string') return proj.trim().length > 0;
+    if (!proj || typeof proj !== 'object') return false;
+    return proj.name || proj.title;
+  });
+
+  if (projectsData.length === 0) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No projects listed</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {projectsData.map((proj, idx) => {
+        // Handle string items
+        if (typeof proj === 'string') {
+          return (
+            <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+              <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {proj}
+              </h5>
+            </div>
+          );
+        }
+        
+        // Handle object items
+        return (
+          <div key={idx} className="pb-4 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <h5 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  {proj.name || proj.title || 'Project'}
+                </h5>
+                {proj.role && (
+                  <p className="text-xs text-sage-600 dark:text-sage-400 mt-0.5">
+                    {proj.role}
+                  </p>
+                )}
+              </div>
+              {(proj.date || proj.duration) && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  {proj.date || proj.duration}
+                </span>
+              )}
+            </div>
+            {(proj.description || proj.desc) && (
+              <p className="text-xs text-gray-600 dark:text-gray-300 mt-2 leading-relaxed">
+                {proj.description || proj.desc}
+              </p>
+            )}
+            {proj.technologies && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(Array.isArray(proj.technologies) ? proj.technologies : proj.technologies.split(',').map(t => t.trim())).map((tech, techIdx) => (
+                  <span 
+                    key={techIdx}
+                    className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded"
+                  >
+                    {tech}
+                  </span>
+                ))}
+              </div>
+            )}
+            {proj.url && (
+              <a 
+                href={proj.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-sage-600 dark:text-sage-400 hover:underline mt-2 inline-block"
+              >
+                View project →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Achievements section
+const AchievementsRenderer = ({ content }) => {
+  let achievementData = parseContentSafely(content);
+  
+  if (!achievementData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No achievements listed</div>;
+  }
+
+  // Ensure it's an array
+  if (!Array.isArray(achievementData)) {
+    if (typeof achievementData === 'string') {
+      const items = achievementData.split('\n').map(s => s.trim()).filter(s => s);
+      achievementData = items.map(item => ({ title: item }));
+    } else if (typeof achievementData === 'object') {
+      achievementData = [achievementData];
+    } else {
+      achievementData = [];
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {achievementData.map((achievement, idx) => {
+        if (typeof achievement === 'string') {
+          return (
+            <div key={idx} className="flex items-start gap-2">
+              <span className="text-yellow-500">🏆</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">{achievement}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <div className="flex items-start gap-2">
+              <span className="text-yellow-500">🏆</span>
+              <div className="flex-1">
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {achievement.title || achievement.name || 'Achievement'}
+                </h5>
+                {achievement.issuer && (
+                  <p className="text-xs text-sage-600 dark:text-sage-400">{achievement.issuer}</p>
+                )}
+                {achievement.date && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{achievement.date}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Publications section
+const PublicationsRenderer = ({ content }) => {
+  let pubData = parseContentSafely(content);
+  
+  if (!pubData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No publications listed</div>;
+  }
+
+  if (!Array.isArray(pubData)) {
+    if (typeof pubData === 'string') {
+      const items = pubData.split('\n').map(s => s.trim()).filter(s => s);
+      pubData = items.map(item => ({ title: item }));
+    } else {
+      pubData = [pubData];
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {pubData.map((pub, idx) => {
+        if (typeof pub === 'string') {
+          return (
+            <div key={idx} className="flex items-start gap-2">
+              <span className="text-blue-500">📄</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">{pub}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {pub.title || 'Publication'}
+            </h5>
+            {pub.authors && <p className="text-xs text-gray-600 dark:text-gray-400">{pub.authors}</p>}
+            {pub.venue && <p className="text-xs text-sage-600 dark:text-sage-400">{pub.venue}</p>}
+            {pub.date && <p className="text-xs text-gray-500 dark:text-gray-400">{pub.date}</p>}
+            {pub.url && (
+              <a href={pub.url} target="_blank" rel="noopener noreferrer" className="text-xs text-sage-600 dark:text-sage-400 hover:underline">
+                View publication →
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Languages section
+const LanguagesRenderer = ({ content }) => {
+  let langData = parseContentSafely(content);
+  
+  if (!langData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No languages listed</div>;
+  }
+
+  if (!Array.isArray(langData)) {
+    if (typeof langData === 'string') {
+      const items = langData.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+      langData = items.map(item => ({ language: item }));
+    } else {
+      langData = [langData];
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {langData.map((lang, idx) => {
+        const langName = typeof lang === 'string' ? lang : (lang.language || lang.name || 'Language');
+        const proficiency = typeof lang === 'object' ? lang.proficiency : null;
+        
+        return (
+          <div key={idx} className="bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-lg">
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200">🌐 {langName}</span>
+            {proficiency && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({proficiency})</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render Interests section
+const InterestsRenderer = ({ content }) => {
+  let interestData = parseContentSafely(content);
+  
+  if (!interestData) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No interests listed</div>;
+  }
+
+  if (!Array.isArray(interestData)) {
+    if (typeof interestData === 'string') {
+      interestData = interestData.split(/[,\n]/).map(s => s.trim()).filter(s => s);
+    } else {
+      interestData = [interestData];
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {interestData.map((interest, idx) => {
+        const text = typeof interest === 'string' ? interest : (interest.name || interest.title || 'Interest');
+        return (
+          <span key={idx} className="bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs px-3 py-1.5 rounded-lg">
+            {text}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+// Component to render References section
+const ReferencesRenderer = ({ content }) => {
+  if (!content) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No references provided</div>;
+  }
+
+  if (typeof content === 'string') {
+    return (
+      <div className="text-sm text-gray-700 dark:text-gray-300 italic">
+        {content}
+      </div>
+    );
+  }
+
+  // If it's an array or object, render appropriately
+  const refData = parseContentSafely(content);
+  if (Array.isArray(refData)) {
+    return (
+      <div className="space-y-3">
+        {refData.map((ref, idx) => (
+          <div key={idx} className="pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0 last:pb-0">
+            {typeof ref === 'string' ? (
+              <p className="text-sm text-gray-700 dark:text-gray-300">{ref}</p>
+            ) : (
+              <>
+                <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ref.name || 'Reference'}</h5>
+                {ref.title && <p className="text-xs text-gray-600 dark:text-gray-400">{ref.title}</p>}
+                {ref.company && <p className="text-xs text-sage-600 dark:text-sage-400">{ref.company}</p>}
+                {ref.email && <p className="text-xs text-gray-500 dark:text-gray-400">{ref.email}</p>}
+                {ref.phone && <p className="text-xs text-gray-500 dark:text-gray-400">{ref.phone}</p>}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
+};
+
+// Component to render Portfolio/Links section
+const LinksRenderer = ({ content }) => {
+  if (!content) {
+    return <div className="text-sm text-gray-500 dark:text-gray-400 italic">No links provided</div>;
+  }
+
+  const linkData = parseContentSafely(content);
+  
+  const renderLink = (url, label, icon) => {
+    if (!url) return null;
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+    return (
+      <a
+        href={fullUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 text-sm text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-200 hover:underline transition-colors"
+      >
+        {icon}
+        <span>{label || url}</span>
+      </a>
+    );
+  };
+
+  if (typeof linkData === 'object' && linkData !== null && !Array.isArray(linkData)) {
+    return (
+      <div className="space-y-2">
+        {linkData.linkedin && renderLink(linkData.linkedin, 'LinkedIn', <FaLink className="text-blue-600" />)}
+        {linkData.github && renderLink(linkData.github, 'GitHub', <FaLink className="text-gray-700 dark:text-gray-300" />)}
+        {linkData.website && renderLink(linkData.website, 'Website', <FaLink className="text-green-600" />)}
+        {linkData.portfolio && renderLink(linkData.portfolio, 'Portfolio', <FaLink className="text-purple-600" />)}
+      </div>
+    );
+  }
+
+  if (Array.isArray(linkData)) {
+    return (
+      <div className="space-y-2">
+        {linkData.map((link, idx) => (
+          <div key={idx}>
+            {typeof link === 'string' 
+              ? renderLink(link, link) 
+              : renderLink(link.url || link.link, link.label || link.title || link.name)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof linkData === 'string') {
+    return renderLink(linkData, linkData);
+  }
+
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
+};
+
 // Main render function for CV sections
 const renderSectionContent = (key, content) => {
   if (!content) return null;
@@ -422,14 +798,28 @@ const renderSectionContent = (key, content) => {
 
   const lowerKey = key.toLowerCase();
   
-  if (lowerKey.includes('skill')) {
+  if (lowerKey.includes('skill') || lowerKey.includes('tools')) {
     return <SkillsRenderer content={content} />;
-  } else if (lowerKey.includes('experience') || lowerKey.includes('work')) {
+  } else if (lowerKey.includes('experience') || lowerKey.includes('work') || lowerKey.includes('internship') || lowerKey.includes('volunteer') || lowerKey.includes('leadership')) {
     return <WorkExperienceRenderer content={content} />;
   } else if (lowerKey.includes('education')) {
     return <EducationRenderer content={content} />;
   } else if (lowerKey.includes('certification')) {
     return <CertificationsRenderer content={content} />;
+  } else if (lowerKey.includes('project')) {
+    return <ProjectsRenderer content={content} />;
+  } else if (lowerKey.includes('achievement') || lowerKey.includes('award')) {
+    return <AchievementsRenderer content={content} />;
+  } else if (lowerKey.includes('publication') || lowerKey.includes('research')) {
+    return <PublicationsRenderer content={content} />;
+  } else if (lowerKey.includes('language')) {
+    return <LanguagesRenderer content={content} />;
+  } else if (lowerKey.includes('interest') || lowerKey.includes('hobbi')) {
+    return <InterestsRenderer content={content} />;
+  } else if (lowerKey.includes('reference')) {
+    return <ReferencesRenderer content={content} />;
+  } else if (lowerKey.includes('link') || lowerKey.includes('portfolio') || lowerKey.includes('github')) {
+    return <LinksRenderer content={content} />;
   } else if (lowerKey.includes('personal') || lowerKey.includes('contact')) {
     // For personal information, try to parse and display nicely
     const data = parseContentSafely(content);
@@ -461,8 +851,41 @@ const renderSectionContent = (key, content) => {
     }
   }
   
-  // Default: display as text
-  return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+  // Default: handle different content types safely
+  if (typeof content === 'string') {
+    return <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{content}</div>;
+  } else if (Array.isArray(content)) {
+    // If it's an array of strings, join them
+    const stringContent = content.map((item, idx) => {
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object' && item !== null) {
+        // Try to get a meaningful string from the object
+        return item.name || item.title || item.text || JSON.stringify(item);
+      }
+      return String(item);
+    });
+    return (
+      <ul className="list-disc list-inside text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        {stringContent.map((item, idx) => (
+          <li key={idx}>{item}</li>
+        ))}
+      </ul>
+    );
+  } else if (typeof content === 'object' && content !== null) {
+    // Render object properties
+    return (
+      <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+        {Object.entries(content).map(([key, value]) => (
+          <p key={key}>
+            <span className="font-semibold capitalize">{key}:</span>{' '}
+            {typeof value === 'string' ? value : JSON.stringify(value)}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  
+  return <div className="text-sm text-gray-700 dark:text-gray-300">{String(content)}</div>;
 };
 
 // Enhanced CV Content Renderer with Icons and Better Formatting
@@ -515,13 +938,22 @@ const EnhancedCVRenderer = ({ content }) => {
   const getSectionIcon = (title) => {
     const titleLower = title.toLowerCase();
     if (titleLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+    if (titleLower.includes('internship')) return <FaBriefcase className="text-teal-500" />;
     if (titleLower.includes('experience') || titleLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+    if (titleLower.includes('technical') && titleLower.includes('skill')) return <FaCode className="text-green-600" />;
+    if (titleLower.includes('soft') && titleLower.includes('skill')) return <FaHeart className="text-pink-500" />;
     if (titleLower.includes('skill')) return <FaCode className="text-green-500" />;
     if (titleLower.includes('profile') || titleLower.includes('summary')) return <FaUser className="text-indigo-500" />;
     if (titleLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
     if (titleLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
     if (titleLower.includes('achievement') || titleLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+    if (titleLower.includes('volunteer') || titleLower.includes('leadership')) return <FaHandsHelping className="text-rose-500" />;
+    if (titleLower.includes('publication') || titleLower.includes('research')) return <FaBook className="text-amber-600" />;
     if (titleLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+    if (titleLower.includes('tool') || titleLower.includes('technolog')) return <FaWrench className="text-slate-500" />;
+    if (titleLower.includes('interest') || titleLower.includes('hobby')) return <FaHeart className="text-red-400" />;
+    if (titleLower.includes('reference')) return <FaUsers className="text-gray-600" />;
+    if (titleLower.includes('portfolio') || titleLower.includes('link') || titleLower.includes('github')) return <FaLink className="text-blue-400" />;
     return <FaFileAlt className="text-gray-500" />;
   };
 
@@ -949,6 +1381,17 @@ export default function Dashboard({ user }) {
       }
       
       setOrderedSections(orderedSectionsData);
+      
+      // Debug: Log template_data received from backend
+      console.log('📋 Received template_data from backend:', res.data.template_data);
+      if (res.data.template_data) {
+        console.log('  - name:', res.data.template_data.name);
+        console.log('  - email:', res.data.template_data.email);
+        console.log('  - skills:', res.data.template_data.skills?.length || 0, 'items');
+        console.log('  - experience:', res.data.template_data.experience?.length || 0, 'items');
+        console.log('  - education:', res.data.template_data.education?.length || 0, 'items');
+      }
+      
       setTemplateData(res.data.template_data || null);
       setAtsScore(res.data.ats_score ?? null);
       setRecommendedKeywords(res.data.recommended_keywords || []);
@@ -1012,6 +1455,16 @@ export default function Dashboard({ user }) {
   };
 
   const handleDownloadOptimizedCV = async () => {
+    console.log('🔄 handleDownloadOptimizedCV called');
+    console.log('  - optimizedCV present:', !!optimizedCV);
+    console.log('  - templateData present:', !!templateData);
+    
+    if (templateData) {
+      console.log('  - templateData.name:', templateData.name);
+      console.log('  - templateData.skills:', templateData.skills?.length || 0, 'items');
+      console.log('  - templateData.experience:', templateData.experience?.length || 0, 'items');
+    }
+    
     if (!optimizedCV && !templateData) {
       alert("No optimized CV available to download.");
       return;
@@ -1504,16 +1957,182 @@ export default function Dashboard({ user }) {
 
         {/* Optimized CV & Suggestions */}
         {optimizedCV && (
-          <section className="mb-10">
+          <section className="mb-10 space-y-8">
+            {/* STEP 1: ATS Score & Keywords Section */}
+            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 border border-blue-200 dark:border-blue-700/50 p-6 rounded-2xl shadow-md">
+              <h3 className="text-2xl font-bold mb-6 text-blue-800 dark:text-blue-400 flex items-center gap-3">
+                <FaRobot className="text-xl" /> ATS Analysis Results
+              </h3>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* ATS Score Circle */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm text-center">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <FaStar className="text-yellow-500 text-lg" />
+                    <span className="text-sm font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                      ATS Compatibility Score
+                    </span>
+                  </div>
+                  <div className="relative w-36 h-36 mx-auto mb-4">
+                    <svg className="transform -rotate-90 w-36 h-36">
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="64"
+                        stroke="currentColor"
+                        strokeWidth="10"
+                        fill="transparent"
+                        className="text-gray-200 dark:text-gray-700"
+                      />
+                      <circle
+                        cx="72"
+                        cy="72"
+                        r="64"
+                        stroke="currentColor"
+                        strokeWidth="10"
+                        fill="transparent"
+                        strokeDasharray={`${2 * Math.PI * 64}`}
+                        strokeDashoffset={`${2 * Math.PI * 64 * (1 - (atsScore || 0) / 100)}`}
+                        className={`transition-all duration-500 ${
+                          (atsScore || 0) >= 70 
+                            ? 'text-green-500' 
+                            : (atsScore || 0) >= 50 
+                            ? 'text-yellow-500' 
+                            : 'text-red-500'
+                        }`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className={`text-4xl font-bold ${
+                        (atsScore || 0) >= 70 
+                          ? 'text-green-600 dark:text-green-400' 
+                          : (atsScore || 0) >= 50 
+                          ? 'text-yellow-600 dark:text-yellow-400' 
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {atsScore ?? "--"}
+                      </span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">/100</span>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {(atsScore || 0) >= 70 
+                      ? '✅ Excellent! Your CV is ATS-friendly' 
+                      : (atsScore || 0) >= 50 
+                      ? '⚠️ Good, but can be improved' 
+                      : '❌ Needs significant optimization'}
+                  </p>
+                </div>
+
+                {/* Found Keywords */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                      Found Keywords ({foundKeywords.length})
+                    </h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                    {foundKeywords.length > 0 ? (
+                      foundKeywords.map((kw, i) => (
+                        <span key={i} className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg border border-green-200 dark:border-green-700 font-medium">
+                          ✓ {kw}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">No keywords detected</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recommended Keywords */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-blue-100 dark:border-blue-800/50 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+                    <h4 className="text-sm font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+                      Recommended to Add ({recommendedKeywords.length})
+                    </h4>
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                    {recommendedKeywords.length > 0 ? (
+                      recommendedKeywords.map((kw, i) => (
+                        <span key={i} className="bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-xs px-3 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 font-medium">
+                          + {kw}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">All recommended keywords included!</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* STEP 2: CV Sections Overview */}
+            {orderedSections && orderedSections.length > 0 && (
+              <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 dark:from-purple-900/30 dark:via-pink-900/30 dark:to-rose-900/30 border border-purple-200 dark:border-purple-700/50 p-6 rounded-2xl shadow-md">
+                <h3 className="text-2xl font-bold mb-6 text-purple-800 dark:text-purple-400 flex items-center gap-3">
+                  <FaFileAlt className="text-xl" /> CV Sections Overview
+                </h3>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {orderedSections.map(({ key, label, content }) => {
+                    const getSectionIcon = (sectionKey) => {
+                      const keyLower = sectionKey.toLowerCase();
+                      if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500" />;
+                      if (keyLower.includes('internship')) return <FaBriefcase className="text-teal-500" />;
+                      if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500" />;
+                      if (keyLower.includes('technical') && keyLower.includes('skill')) return <FaCode className="text-green-600" />;
+                      if (keyLower.includes('soft') && keyLower.includes('skill')) return <FaHeart className="text-pink-500" />;
+                      if (keyLower.includes('skill')) return <FaCode className="text-green-500" />;
+                      if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500" />;
+                      if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500" />;
+                      if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500" />;
+                      if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500" />;
+                      if (keyLower.includes('volunteer') || keyLower.includes('leadership')) return <FaHandsHelping className="text-rose-500" />;
+                      if (keyLower.includes('publication') || keyLower.includes('research')) return <FaBook className="text-amber-600" />;
+                      if (keyLower.includes('language')) return <FaLanguage className="text-pink-500" />;
+                      if (keyLower.includes('tool') || keyLower.includes('technolog')) return <FaWrench className="text-slate-500" />;
+                      if (keyLower.includes('interest') || keyLower.includes('hobby')) return <FaHeart className="text-red-400" />;
+                      if (keyLower.includes('reference')) return <FaUsers className="text-gray-600" />;
+                      if (keyLower.includes('portfolio') || keyLower.includes('link') || keyLower.includes('github')) return <FaLink className="text-blue-400" />;
+                      if (keyLower.includes('summary') || keyLower.includes('objective')) return <FaUser className="text-indigo-500" />;
+                      return <FaFileAlt className="text-gray-500" />;
+                    };
+
+                    return content ? (
+                      <div
+                        key={key}
+                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-purple-100 dark:border-purple-700/50 hover:shadow-md hover:border-purple-300 dark:hover:border-purple-600 transition-all group"
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
+                            {getSectionIcon(key)}
+                          </div>
+                          <h4 className="font-bold text-purple-700 dark:text-purple-400 text-sm uppercase tracking-wide">
+                            {label}
+                          </h4>
+                        </div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4 overflow-hidden leading-relaxed">
+                          {renderSectionContent(key, content)}
+                        </div>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: Optimized CV & Download */}
             <div
               className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/30 dark:to-emerald-900/30 
               border border-green-200 dark:border-green-700/50 p-6 
-              rounded-2xl shadow-md mb-6 text-gray-800 dark:text-gray-200"
+              rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
             >
               <div className="flex flex-col lg:flex-row items-start gap-6">
                 <div className="flex-1 w-full">
                   <h3 className="text-2xl font-bold mb-4 text-green-800 dark:text-green-400 flex items-center gap-2">
-                    <FaCheckCircle className="text-xl" /> Optimized CV
+                    <FaCheckCircle className="text-xl" /> Optimized CV Preview
                   </h3>
                   <div className="bg-white dark:bg-gray-900/50 p-5 rounded-lg border border-green-100 dark:border-green-800/50 shadow-sm">
                     {/* Toggle between raw optimized text and organized preview */}
@@ -1528,26 +2147,35 @@ export default function Dashboard({ user }) {
                     </div>
 
                     {!expandedPreview ? (
-                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
                         <EnhancedCVRenderer content={optimizedCV} />
                       </div>
                     ) : (
-                      <div className="max-h-[600px] overflow-auto custom-scrollbar">
+                      <div className="max-h-[500px] overflow-auto custom-scrollbar">
                         {templateData ? (
                           <ResumeTemplate data={templateData} />
                         ) : orderedSections && orderedSections.length > 0 ? (
                           <div className="space-y-4">
                             {orderedSections.map((section) => {
-                              const getSectionIcon = (key) => {
-                                const keyLower = key.toLowerCase();
+                              const getSectionIcon = (sectionKey) => {
+                                const keyLower = sectionKey.toLowerCase();
                                 if (keyLower.includes('education')) return <FaGraduationCap className="text-blue-500 text-lg" />;
+                                if (keyLower.includes('internship')) return <FaBriefcase className="text-teal-500 text-lg" />;
                                 if (keyLower.includes('experience') || keyLower.includes('work')) return <FaBriefcase className="text-purple-500 text-lg" />;
+                                if (keyLower.includes('technical') && keyLower.includes('skill')) return <FaCode className="text-green-600 text-lg" />;
+                                if (keyLower.includes('soft') && keyLower.includes('skill')) return <FaHeart className="text-pink-500 text-lg" />;
                                 if (keyLower.includes('skill')) return <FaCode className="text-green-500 text-lg" />;
                                 if (keyLower.includes('personal') || keyLower.includes('contact')) return <FaUser className="text-indigo-500 text-lg" />;
                                 if (keyLower.includes('certification')) return <FaCertificate className="text-orange-500 text-lg" />;
                                 if (keyLower.includes('project')) return <FaProjectDiagram className="text-cyan-500 text-lg" />;
                                 if (keyLower.includes('achievement') || keyLower.includes('award')) return <FaTrophy className="text-yellow-500 text-lg" />;
+                                if (keyLower.includes('volunteer') || keyLower.includes('leadership')) return <FaHandsHelping className="text-rose-500 text-lg" />;
+                                if (keyLower.includes('publication') || keyLower.includes('research')) return <FaBook className="text-amber-600 text-lg" />;
                                 if (keyLower.includes('language')) return <FaLanguage className="text-pink-500 text-lg" />;
+                                if (keyLower.includes('tool') || keyLower.includes('technolog')) return <FaWrench className="text-slate-500 text-lg" />;
+                                if (keyLower.includes('interest') || keyLower.includes('hobby')) return <FaHeart className="text-red-400 text-lg" />;
+                                if (keyLower.includes('reference')) return <FaUsers className="text-gray-600 text-lg" />;
+                                if (keyLower.includes('portfolio') || keyLower.includes('link') || keyLower.includes('github')) return <FaLink className="text-blue-400 text-lg" />;
                                 if (keyLower.includes('summary') || keyLower.includes('objective') || keyLower.includes('profile')) return <FaUser className="text-indigo-500 text-lg" />;
                                 return <FaFileAlt className="text-gray-500 text-lg" />;
                               };
@@ -1582,106 +2210,28 @@ export default function Dashboard({ user }) {
                     )}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[280px]">
-                  <div className="text-center mb-5">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <FaStar className="text-yellow-500 text-lg" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                        ATS Score
-                      </span>
+                
+                {/* Download Section */}
+                <div className="bg-white dark:bg-gray-900/50 rounded-xl p-6 border border-green-100 dark:border-green-800/50 shadow-sm lg:min-w-[300px]">
+                  <div className="text-center mb-6">
+                    <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-full flex items-center justify-center">
+                      <FaDownload className="text-green-600 dark:text-green-400 text-3xl" />
                     </div>
-                    <div className="relative w-32 h-32 mx-auto mb-3">
-                      <svg className="transform -rotate-90 w-32 h-32">
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r="56"
-                          stroke="currentColor"
-                          strokeWidth="8"
-                          fill="transparent"
-                          className="text-gray-200 dark:text-gray-700"
-                        />
-                        <circle
-                          cx="64"
-                          cy="64"
-                          r="56"
-                          stroke="currentColor"
-                          strokeWidth="8"
-                          fill="transparent"
-                          strokeDasharray={`${2 * Math.PI * 56}`}
-                          strokeDashoffset={`${2 * Math.PI * 56 * (1 - (atsScore || 0) / 100)}`}
-                          className={`transition-all duration-500 ${
-                            (atsScore || 0) >= 70 
-                              ? 'text-green-500' 
-                              : (atsScore || 0) >= 50 
-                              ? 'text-yellow-500' 
-                              : 'text-red-500'
-                          }`}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={`text-3xl font-bold ${
-                          (atsScore || 0) >= 70 
-                            ? 'text-green-600 dark:text-green-400' 
-                            : (atsScore || 0) >= 50 
-                            ? 'text-yellow-600 dark:text-yellow-400' 
-                            : 'text-red-600 dark:text-red-400'
-                        }`}>
-                          {atsScore ?? "--"}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(atsScore || 0) >= 70 
-                        ? '✅ Excellent score!' 
-                        : (atsScore || 0) >= 50 
-                        ? '⚠️ Good, can improve' 
-                        : '❌ Needs optimization'}
+                    <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">
+                      Download Your Optimized CV
+                    </h4>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Get your ATS-friendly PDF ready for applications
                     </p>
                   </div>
-                  {recommendedKeywords.length > 0 && (
-                    <div className="mb-4 pb-4 border-b border-green-100 dark:border-green-800/50">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Recommended Keywords</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {recommendedKeywords.slice(0, 6).map((kw, i) => (
-                          <span key={i} className="bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 text-green-700 dark:text-green-300 text-xs px-3 py-1.5 rounded-lg font-medium border border-green-200 dark:border-green-700">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      {recommendedKeywords.length > 6 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{recommendedKeywords.length - 6} more</p>
-                      )}
-                    </div>
-                  )}
-                  {foundKeywords && foundKeywords.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-sage-500 rounded-full"></div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-gray-700 dark:text-gray-300">Found Keywords</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {foundKeywords.slice(0, 10).map((kw, i) => (
-                          <span key={i} className="bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-200 text-xs px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                      {foundKeywords.length > 10 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">+{foundKeywords.length - 10} more</p>
-                      )}
-                    </div>
-                  )}
+                  
                   <button
                     onClick={handleDownloadOptimizedCV}
-                    className="mt-4 w-full bg-gradient-to-r from-sage-600 to-emerald-600 hover:from-sage-700 hover:to-emerald-700 dark:from-sage-700 dark:to-emerald-800 dark:hover:from-sage-800 dark:hover:to-emerald-900 text-white px-4 py-3 rounded-lg font-bold transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5"
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 dark:from-green-700 dark:to-emerald-800 dark:hover:from-green-800 dark:hover:to-emerald-900 text-white px-6 py-4 rounded-xl font-bold transition-all duration-200 flex items-center justify-center gap-3 shadow-lg hover:shadow-xl hover:-translate-y-0.5 text-lg"
                   >
-                    <FaDownload className="text-base" /> Download Optimized PDF
+                    <FaDownload className="text-xl" /> Download Optimized PDF
                   </button>
+                  
                   {lastUploadedFileId && (
                     <button
                       onClick={() =>
@@ -1690,73 +2240,43 @@ export default function Dashboard({ user }) {
                           lastUploadedFilename?.replace(/\.[^/.]+$/, "_ATS_Optimized.pdf") || "CV_ATS_Optimized.pdf"
                         )
                       }
-                      className="mt-2 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
+                      className="mt-3 w-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-3 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 border border-gray-300 dark:border-gray-600"
                     >
                       <FaDownload className="text-sm" /> Download from Library
                     </button>
                   )}
+                  
+                  <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center flex items-center justify-center gap-2">
+                      <FaCheckCircle className="text-green-500" />
+                      Ready for job applications
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Structured sections preview */}
-            {orderedSections && orderedSections.length > 0 && (
-              <div className="mt-6">
-                <h4 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                  <FaFileAlt className="text-sage-500" />
-                  CV Sections Overview
-                </h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  {orderedSections.map(({ key, label, content }) => {
-                    return content ? (
-                      <div
-                        key={key}
-                        className="bg-white dark:bg-gray-900/50 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-sage-300 dark:hover:border-sage-600 transition-all group"
-                      >
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="w-1 h-6 bg-gradient-to-b from-sage-500 to-emerald-500 rounded-full group-hover:h-8 transition-all"></div>
-                          <h4 className="font-bold text-sage-600 dark:text-sage-400 text-sm uppercase tracking-wide">
-                            {label}
-                          </h4>
-                        </div>
-                        <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-[8] overflow-hidden leading-relaxed">
-                          {renderSectionContent(key, content)}
-                        </div>
-                        <button
-                          onClick={() => setExpandedPreview(true)}
-                          className="mt-3 text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium"
-                        >
-                          View full section →
-                        </button>
-                      </div>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Suggestions list (grouped) */}
+            {/* Improvement Suggestions */}
             {(Object.keys(groupedSuggestions).length > 0 ||
               (suggestions && suggestions.length > 0)) && (
               <div
-                className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-900/30 dark:to-cyan-900/30 
-                border border-blue-200 dark:border-blue-700/50 p-6 
+                className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/30 dark:to-orange-900/30 
+                border border-amber-200 dark:border-amber-700/50 p-6 
                 rounded-2xl shadow-md text-gray-800 dark:text-gray-200"
               >
-                <h3 className="text-xl font-bold mb-4 text-blue-800 dark:text-blue-400 flex items-center gap-2">
+                <h3 className="text-xl font-bold mb-4 text-amber-800 dark:text-amber-400 flex items-center gap-2">
                   <FaExclamationCircle className="text-lg" /> Improvement Suggestions
                 </h3>
-                {/* Prefer groupedSuggestions if provided by backend */}
                 {Object.keys(groupedSuggestions).length > 0 ? (
                   <div className="space-y-3">
                     {Object.entries(groupedSuggestions).map(([cat, msgs]) => (
-                      <div key={cat}>
-                        <h4 className="font-semibold capitalize text-sage-600">
+                      <div key={cat} className="bg-white dark:bg-gray-900/50 p-4 rounded-lg border border-amber-100 dark:border-amber-800/50">
+                        <h4 className="font-semibold capitalize text-amber-700 dark:text-amber-400 mb-2">
                           {cat.replace("_", " ")}
                         </h4>
-                        <ul className="list-disc pl-6 mt-1">
+                        <ul className="list-disc pl-6 space-y-1">
                           {msgs.map((m, i) => (
-                            <li key={i} className="text-sm">
+                            <li key={i} className="text-sm text-gray-700 dark:text-gray-300">
                               {m}
                             </li>
                           ))}
@@ -1765,13 +2285,13 @@ export default function Dashboard({ user }) {
                     ))}
                   </div>
                 ) : (
-                  <ul className="list-disc pl-6">
+                  <ul className="list-disc pl-6 space-y-2">
                     {suggestions.map((s, idx) => (
-                      <li key={idx} className="mb-2">
-                        <strong className="capitalize">
+                      <li key={idx} className="text-sm">
+                        <strong className="capitalize text-amber-700 dark:text-amber-400">
                           {s.category || "General"}:
                         </strong>{" "}
-                        {s.message || s}
+                        <span className="text-gray-700 dark:text-gray-300">{s.message || s}</span>
                       </li>
                     ))}
                   </ul>

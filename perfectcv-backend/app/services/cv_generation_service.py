@@ -67,10 +67,10 @@ class CVGenerationService:
             templates_dir: Path to templates directory
         """
         self.templates_dir = templates_dir or os.path.join(
-            os.path.dirname(__file__), '..', 'templates', 'cv'
+            os.path.dirname(__file__), '..', 'templates'
         )
         
-        # Create templates directory if it doesn't exist
+        # Ensure templates directory exists
         os.makedirs(self.templates_dir, exist_ok=True)
         
         # Initialize Jinja2 environment
@@ -85,13 +85,13 @@ class CVGenerationService:
     
     def generate_cv_pdf(self, 
                        cv_data: Dict, 
-                       template_name: str = "cv_template.html") -> bytes:
+                       template_name: str = "enhanced_cv.html") -> bytes:
         """
         Generate CV PDF from data and template.
         
         Args:
             cv_data: Dictionary with CV data (entities, sections, etc.)
-            template_name: Name of template file to use
+            template_name: Name of template file to use (default: enhanced_cv.html - xhtml2pdf optimized)
             
         Returns:
             PDF bytes

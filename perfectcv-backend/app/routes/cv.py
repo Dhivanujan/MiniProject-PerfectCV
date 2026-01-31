@@ -130,8 +130,8 @@ async def generate_cv(
         output_filename = f"cv_{cv_data.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        # Generate PDF using Jinja2 template
-        cv_gen.generate_cv_pdf(cv_data, template_name='modern_cv.html', output_path=temp_output_path)
+        # Generate PDF using Jinja2 template (enhanced_cv.html - same format as demo_optimized_cv.pdf)
+        cv_gen.generate_cv_pdf(cv_data, template_name='enhanced_cv.html', output_path=temp_output_path)
         
         # Schedule cleanup of temporary input file
         if background_tasks:
@@ -241,7 +241,7 @@ async def improve_cv_endpoint(cv_data: CVData):
         logger.info("Improving CV data...")
         
         # Convert Pydantic model to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Improve with AI
         improved_cv = improve_cv_data(cv_dict, ai_client)
@@ -282,7 +282,7 @@ async def generate_pdf_from_json(cv_data: CVData):
         logger.info("Generating PDF from JSON data...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Generate PDF using new Jinja2 + xhtml2pdf service
         cv_gen = get_cv_generator()
@@ -293,8 +293,8 @@ async def generate_pdf_from_json(cv_data: CVData):
         output_filename = f"cv_{cv_dict.get('name', 'resume').replace(' ', '_')}.pdf"
         temp_output_path = os.path.join(output_dir, output_filename)
         
-        # Generate PDF using modern template
-        cv_gen.generate_cv_pdf(cv_dict, template_name='modern_cv.html', output_path=temp_output_path)
+        # Generate PDF using enhanced template (same format as demo_optimized_cv.pdf)
+        cv_gen.generate_cv_pdf(cv_dict, template_name='enhanced_cv.html', output_path=temp_output_path)
         
         logger.info(f"Generated PDF: {temp_output_path}")
         return FileResponse(
@@ -355,18 +355,16 @@ async def analyze_cv_comprehensive(file: UploadFile = File(...)):
         
         logger.info(f"Starting comprehensive analysis for: {file.filename}")
         
-        # Save temporarily
-        suffix = '.pdf' if file.filename.lower().endswith('.pdf') else '.docx'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            temp_path = tmp_file.name
+        # Read file content
+        content = await file.read()
         
-        # Extract raw text
-        raw_text = extract_text_from_pdf(temp_path)
+        # Use unified CV extractor
+        cv_extractor = get_cv_extractor()
+        extraction_result = cv_extractor.extract_from_file(content, file.filename)
         
-        # Extract structured data
-        cv_data = extract_cv_data(temp_path, ai_client)
+        # Get raw text and structured data
+        raw_text = extraction_result.get('cleaned_text', '')
+        cv_data = extraction_result.get('entities', {})
         
         # Perform comprehensive analysis
         analysis = cv_scoring_service.analyze_cv(cv_data, raw_text)
@@ -414,14 +412,6 @@ async def analyze_cv_comprehensive(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Failed to analyze CV: {str(e)}"
         )
-    
-    finally:
-        # Cleanup
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
 
 
 @router.post("/get-recommendations")
@@ -439,7 +429,7 @@ async def get_skill_recommendations(cv_data: CVData):
         logger.info("Generating recommendations...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Predict field and get recommended skills
         predicted_field, recommended_skills = cv_scoring_service.predict_field_and_skills(
@@ -552,7 +542,7 @@ async def enhance_cv_example(cv_data: CVData):
         logger.info("Creating enhanced CV example...")
         
         # Convert to dict
-        cv_dict = cv_data.dict()
+        cv_dict = cv_data.model_dump()
         
         # Enhance the CV
         enhanced_cv = cv_template_generator.enhance_cv_professionally(cv_dict)

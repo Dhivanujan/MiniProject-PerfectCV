@@ -49,6 +49,63 @@ class CVScoringService:
         """Initialize CV scoring service."""
         pass
     
+    def score_cv(self, cv_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Score a CV based on its content.
+        
+        Args:
+            cv_data: Structured CV data (entities)
+            
+        Returns:
+            Dictionary with overall_score and breakdown
+        """
+        # Build raw text from cv_data for scoring
+        text_parts = []
+        if cv_data.get('summary'):
+            text_parts.append(cv_data.get('summary'))
+        if cv_data.get('skills'):
+            text_parts.append(' '.join(cv_data.get('skills', [])))
+        if cv_data.get('experience'):
+            for exp in cv_data.get('experience', []):
+                if isinstance(exp, dict):
+                    text_parts.append(exp.get('title', ''))
+                    text_parts.append(exp.get('company', ''))
+                    desc = exp.get('description', '')
+                    if isinstance(desc, list):
+                        text_parts.extend(desc)
+                    elif desc:
+                        text_parts.append(desc)
+        if cv_data.get('education'):
+            for edu in cv_data.get('education', []):
+                if isinstance(edu, dict):
+                    text_parts.append(edu.get('degree', ''))
+                    text_parts.append(edu.get('institution', ''))
+        if cv_data.get('projects'):
+            for proj in cv_data.get('projects', []):
+                if isinstance(proj, dict):
+                    text_parts.append(proj.get('name', ''))
+                    text_parts.append(proj.get('description', ''))
+        
+        raw_text = ' '.join(filter(None, text_parts))
+        
+        # Use calculate_resume_score
+        score_result = self.calculate_resume_score(raw_text, cv_data)
+        
+        # Get recommendations
+        predicted_field, recommended_skills = self.predict_field_and_skills(cv_data.get('skills', []))
+        
+        return {
+            'overall_score': score_result['score'],
+            'score': score_result['score'],
+            'max_score': 100,
+            'breakdown': score_result['breakdown'],
+            'missing_sections': score_result['missing_sections'],
+            'present_sections': score_result['present_sections'],
+            'predicted_field': predicted_field,
+            'recommended_skills': recommended_skills,
+            'recommendations': self.generate_recommendations(raw_text, cv_data, score_result['score'], predicted_field)
+        }
+    
     def analyze_cv(self, cv_data: Dict[str, Any], raw_text: str) -> Dict[str, Any]:
         """
         Comprehensive CV analysis including scoring, field prediction, and recommendations.
@@ -94,14 +151,17 @@ class CVScoringService:
     
     def calculate_resume_score(self, text: str, cv_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate resume score based on key sections and content quality.
+        Calculate resume score based on comprehensive criteria.
         
         Score breakdown (100 points total):
-        - Objective/Summary: 20 points
-        - Declaration: 20 points
-        - Hobbies/Interests: 20 points
-        - Achievements: 20 points
-        - Projects: 20 points
+        - Contact Information: 10 points (name, email, phone)
+        - Professional Summary: 15 points
+        - Work Experience: 25 points
+        - Education: 15 points
+        - Skills: 15 points
+        - Projects: 10 points
+        - Certifications/Achievements: 5 points
+        - Additional Sections: 5 points (hobbies, languages, etc.)
         
         Args:
             text: Raw CV text
@@ -116,53 +176,153 @@ class CVScoringService:
         present_sections = []
         text_lower = text.lower()
         
-        # Check for Objective/Summary (20 points)
+        # 1. Contact Information (10 points)
+        contact_score = 0
+        if cv_data.get('name'):
+            contact_score += 4
+        if cv_data.get('email'):
+            contact_score += 3
+        if cv_data.get('phone'):
+            contact_score += 3
+        breakdown['contact_info'] = contact_score
+        score += contact_score
+        if contact_score >= 7:
+            present_sections.append('Contact Information')
+        else:
+            missing_sections.append('Contact Information')
+        
+        # 2. Professional Summary/Objective (15 points)
+        summary_score = 0
+        summary = cv_data.get('summary', '') or ''
         if self._has_objective(text_lower, cv_data):
-            score += 20
-            breakdown['objective'] = 20
-            present_sections.append('Objective/Summary')
+            summary_score = 8  # Base score for having summary
+            # Bonus for length/quality
+            if len(summary) > 50:
+                summary_score += 3
+            if len(summary) > 150:
+                summary_score += 2
+            if len(summary) > 250:
+                summary_score += 2
+        breakdown['summary'] = min(summary_score, 15)
+        score += breakdown['summary']
+        if summary_score >= 8:
+            present_sections.append('Professional Summary')
         else:
-            breakdown['objective'] = 0
-            missing_sections.append('Objective/Summary')
+            missing_sections.append('Professional Summary')
         
-        # Check for Declaration (20 points)
-        if self._has_declaration(text_lower):
-            score += 20
-            breakdown['declaration'] = 20
-            present_sections.append('Declaration')
+        # 3. Work Experience (25 points)
+        exp_score = 0
+        experience = cv_data.get('experience', []) or []
+        if experience:
+            exp_count = len(experience)
+            exp_score = min(exp_count * 6, 15)  # Up to 15 for having experiences
+            
+            # Bonus for detailed descriptions
+            for exp in experience[:3]:  # Check first 3
+                if isinstance(exp, dict):
+                    desc = exp.get('description', '')
+                    if isinstance(desc, list) and len(desc) >= 2:
+                        exp_score += 3
+                    elif isinstance(desc, str) and len(desc) > 50:
+                        exp_score += 2
+        breakdown['experience'] = min(exp_score, 25)
+        score += breakdown['experience']
+        if exp_score >= 6:
+            present_sections.append('Work Experience')
         else:
-            breakdown['declaration'] = 0
-            missing_sections.append('Declaration')
+            missing_sections.append('Work Experience')
         
-        # Check for Hobbies/Interests (20 points)
-        if self._has_hobbies(text_lower):
-            score += 20
-            breakdown['hobbies'] = 20
-            present_sections.append('Hobbies/Interests')
+        # 4. Education (15 points)
+        edu_score = 0
+        education = cv_data.get('education', []) or []
+        if education:
+            edu_score = 8  # Base score
+            for edu in education:
+                if isinstance(edu, dict):
+                    if edu.get('degree'):
+                        edu_score += 2
+                    if edu.get('institution'):
+                        edu_score += 2
+                    if edu.get('year') or edu.get('gpa'):
+                        edu_score += 1
+        breakdown['education'] = min(edu_score, 15)
+        score += breakdown['education']
+        if edu_score >= 8:
+            present_sections.append('Education')
         else:
-            breakdown['hobbies'] = 0
-            missing_sections.append('Hobbies/Interests')
+            missing_sections.append('Education')
         
-        # Check for Achievements (20 points)
-        if self._has_achievements(text_lower):
-            score += 20
-            breakdown['achievements'] = 20
-            present_sections.append('Achievements')
+        # 5. Skills (15 points)
+        skills_score = 0
+        skills = cv_data.get('skills', []) or []
+        if skills:
+            skill_count = len(skills)
+            if skill_count >= 3:
+                skills_score = 6
+            if skill_count >= 6:
+                skills_score = 9
+            if skill_count >= 10:
+                skills_score = 12
+            if skill_count >= 15:
+                skills_score = 15
+        breakdown['skills'] = skills_score
+        score += skills_score
+        if skills_score >= 6:
+            present_sections.append('Skills')
         else:
-            breakdown['achievements'] = 0
-            missing_sections.append('Achievements')
+            missing_sections.append('Skills')
         
-        # Check for Projects (20 points)
-        if self._has_projects(text_lower, cv_data):
-            score += 20
-            breakdown['projects'] = 20
+        # 6. Projects (10 points)
+        proj_score = 0
+        projects = cv_data.get('projects', []) or []
+        if projects or self._has_projects(text_lower, cv_data):
+            proj_count = len(projects) if projects else 1
+            proj_score = min(proj_count * 3, 7)  # Up to 7 for count
+            
+            # Bonus for detailed projects
+            for proj in projects[:2]:
+                if isinstance(proj, dict):
+                    if proj.get('description') and len(str(proj.get('description', ''))) > 30:
+                        proj_score += 1
+                    if proj.get('technologies'):
+                        proj_score += 1
+        breakdown['projects'] = min(proj_score, 10)
+        score += breakdown['projects']
+        if proj_score >= 3:
             present_sections.append('Projects')
         else:
-            breakdown['projects'] = 0
             missing_sections.append('Projects')
         
+        # 7. Certifications/Achievements (5 points)
+        cert_score = 0
+        certs = cv_data.get('certifications', []) or []
+        if certs or self._has_achievements(text_lower):
+            cert_score = min(len(certs) * 2 + 1, 5) if certs else 3
+        breakdown['certifications'] = cert_score
+        score += cert_score
+        if cert_score >= 1:
+            present_sections.append('Certifications/Achievements')
+        else:
+            missing_sections.append('Certifications/Achievements')
+        
+        # 8. Additional Sections (5 points)
+        additional_score = 0
+        if self._has_hobbies(text_lower):
+            additional_score += 2
+        if cv_data.get('languages') or 'languages' in text_lower or 'language' in text_lower:
+            additional_score += 2
+        if self._has_declaration(text_lower):
+            additional_score += 1
+        breakdown['additional'] = min(additional_score, 5)
+        score += breakdown['additional']
+        if additional_score >= 2:
+            present_sections.append('Additional Sections')
+        
+        # Ensure score doesn't exceed 100
+        final_score = min(score, 100)
+        
         return {
-            'score': score,
+            'score': final_score,
             'breakdown': breakdown,
             'missing_sections': missing_sections,
             'present_sections': present_sections
@@ -441,6 +601,32 @@ class CVScoringService:
             recommendations.append({
                 'type': 'tip',
                 'message': 'Add more relevant skills to your resume. Aim for at least 8-10 key skills.'
+            })
+        elif len(skills) < 10:
+            recommendations.append({
+                'type': 'tip',
+                'message': 'Consider adding a few more technical and soft skills to strengthen your profile.'
+            })
+        
+        # Experience recommendations
+        experience = cv_data.get('experience', [])
+        if not experience:
+            recommendations.append({
+                'type': 'warning',
+                'message': 'Add work experience or internship details to demonstrate your professional background.'
+            })
+        elif len(experience) < 2:
+            recommendations.append({
+                'type': 'tip',
+                'message': 'Add more work experience entries or include volunteer/freelance work.'
+            })
+        
+        # Education recommendations
+        education = cv_data.get('education', [])
+        if not education:
+            recommendations.append({
+                'type': 'warning',
+                'message': 'Add your educational qualifications to strengthen your resume.'
             })
         
         return recommendations
