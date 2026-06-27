@@ -156,7 +156,7 @@ http://localhost:8000
 
 ---
 
-# 💻 Frontend Setup
+## 💻 Frontend Setup
 
 ### Install Dependencies
 
