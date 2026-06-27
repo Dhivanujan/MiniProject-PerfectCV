@@ -179,23 +179,6 @@ http://localhost:5173
 
 ---
 
-## 📸 Screenshots
-
-> Add your application screenshots inside the `screenshots/` folder.
-
-Example:
-
-```text
-screenshots/
-├── home.png
-├── upload.png
-├── analysis.png
-├── ats-score.png
-├── generated-cv.png
-└── chatbot.png
-```
-
----
 
 ## 🔗 API Overview
 
